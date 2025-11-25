@@ -4,6 +4,7 @@ import { ArrowLeft, Save, User, Mail, Phone, MapPin, FileText, Upload, X } from 
 import { useAuthStore } from '../store/useStore';
 import { useSettingsStore } from '../store/settingsStore';
 import { useTranslation } from '../utils/translations';
+import { db } from '../lib/instant';
 
 export default function EditProfile() {
   const navigate = useNavigate();
@@ -22,6 +23,29 @@ export default function EditProfile() {
   const [avatar, setAvatar] = useState(user?.avatar || '');
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState('');
+
+  // Fetch user's posts and comments to update them
+  const { data } = db.useQuery({
+    posts: {
+      $: {
+        where: { authorId: user?.id }
+      }
+    },
+    comments: {
+      $: {
+        where: { authorId: user?.id }
+      }
+    },
+    claimedPosts: {
+      $: {
+        where: { claimedBy: user?.id }
+      }
+    }
+  });
+
+  const userPosts = data?.posts || [];
+  const userComments = data?.comments || [];
+  const claimedPosts = data?.claimedPosts || [];
 
   const handleChange = (e) => {
     setFormData({
@@ -47,15 +71,54 @@ export default function EditProfile() {
     setIsSaving(true);
 
     try {
+      const updatedName = formData.name.trim();
+      const updatedAvatar = avatar || user.avatar;
+
+      // Update user profile in store
       updateProfile({
         ...formData,
-        avatar: avatar || user.avatar,
+        avatar: updatedAvatar,
       });
+
+      // Update all user's posts
+      const postUpdates = userPosts.map(post => 
+        db.tx.posts[post.id].update({
+          author: updatedName,
+          avatar: updatedAvatar
+        })
+      );
+
+      // Update all user's comments
+      const commentUpdates = userComments.map(comment => 
+        db.tx.comments[comment.id].update({
+          author: updatedName,
+          avatar: updatedAvatar
+        })
+      );
+
+      // Update claimedByName in posts where user claimed them
+      const claimedUpdates = claimedPosts.map(post => 
+        db.tx.posts[post.id].update({
+          claimedByName: updatedName
+        })
+      );
+
+      // Execute all updates in a single transaction
+      if (postUpdates.length > 0 || commentUpdates.length > 0 || claimedUpdates.length > 0) {
+        db.transact(
+          ...postUpdates,
+          ...commentUpdates,
+          ...claimedUpdates
+        );
+      }
+
       setTimeout(() => {
         navigate('/profile');
       }, 500);
     } catch (err) {
+      console.error('Error updating profile:', err);
       setError(err.message || 'Failed to update profile');
+      setIsSaving(false);
     } finally {
       setIsSaving(false);
     }

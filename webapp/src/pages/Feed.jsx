@@ -1,6 +1,6 @@
-import React from 'react';
-import { Link } from 'react-router-dom';
-import { MapPin, MessageCircle, Share2, Heart, MoreHorizontal, Clock, TrendingUp, CheckCircle, Lock } from 'lucide-react';
+import React, { useState, useRef, useEffect } from 'react';
+import { Link, useNavigate } from 'react-router-dom';
+import { MapPin, MessageCircle, Share2, Heart, MoreHorizontal, Clock, TrendingUp, CheckCircle, Lock, Edit, Trash2 } from 'lucide-react';
 import { useAuthStore } from '../store/useStore';
 import { useSettingsStore } from '../store/settingsStore';
 import { useTranslation } from '../utils/translations';
@@ -12,8 +12,34 @@ export default function Feed() {
   const { language } = useSettingsStore();
   const t = useTranslation();
   const isRTL = language === 'he';
+  const navigate = useNavigate();
+  const [openMenuId, setOpenMenuId] = useState(null);
+  const menuRefs = useRef({});
 
   const posts = data?.posts || [];
+
+  // Close menu when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      Object.values(menuRefs.current).forEach(ref => {
+        if (ref && !ref.contains(event.target)) {
+          setOpenMenuId(null);
+        }
+      });
+    };
+
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  const handleDeletePost = (postId) => {
+    if (window.confirm('Are you sure you want to delete this post?')) {
+      db.transact(
+        db.tx.posts[postId].delete()
+      );
+      setOpenMenuId(null);
+    }
+  };
 
   const formatTime = (timestamp) => {
     const now = Date.now();
@@ -76,6 +102,71 @@ export default function Feed() {
               const isClaimed = !!post.claimedBy;
               const isClaimedByMe = post.claimedBy === user?.id;
               const isMyPost = post.authorId === user?.id;
+              const likedBy = post.likedBy || [];
+              const isLiked = user && likedBy.includes(user.id);
+              const likeCount = likedBy.length || post.likes || 0;
+              
+              const handleLike = (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                if (!user) {
+                  alert('You must be logged in to like a post');
+                  return;
+                }
+
+                const currentLikedBy = post.likedBy || [];
+                const isCurrentlyLiked = currentLikedBy.includes(user.id);
+                
+                if (isCurrentlyLiked) {
+                  db.transact(
+                    db.tx.posts[post.id].update({
+                      likedBy: currentLikedBy.filter(id => id !== user.id),
+                      likes: Math.max(0, (post.likes || 0) - 1)
+                    })
+                  );
+                } else {
+                  db.transact(
+                    db.tx.posts[post.id].update({
+                      likedBy: [...currentLikedBy, user.id],
+                      likes: (post.likes || 0) + 1
+                    })
+                  );
+                }
+              };
+
+              const handleShare = async (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                const postUrl = `${window.location.origin}/post/${post.id}`;
+                
+                if (navigator.share) {
+                  try {
+                    await navigator.share({
+                      title: post.title || 'Check out this post',
+                      text: post.description,
+                      url: postUrl
+                    });
+                  } catch (err) {
+                    if (err.name !== 'AbortError') {
+                      // Fallback to copy
+                      try {
+                        await navigator.clipboard.writeText(postUrl);
+                        alert('Link copied to clipboard!');
+                      } catch (copyErr) {
+                        console.error('Failed to copy:', copyErr);
+                      }
+                    }
+                  }
+                } else {
+                  // Fallback to copy
+                  try {
+                    await navigator.clipboard.writeText(postUrl);
+                    alert('Link copied to clipboard!');
+                  } catch (copyErr) {
+                    console.error('Failed to copy:', copyErr);
+                  }
+                }
+              };
 
               return (
                 <article key={post.id} className={`bg-white dark:bg-gray-800 rounded-2xl shadow-sm border overflow-hidden transition-shadow duration-200 ${
@@ -84,9 +175,9 @@ export default function Feed() {
                   <div className="p-6">
                     <div className={`flex justify-between items-start mb-4 ${isRTL ? 'flex-row-reverse' : ''}`}>
                       <div className={`flex gap-3 items-center ${isRTL ? 'flex-row-reverse' : ''}`}>
-                        <img src={post.avatar} alt={post.author} className="w-12 h-12 rounded-full object-cover ring-2 ring-gray-100 dark:ring-gray-700" />
+                        <img src={isMyPost ? (user?.avatar || post.avatar) : post.avatar} alt={isMyPost ? (user?.name || post.author) : post.author} className="w-12 h-12 rounded-full object-cover ring-2 ring-gray-100 dark:ring-gray-700" />
                         <div>
-                          <h3 className="font-bold text-gray-900 dark:text-white">{post.author}</h3>
+                          <h3 className="font-bold text-gray-900 dark:text-white">{isMyPost ? (user?.name || post.author) : post.author}</h3>
                           <div className={`flex items-center gap-2 text-xs text-gray-500 dark:text-gray-400 mt-0.5 ${isRTL ? 'flex-row-reverse' : ''}`}>
                             <Clock size={12} />
                             <span>{formatTime(post.timestamp)}</span>
@@ -114,9 +205,37 @@ export default function Feed() {
                           )}
                         </div>
                       )}
-                      <button className={`text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300 p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors ${isRTL ? 'order-first' : ''}`}>
-                        <MoreHorizontal size={20} />
-                      </button>
+                      {isMyPost && (
+                        <div className={`relative ${isRTL ? 'order-first' : ''}`} ref={el => menuRefs.current[post.id] = el}>
+                          <button 
+                            onClick={() => setOpenMenuId(openMenuId === post.id ? null : post.id)}
+                            className="text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300 p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"
+                          >
+                            <MoreHorizontal size={20} />
+                          </button>
+                          {openMenuId === post.id && (
+                            <div className={`absolute ${isRTL ? 'left-0' : 'right-0'} top-8 z-50 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg py-1 min-w-[120px]`}>
+                              <button
+                                onClick={() => {
+                                  navigate(`/post/${post.id}?edit=true`);
+                                  setOpenMenuId(null);
+                                }}
+                                className="w-full px-4 py-2 text-left text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 flex items-center gap-2"
+                              >
+                                <Edit size={16} />
+                                Edit
+                              </button>
+                              <button
+                                onClick={() => handleDeletePost(post.id)}
+                                className="w-full px-4 py-2 text-left text-sm text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 flex items-center gap-2"
+                              >
+                                <Trash2 size={16} />
+                                Delete
+                              </button>
+                            </div>
+                          )}
+                        </div>
+                      )}
                     </div>
                     
                     <Link to={`/post/${post.id}`} className="block group mb-4">
@@ -127,6 +246,26 @@ export default function Feed() {
                         {post.description}
                       </p>
                     </Link>
+                    
+                    {/* Display Images */}
+                    {post.photos && post.photos.length > 0 && (
+                      <div className="mb-4 grid grid-cols-2 md:grid-cols-3 gap-2">
+                        {post.photos.slice(0, 3).map((photo, index) => (
+                          <div key={index} className="relative aspect-video overflow-hidden rounded-lg">
+                            <img
+                              src={photo}
+                              alt={`Post image ${index + 1}`}
+                              className="w-full h-full object-cover"
+                            />
+                          </div>
+                        ))}
+                        {post.photos.length > 3 && (
+                          <div className="relative aspect-video overflow-hidden rounded-lg bg-gray-200 dark:bg-gray-700 flex items-center justify-center">
+                            <span className="text-gray-600 dark:text-gray-400 font-semibold">+{post.photos.length - 3}</span>
+                          </div>
+                        )}
+                      </div>
+                    )}
                     
                     <div className={`flex items-center gap-4 mb-4 ${isRTL ? 'flex-row-reverse' : ''}`}>
                       {post.location && (
@@ -140,15 +279,21 @@ export default function Feed() {
 
                     <div className={`flex items-center justify-between pt-4 border-t border-gray-100 dark:border-gray-700 ${isRTL ? 'flex-row-reverse' : ''}`}>
                       <div className={`flex gap-6 ${isRTL ? 'flex-row-reverse' : ''}`}>
-                        <button className={`flex items-center gap-2 text-gray-500 dark:text-gray-400 hover:text-red-500 dark:hover:text-red-400 transition-colors group ${isRTL ? 'flex-row-reverse' : ''}`}>
-                          <Heart size={20} className="group-hover:fill-current" />
-                          <span className="text-sm font-medium">{post.likes}</span>
+                        <button 
+                          onClick={handleLike}
+                          className={`flex items-center gap-2 ${isLiked ? 'text-red-500 dark:text-red-400' : 'text-gray-500 dark:text-gray-400'} hover:text-red-500 dark:hover:text-red-400 transition-colors group ${isRTL ? 'flex-row-reverse' : ''}`}
+                        >
+                          <Heart size={20} className={isLiked ? 'fill-red-500 text-red-500' : 'group-hover:fill-current'} />
+                          <span className="text-sm font-medium">{likeCount}</span>
                         </button>
                         <Link to={`/post/${post.id}`} className={`flex items-center gap-2 text-gray-500 dark:text-gray-400 hover:text-blue-500 dark:hover:text-blue-400 transition-colors ${isRTL ? 'flex-row-reverse' : ''}`}>
                           <MessageCircle size={20} />
-                          <span className="text-sm font-medium">{post.comments}</span>
+                          <span className="text-sm font-medium">{post.comments || 0}</span>
                         </Link>
-                        <button className={`flex items-center gap-2 text-gray-500 dark:text-gray-400 hover:text-green-500 dark:hover:text-green-400 transition-colors ${isRTL ? 'flex-row-reverse' : ''}`}>
+                        <button 
+                          onClick={handleShare}
+                          className={`flex items-center gap-2 text-gray-500 dark:text-gray-400 hover:text-green-500 dark:hover:text-green-400 transition-colors ${isRTL ? 'flex-row-reverse' : ''}`}
+                        >
                           <Share2 size={20} />
                         </button>
                       </div>

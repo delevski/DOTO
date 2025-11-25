@@ -85,7 +85,7 @@ export default function Layout() {
         </header>
 
         {/* Page Content */}
-        <main className="flex-1 overflow-hidden bg-gray-50 dark:bg-gray-900">
+        <main className="flex-1 overflow-y-auto bg-gray-50 dark:bg-gray-900">
           <Outlet />
         </main>
       </div>
