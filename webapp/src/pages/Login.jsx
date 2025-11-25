@@ -1,7 +1,9 @@
-import React, { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import React, { useState, useEffect, useRef } from 'react';
+import { useNavigate, Link } from 'react-router-dom';
 import { useAuthStore } from '../store/useStore';
 import { useSettingsStore } from '../store/settingsStore';
+import { db } from '../lib/instant';
+import { id } from '@instantdb/react';
 
 export default function Login() {
   const navigate = useNavigate();
@@ -9,6 +11,12 @@ export default function Login() {
   const { language } = useSettingsStore();
   const isRTL = language === 'he';
   const [phone, setPhone] = useState('');
+  const [email, setEmail] = useState('');
+  const [verificationCode, setVerificationCode] = useState(['', '', '', '', '', '']);
+  const [showVerification, setShowVerification] = useState(false);
+  const [isNewUser, setIsNewUser] = useState(false);
+  const [error, setError] = useState('');
+  const inputRefs = useRef([]);
 
   useEffect(() => {
     // Initialize settings on mount
@@ -16,17 +24,81 @@ export default function Login() {
     settingsStore.initSettings();
   }, []);
 
-  const handleSubmit = (e) => {
+  // Generate a 6-digit verification code (in production, send via email)
+  const generateVerificationCode = () => {
+    return Math.floor(100000 + Math.random() * 900000).toString();
+  };
+
+  const handlePhoneSubmit = async (e) => {
     e.preventDefault();
-    // In a real app, you'd validate and authenticate here
-    // For now, we'll just log in with the default user
-    login(useAuthStore.getState().user || {
-      id: 'user-1',
-      name: 'John Doe',
-      avatar: 'https://i.pravatar.cc/150?u=user',
-      rating: 4.9
-    });
-    navigate('/feed');
+    setError('');
+
+    if (!phone.trim()) {
+      setError('Please enter your phone number');
+      return;
+    }
+
+    if (!email.trim()) {
+      setError('Please enter your email address');
+      return;
+    }
+
+    // Validate email format
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(email.trim())) {
+      setError('Please enter a valid email address');
+      return;
+    }
+
+    // Generate verification code
+    const verificationCode = generateVerificationCode();
+    
+    // Store verification code temporarily (in production, send via email)
+    sessionStorage.setItem('verification_code', verificationCode);
+    sessionStorage.setItem('phone', phone.trim());
+    sessionStorage.setItem('email', email.trim());
+    
+    // Check if user exists in InstantDB (we'll check this after verification)
+    // For now, assume new user - will be checked after code verification
+    setIsNewUser(true); // Default to new user, will be updated after verification
+    
+    setShowVerification(true);
+  };
+
+  const handleCodeChange = (index, value) => {
+    if (value.length > 1) return; // Only allow single digit
+    
+    const newCode = [...verificationCode];
+    newCode[index] = value;
+    setVerificationCode(newCode);
+
+    // Auto-focus next input
+    if (value && index < 5) {
+      inputRefs.current[index + 1]?.focus();
+    }
+  };
+
+  const handleCodeKeyDown = (index, e) => {
+    if (e.key === 'Backspace' && !verificationCode[index] && index > 0) {
+      inputRefs.current[index - 1]?.focus();
+    }
+  };
+
+  const handleVerifyCode = async (e) => {
+    e.preventDefault();
+    setError('');
+
+    const enteredCode = verificationCode.join('');
+    const storedCode = sessionStorage.getItem('verification_code');
+
+    if (enteredCode !== storedCode) {
+      setError('Invalid verification code. Please try again.');
+      return;
+    }
+
+    // After verification, always go to register
+    // Register page will check if user exists and update or create accordingly
+    navigate('/register');
   };
   return (
     <div className={`min-h-screen flex ${isRTL ? 'flex-row-reverse' : ''}`}>
@@ -67,28 +139,118 @@ export default function Login() {
           </div>
 
           <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-xl border border-gray-100 dark:border-gray-700 p-8">
-            <h2 className="text-2xl font-bold text-gray-900 dark:text-white mb-2">Welcome back</h2>
-            <p className="text-gray-500 dark:text-gray-400 mb-8">Sign in to continue helping your community</p>
+            {!showVerification ? (
+              <>
+                <h2 className="text-2xl font-bold text-gray-900 dark:text-white mb-2">Welcome back</h2>
+                <p className="text-gray-500 dark:text-gray-400 mb-8">Sign in to continue helping your community</p>
 
-            <form onSubmit={handleSubmit} className="space-y-5">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Phone Number</label>
-                <input 
-                  type="tel" 
-                  placeholder="+1 (555) 000-0000" 
-                  value={phone}
-                  onChange={(e) => setPhone(e.target.value)}
-                  className="w-full bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 text-gray-900 dark:text-white p-3.5 rounded-xl focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent transition-all"
-                />
-              </div>
-              
-              <button 
-                type="submit" 
-                className="w-full bg-gradient-to-r from-red-600 to-rose-500 text-white font-semibold py-3.5 rounded-xl shadow-lg shadow-red-200 hover:shadow-xl hover:scale-[1.02] transition-all duration-200"
-              >
-                Continue
-              </button>
-            </form>
+                {error && (
+                  <div className="mb-4 p-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 text-red-700 dark:text-red-400 rounded-xl text-sm">
+                    {error}
+                  </div>
+                )}
+
+                <form onSubmit={handlePhoneSubmit} className="space-y-5">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Phone Number</label>
+                    <input 
+                      type="tel" 
+                      placeholder="+1 (555) 000-0000" 
+                      value={phone}
+                      onChange={(e) => setPhone(e.target.value)}
+                      className="w-full bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 text-gray-900 dark:text-white p-3.5 rounded-xl focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent transition-all"
+                      required
+                    />
+                  </div>
+                  
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Email Address</label>
+                    <input 
+                      type="email" 
+                      placeholder="your.email@example.com" 
+                      value={email}
+                      onChange={(e) => setEmail(e.target.value)}
+                      className="w-full bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 text-gray-900 dark:text-white p-3.5 rounded-xl focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent transition-all"
+                      required
+                    />
+                    <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                      We'll send the verification code to this email
+                    </p>
+                  </div>
+                  
+                  <button 
+                    type="submit" 
+                    className="w-full bg-gradient-to-r from-red-600 to-rose-500 text-white font-semibold py-3.5 rounded-xl shadow-lg shadow-red-200 hover:shadow-xl hover:scale-[1.02] transition-all duration-200"
+                  >
+                    Send Verification Code
+                  </button>
+                </form>
+              </>
+            ) : (
+              <>
+                <button
+                  onClick={() => {
+                    setShowVerification(false);
+                    setVerificationCode(['', '', '', '', '', '']);
+                    setError('');
+                  }}
+                  className={`mb-4 flex items-center gap-2 text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white transition-colors ${isRTL ? 'flex-row-reverse' : ''}`}
+                >
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+                  </svg>
+                  Back
+                </button>
+
+                <h2 className="text-2xl font-bold text-gray-900 dark:text-white mb-2">Enter Verification Code</h2>
+                <p className="text-gray-500 dark:text-gray-400 mb-8">
+                  We sent a 6-digit code to <span className="font-semibold text-gray-900 dark:text-white">{email}</span>. Please check your email and enter it below.
+                </p>
+
+                {error && (
+                  <div className="mb-4 p-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 text-red-700 dark:text-red-400 rounded-xl text-sm">
+                    {error}
+                  </div>
+                )}
+
+                <form onSubmit={handleVerifyCode} className="space-y-6">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-4 text-center">
+                      Verification Code
+                    </label>
+                    <div className={`flex gap-2 justify-center ${isRTL ? 'flex-row-reverse' : ''}`}>
+                      {verificationCode.map((digit, index) => (
+                        <input
+                          key={index}
+                          ref={(el) => (inputRefs.current[index] = el)}
+                          type="text"
+                          inputMode="numeric"
+                          maxLength={1}
+                          value={digit}
+                          onChange={(e) => handleCodeChange(index, e.target.value)}
+                          onKeyDown={(e) => handleCodeKeyDown(index, e)}
+                          className="w-12 h-14 text-center text-2xl font-bold bg-gray-50 dark:bg-gray-700 border-2 border-gray-200 dark:border-gray-600 text-gray-900 dark:text-white rounded-xl focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-red-500 transition-all"
+                        />
+                      ))}
+                    </div>
+                    <p className="text-xs text-gray-500 dark:text-gray-400 mt-4 text-center">
+                      Verification code sent to: <span className="font-semibold">{email}</span>
+                    </p>
+                    <p className="text-xs text-gray-400 dark:text-gray-500 mt-2 text-center">
+                      Demo code: {sessionStorage.getItem('verification_code')} (Remove in production)
+                    </p>
+                  </div>
+                  
+                  <button 
+                    type="submit" 
+                    disabled={verificationCode.join('').length !== 6}
+                    className="w-full bg-gradient-to-r from-red-600 to-rose-500 text-white font-semibold py-3.5 rounded-xl shadow-lg shadow-red-200 hover:shadow-xl hover:scale-[1.02] transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100"
+                  >
+                    Verify Code
+                  </button>
+                </form>
+              </>
+            )}
 
             <div className="mt-6">
               <div className="relative">
@@ -120,9 +282,11 @@ export default function Login() {
             </div>
           </div>
 
-          <p className="mt-6 text-center text-sm text-gray-500 dark:text-gray-400">
-            Don't have an account? <a href="#" className="text-red-600 dark:text-red-400 font-semibold hover:text-red-700 dark:hover:text-red-500">Sign up</a>
-          </p>
+          {!showVerification && (
+            <p className="mt-6 text-center text-sm text-gray-500 dark:text-gray-400">
+              Don't have an account? <Link to="/register" className="text-red-600 dark:text-red-400 font-semibold hover:text-red-700 dark:hover:text-red-500">Sign up</Link>
+            </p>
+          )}
         </div>
       </div>
     </div>

@@ -6,10 +6,15 @@ import { useSettingsStore } from '../store/settingsStore';
 import { useTranslation } from '../utils/translations';
 
 export default function Profile() {
-  const { user } = useAuthStore();
+  const { user, logout } = useAuthStore();
   const { language } = useSettingsStore();
   const t = useTranslation();
   const isRTL = language === 'he';
+
+  const handleLogout = () => {
+    logout();
+    window.location.href = '/login';
+  };
   return (
     <div className={`max-w-5xl mx-auto px-6 py-8 ${isRTL ? 'rtl' : ''}`}>
       {/* Header */}
@@ -121,7 +126,10 @@ export default function Profile() {
                 <SettingsIcon size={20} className="text-gray-500" />
                 <span className="font-medium">{t('settings')}</span>
               </Link>
-              <button className={`w-full text-left px-4 py-3 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-xl transition-colors flex items-center gap-3 text-red-600 dark:text-red-400 ${isRTL ? 'flex-row-reverse text-right' : ''}`}>
+              <button 
+                onClick={handleLogout}
+                className={`w-full text-left px-4 py-3 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-xl transition-colors flex items-center gap-3 text-red-600 dark:text-red-400 ${isRTL ? 'flex-row-reverse text-right' : ''}`}
+              >
                 <LogOut size={20} />
                 <span className="font-medium">Log Out</span>
               </button>

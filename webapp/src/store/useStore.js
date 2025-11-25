@@ -19,7 +19,12 @@ export const useAuthStore = create(
       user: CURRENT_USER,
       isAuthenticated: true,
       login: (user) => set({ user, isAuthenticated: true }),
-      logout: () => set({ user: null, isAuthenticated: false }),
+      logout: () => {
+        // Clear session storage (verification codes, etc.)
+        sessionStorage.clear();
+        // Clear auth state
+        set({ user: null, isAuthenticated: false });
+      },
       updateProfile: (updates) => set((state) => ({
         user: { ...state.user, ...updates }
       })),

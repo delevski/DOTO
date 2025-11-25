@@ -249,19 +249,87 @@ export default function Feed() {
                     
                     {/* Display Images */}
                     {post.photos && post.photos.length > 0 && (
-                      <div className="mb-4 grid grid-cols-2 md:grid-cols-3 gap-2">
-                        {post.photos.slice(0, 3).map((photo, index) => (
-                          <div key={index} className="relative aspect-video overflow-hidden rounded-lg">
+                      <div className="mb-4">
+                        {post.photos.length === 1 ? (
+                          // Single image - full width
+                          <div className="relative w-full aspect-video overflow-hidden rounded-xl bg-gray-100 dark:bg-gray-700">
                             <img
-                              src={photo}
-                              alt={`Post image ${index + 1}`}
-                              className="w-full h-full object-cover"
+                              src={typeof post.photos[0] === 'string' ? post.photos[0] : (post.photos[0].preview || post.photos[0])}
+                              alt={`Post image`}
+                              className="w-full h-full object-cover cursor-pointer hover:scale-105 transition-transform duration-300"
+                              onClick={(e) => {
+                                e.preventDefault();
+                                navigate(`/post/${post.id}`);
+                              }}
                             />
                           </div>
-                        ))}
-                        {post.photos.length > 3 && (
-                          <div className="relative aspect-video overflow-hidden rounded-lg bg-gray-200 dark:bg-gray-700 flex items-center justify-center">
-                            <span className="text-gray-600 dark:text-gray-400 font-semibold">+{post.photos.length - 3}</span>
+                        ) : post.photos.length === 2 ? (
+                          // Two images - side by side
+                          <div className="grid grid-cols-2 gap-2">
+                            {post.photos.map((photo, index) => (
+                              <div key={index} className="relative aspect-video overflow-hidden rounded-xl bg-gray-100 dark:bg-gray-700">
+                                <img
+                                  src={typeof photo === 'string' ? photo : (photo.preview || photo)}
+                                  alt={`Post image ${index + 1}`}
+                                  className="w-full h-full object-cover cursor-pointer hover:scale-105 transition-transform duration-300"
+                                  onClick={(e) => {
+                                    e.preventDefault();
+                                    navigate(`/post/${post.id}`);
+                                  }}
+                                />
+                              </div>
+                            ))}
+                          </div>
+                        ) : (
+                          // Three or more images - grid with overlay
+                          <div className="grid grid-cols-2 gap-2">
+                            <div className="relative aspect-video overflow-hidden rounded-xl bg-gray-100 dark:bg-gray-700 row-span-2">
+                              <img
+                                src={typeof post.photos[0] === 'string' ? post.photos[0] : (post.photos[0].preview || post.photos[0])}
+                                alt={`Post image 1`}
+                                className="w-full h-full object-cover cursor-pointer hover:scale-105 transition-transform duration-300"
+                                onClick={(e) => {
+                                  e.preventDefault();
+                                  navigate(`/post/${post.id}`);
+                                }}
+                              />
+                            </div>
+                            <div className="relative aspect-video overflow-hidden rounded-xl bg-gray-100 dark:bg-gray-700">
+                              <img
+                                src={typeof post.photos[1] === 'string' ? post.photos[1] : (post.photos[1].preview || post.photos[1])}
+                                alt={`Post image 2`}
+                                className="w-full h-full object-cover cursor-pointer hover:scale-105 transition-transform duration-300"
+                                onClick={(e) => {
+                                  e.preventDefault();
+                                  navigate(`/post/${post.id}`);
+                                }}
+                              />
+                            </div>
+                            <div className="relative aspect-video overflow-hidden rounded-xl bg-gray-100 dark:bg-gray-700">
+                              {post.photos.length > 2 ? (
+                                <>
+                                  <img
+                                    src={typeof post.photos[2] === 'string' ? post.photos[2] : (post.photos[2].preview || post.photos[2])}
+                                    alt={`Post image 3`}
+                                    className="w-full h-full object-cover cursor-pointer hover:scale-105 transition-transform duration-300"
+                                    onClick={(e) => {
+                                      e.preventDefault();
+                                      navigate(`/post/${post.id}`);
+                                    }}
+                                  />
+                                  {post.photos.length > 3 && (
+                                    <div className="absolute inset-0 bg-black/50 flex items-center justify-center cursor-pointer hover:bg-black/60 transition-colors"
+                                      onClick={(e) => {
+                                        e.preventDefault();
+                                        navigate(`/post/${post.id}`);
+                                      }}
+                                    >
+                                      <span className="text-white font-bold text-lg">+{post.photos.length - 3}</span>
+                                    </div>
+                                  )}
+                                </>
+                              ) : null}
+                            </div>
                           </div>
                         )}
                       </div>

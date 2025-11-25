@@ -1,16 +1,25 @@
 import React, { useState } from 'react';
-import { Outlet, NavLink, useLocation, Link } from 'react-router-dom';
-import { Map, Home, MessageCircle, User, Menu, Plus, X, Shield, HelpCircle, Settings as SettingsIcon, Bell, Search, TrendingUp } from 'lucide-react';
+import { Outlet, NavLink, useLocation, Link, useNavigate } from 'react-router-dom';
+import { Map, Home, MessageCircle, User, Menu, Plus, X, Shield, HelpCircle, Settings as SettingsIcon, Bell, Search, TrendingUp, LogOut } from 'lucide-react';
 import { useSettingsStore } from '../store/settingsStore';
+import { useAuthStore } from '../store/useStore';
 import { useTranslation } from '../utils/translations';
 
 export default function Layout() {
   const location = useLocation();
+  const navigate = useNavigate();
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
+  const [showProfileMenu, setShowProfileMenu] = useState(false);
   const { darkMode } = useSettingsStore();
   const { language } = useSettingsStore();
+  const { user, logout } = useAuthStore();
   const t = useTranslation();
   const isRTL = language === 'he';
+
+  const handleLogout = () => {
+    logout();
+    navigate('/login');
+  };
 
   return (
     <div className="flex h-screen bg-gray-50 dark:bg-gray-900 overflow-hidden">
@@ -77,11 +86,54 @@ export default function Layout() {
               <Bell size={22} className="text-gray-600 dark:text-gray-300" />
               <span className={`absolute top-1.5 ${isRTL ? 'left' : 'right'}-1.5 w-2 h-2 bg-red-500 rounded-full border-2 border-white dark:border-gray-800`}></span>
             </button>
-            <Link to="/profile" className="flex items-center gap-3 hover:bg-gray-50 dark:hover:bg-gray-700 rounded-lg px-3 py-2 transition-colors">
-              <img src="https://i.pravatar.cc/150?u=user" alt="Profile" className="w-8 h-8 rounded-full ring-2 ring-gray-200 dark:ring-gray-700" />
-              {isSidebarOpen && <span className="text-sm font-medium text-gray-700 dark:text-gray-300">John Doe</span>}
-            </Link>
+            <div className="relative">
+              <button 
+                onClick={() => setShowProfileMenu(!showProfileMenu)}
+                className="flex items-center gap-3 hover:bg-gray-50 dark:hover:bg-gray-700 rounded-lg px-3 py-2 transition-colors"
+              >
+                <img src={user?.avatar || 'https://i.pravatar.cc/150?u=user'} alt="Profile" className="w-8 h-8 rounded-full ring-2 ring-gray-200 dark:ring-gray-700" />
+                {isSidebarOpen && <span className="text-sm font-medium text-gray-700 dark:text-gray-300">{user?.name || 'User'}</span>}
+              </button>
+              
+              {showProfileMenu && (
+                <div className={`absolute ${isRTL ? 'left-0' : 'right-0'} top-full mt-2 w-48 bg-white dark:bg-gray-800 rounded-xl shadow-lg border border-gray-200 dark:border-gray-700 overflow-hidden z-50`}>
+                  <Link 
+                    to="/profile" 
+                    onClick={() => setShowProfileMenu(false)}
+                    className={`block px-4 py-3 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors text-sm text-gray-700 dark:text-gray-300 ${isRTL ? 'text-right' : ''}`}
+                  >
+                    {t('profile')}
+                  </Link>
+                  <Link 
+                    to="/settings" 
+                    onClick={() => setShowProfileMenu(false)}
+                    className={`block px-4 py-3 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors text-sm text-gray-700 dark:text-gray-300 ${isRTL ? 'text-right' : ''}`}
+                  >
+                    {t('settings')}
+                  </Link>
+                  <div className="border-t border-gray-200 dark:border-gray-700"></div>
+                  <button 
+                    onClick={() => {
+                      handleLogout();
+                      setShowProfileMenu(false);
+                    }}
+                    className={`w-full text-left px-4 py-3 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors text-sm text-red-600 dark:text-red-400 flex items-center gap-2 ${isRTL ? 'flex-row-reverse text-right' : ''}`}
+                  >
+                    <LogOut size={16} />
+                    Log Out
+                  </button>
+                </div>
+              )}
+            </div>
           </div>
+          
+          {/* Click outside to close menu */}
+          {showProfileMenu && (
+            <div 
+              className="fixed inset-0 z-40" 
+              onClick={() => setShowProfileMenu(false)}
+            ></div>
+          )}
         </header>
 
         {/* Page Content */}
