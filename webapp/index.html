@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/vite.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <title>D.O.T.O</title>
+    <script>
+      // Apply dark mode immediately before React loads to prevent flash
+      (function() {
+        try {
+          const stored = localStorage.getItem('settings-storage');
+          if (stored) {
+            const parsed = JSON.parse(stored);
+            if (parsed.state?.darkMode) {
+              document.documentElement.classList.add('dark');
+            }
+            if (parsed.state?.language === 'he') {
+              document.documentElement.setAttribute('dir', 'rtl');
+            }
+          }
+        } catch (e) {
+          // Ignore errors
+        }
+      })();
+    </script>
+  </head>
+  <body class="bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-white font-sans antialiased">
+    <div id="root"></div>
+    <script type="module" src="/src/main.jsx"></script>
+  </body>
+</html>
