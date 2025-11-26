@@ -240,6 +240,7 @@ export default function MapView() {
   const [isSearching, setIsSearching] = useState(false);
   const [postCoordinates, setPostCoordinates] = useState({});
   const [isLoadingMarkers, setIsLoadingMarkers] = useState(false);
+  const [markerProgress, setMarkerProgress] = useState({ current: 0, total: 0 });
   const [markerAddresses, setMarkerAddresses] = useState({}); // Cache addresses by post ID
   const searchTimeoutRef = useRef(null);
   const searchInputRef = useRef(null);
@@ -256,7 +257,14 @@ export default function MapView() {
       const coords = {};
       const addresses = {};
       
-      for (const post of posts) {
+      // Filter posts that need geocoding
+      const postsToGeocode = posts.filter(post => post.location && !coords[post.id]);
+      const total = postsToGeocode.length;
+      setMarkerProgress({ current: 0, total });
+      
+      let processed = 0;
+      
+      for (const post of postsToGeocode) {
         if (post.location && !coords[post.id]) {
           const geocoded = await geocodeLocation(post.location);
           if (geocoded) {
@@ -267,18 +275,22 @@ export default function MapView() {
               addresses[post.id] = address;
             }
           }
+          processed++;
+          setMarkerProgress({ current: processed, total });
         }
       }
       
       setPostCoordinates(coords);
       setMarkerAddresses(addresses);
       setIsLoadingMarkers(false);
+      setMarkerProgress({ current: 0, total: 0 });
     };
     
     if (posts.length > 0) {
       geocodePosts();
     } else {
       setIsLoadingMarkers(false);
+      setMarkerProgress({ current: 0, total: 0 });
     }
   }, [posts]);
 
@@ -438,16 +450,25 @@ export default function MapView() {
       <div className="flex-1 relative" style={{ minHeight: 0 }}>
         {/* Loading Indicator for Markers - Non-blocking, positioned in corner */}
         {isLoadingMarkers && (
-          <div className="absolute top-4 right-4 z-[1000] pointer-events-none">
-            <div className="bg-white dark:bg-gray-800 rounded-xl shadow-lg border border-gray-200 dark:border-gray-700 p-4 flex items-center gap-3">
-              <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-red-600"></div>
-              <div>
-                <p className="text-sm font-semibold text-gray-900 dark:text-white">
-                  {t('loadingMarkers') || 'Loading Markers'}
-                </p>
-                <p className="text-xs text-gray-500 dark:text-gray-400">
-                  {t('geocodingLocations') || 'Geocoding locations...'}
-                </p>
+          <div className="absolute top-4 right-4 z-[1000] pointer-events-none animate-fade-in">
+            <div className="bg-white dark:bg-gray-800 rounded-xl shadow-xl border border-gray-200 dark:border-gray-700 p-4 min-w-[280px] backdrop-blur-sm bg-opacity-95 dark:bg-opacity-95">
+              <div className="flex items-start gap-3">
+                <div className="relative flex-shrink-0 mt-0.5">
+                  <div className="animate-spin rounded-full h-7 w-7 border-2 border-red-100 dark:border-red-900 border-t-red-600 dark:border-t-red-400"></div>
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-semibold text-gray-900 dark:text-white mb-2">
+                    {t('loadingMarkers') || 'Preparing Map Locations'}
+                  </p>
+                  {markerProgress.total > 0 && (
+                    <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-1.5 overflow-hidden">
+                      <div 
+                        className="bg-red-600 dark:bg-red-400 h-full rounded-full transition-all duration-300 ease-out"
+                        style={{ width: `${(markerProgress.current / markerProgress.total) * 100}%` }}
+                      ></div>
+                    </div>
+                  )}
+                </div>
               </div>
             </div>
           </div>

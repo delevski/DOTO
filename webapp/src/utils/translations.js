@@ -81,6 +81,13 @@ export const translations = {
     orContinueWith: 'Or continue with',
     facebook: 'Facebook',
     google: 'Google',
+    password: 'Password',
+    confirmPassword: 'Confirm Password',
+    passwordHelper: 'Use at least 8 characters.',
+    confirmPasswordHelper: 'Re-enter your password to confirm.',
+    optionalChangePassword: 'Leave blank to keep your current password.',
+    logIn: 'Log In',
+    verificationCodeAfterLogin: 'After you sign in, we will email you a 6-digit code.',
     dontHaveAccount: "Don't have an account?",
     signUp: 'Sign up',
     continue: 'Continue',
@@ -147,6 +154,8 @@ export const translations = {
     clickToUpload: 'Click to upload or drag and drop',
     pngJpgUpTo10MB: 'PNG, JPG up to 10MB',
     publishing: 'Publishing...',
+    loading: 'Loading...',
+    gettingAddress: 'Getting address...',
     
     // Profile
     verified: 'Verified',
@@ -167,6 +176,9 @@ export const translations = {
     
     // Map
     loadingMap: 'Loading map...',
+    loadingMarkers: 'Preparing Map Locations',
+    geocodingLocations: 'Finding locations on map...',
+    processingLocations: 'Processing {current} of {total} locations',
     post: 'post',
     posts: 'posts',
     noPostsFound: 'No posts found',
@@ -177,6 +189,17 @@ export const translations = {
     
     // Messages
     connectWithCommunity: 'Connect with your community',
+    sendMessage: 'Send Message',
+    typeMessage: 'Type a message...',
+    noConversations: 'No conversations yet. Start chatting with someone!',
+    noMessages: 'No messages yet. Start the conversation!',
+    selectConversation: 'Select a conversation to start chatting',
+    message: 'Message',
+    send: 'Send',
+    uploadImage: 'Upload Image',
+    image: 'Image',
+    newMessage: 'New Message',
+    conversationWith: 'Conversation with',
     
     // Error messages
     pleaseEnterPhoneNumber: 'Please enter your phone number',
@@ -194,6 +217,15 @@ export const translations = {
     pleaseEnterDescription: 'Please enter a description',
     unableToGetLocation: 'Unable to get your current location. Please enter it manually.',
     geolocationNotSupported: 'Geolocation is not supported by your browser.',
+    pleaseEnterPassword: 'Please enter a password',
+    passwordRequirements: 'Password must be at least 8 characters long.',
+    passwordsMustMatch: 'Passwords do not match.',
+    accountNotFound: 'No account found with that email.',
+    socialLoginOnly: 'This account uses social login. Please sign in with Google or Facebook.',
+    incorrectPassword: 'Incorrect password. Please try again.',
+    verificationSessionExpired: 'Your verification session expired. Please try again.',
+    failedToVerifyCode: 'Failed to verify code. Please try again.',
+    failedToLogin: 'Failed to log in. Please try again.',
   },
   he: {
     // Navigation
@@ -274,6 +306,13 @@ export const translations = {
     orContinueWith: 'או המשך עם',
     facebook: 'פייסבוק',
     google: 'גוגל',
+    password: 'סיסמה',
+    confirmPassword: 'אשר סיסמה',
+    passwordHelper: 'השתמש בלפחות 8 תווים.',
+    confirmPasswordHelper: 'הקלד שוב את הסיסמה לאישור.',
+    optionalChangePassword: 'השאר ריק כדי לשמור על הסיסמה הנוכחית שלך.',
+    logIn: 'התחבר',
+    verificationCodeAfterLogin: 'לאחר ההתחברות נשלח קוד בן 6 ספרות לאימייל שלך.',
     dontHaveAccount: 'אין לך חשבון?',
     signUp: 'הירשם',
     continue: 'המשך',
@@ -340,6 +379,8 @@ export const translations = {
     clickToUpload: 'לחץ להעלאה או גרור ושחרר',
     pngJpgUpTo10MB: 'PNG, JPG עד 10MB',
     publishing: 'מפרסם...',
+    loading: 'טוען...',
+    gettingAddress: 'מביא כתובת...',
     
     // Profile
     verified: 'מאומת',
@@ -360,6 +401,9 @@ export const translations = {
     
     // Map
     loadingMap: 'טוען מפה...',
+    loadingMarkers: 'מכין מיקומי מפה',
+    geocodingLocations: 'מוצא מיקומים במפה...',
+    processingLocations: 'מעבד {current} מתוך {total} מיקומים',
     post: 'פוסט',
     posts: 'פוסטים',
     noPostsFound: 'לא נמצאו פוסטים',
@@ -367,6 +411,20 @@ export const translations = {
     locationNotSpecified: 'מיקום לא צוין',
     viewDetails: 'צפה בפרטים →',
     searching: 'מחפש...',
+    
+    // Messages
+    connectWithCommunity: 'התחבר לקהילה שלך',
+    sendMessage: 'שלח הודעה',
+    typeMessage: 'הקלד הודעה...',
+    noConversations: 'אין שיחות עדיין. התחל לצ\'אט עם מישהו!',
+    noMessages: 'אין הודעות עדיין. התחל את השיחה!',
+    selectConversation: 'בחר שיחה כדי להתחיל לצ\'אט',
+    message: 'הודעה',
+    send: 'שלח',
+    uploadImage: 'העלה תמונה',
+    image: 'תמונה',
+    newMessage: 'הודעה חדשה',
+    conversationWith: 'שיחה עם',
     
     // Error messages
     pleaseEnterPhoneNumber: 'אנא הכנס את מספר הטלפון שלך',
@@ -384,6 +442,15 @@ export const translations = {
     pleaseEnterDescription: 'אנא הכנס תיאור',
     unableToGetLocation: 'לא ניתן לקבל את המיקום הנוכחי שלך. אנא הכנס אותו ידנית.',
     geolocationNotSupported: 'גיאולוקציה אינה נתמכת בדפדפן שלך.',
+    pleaseEnterPassword: 'אנא הזן סיסמה',
+    passwordRequirements: 'על הסיסמה להיות לפחות באורך 8 תווים.',
+    passwordsMustMatch: 'הסיסמאות אינן תואמות.',
+    accountNotFound: 'לא נמצא חשבון עם האימייל הזה.',
+    socialLoginOnly: 'חשבון זה מחובר באמצעות רשת חברתית. היכנס דרך Google או Facebook.',
+    incorrectPassword: 'הסיסמה שגויה. נסה שוב.',
+    verificationSessionExpired: 'פג תוקף תהליך האימות. אנא נסה שוב.',
+    failedToVerifyCode: 'האימות נכשל. אנא נסה שוב.',
+    failedToLogin: 'ההתחברות נכשלה. אנא נסה שוב.',
   }
 };
 

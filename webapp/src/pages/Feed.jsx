@@ -5,6 +5,7 @@ import { useAuthStore } from '../store/useStore';
 import { useSettingsStore } from '../store/settingsStore';
 import { useTranslation } from '../utils/translations';
 import { db } from '../lib/instant';
+import { getConversationId, createOrUpdateConversation } from '../utils/messaging';
 
 export default function Feed() {
   const { isLoading, error, data } = db.useQuery({ posts: {} });
@@ -269,10 +270,35 @@ export default function Feed() {
                 }`}>
                   <div className="p-6">
                     <div className={`flex justify-between items-start mb-4 ${isRTL ? 'flex-row-reverse' : ''}`}>
-                      <div className={`flex gap-3 items-center ${isRTL ? 'flex-row-reverse' : ''}`}>
-                        <img src={isMyPost ? (user?.avatar || post.avatar) : post.avatar} alt={isMyPost ? (user?.name || post.author) : post.author} className="w-12 h-12 rounded-full object-cover ring-2 ring-gray-100 dark:ring-gray-700" />
-                        <div>
-                          <h3 className="font-bold text-gray-900 dark:text-white">{isMyPost ? (user?.name || post.author) : post.author}</h3>
+                      <div className={`flex gap-3 items-center flex-1 min-w-0 ${isRTL ? 'flex-row-reverse' : ''}`}>
+                        <img src={isMyPost ? (user?.avatar || post.avatar) : post.avatar} alt={isMyPost ? (user?.name || post.author) : post.author} className="w-12 h-12 rounded-full object-cover ring-2 ring-gray-100 dark:ring-gray-700 flex-shrink-0" />
+                        <div className="flex-1 min-w-0">
+                          <div className={`flex items-center gap-2 ${isRTL ? 'flex-row-reverse' : ''}`}>
+                            <h3 className="font-bold text-gray-900 dark:text-white truncate">{isMyPost ? (user?.name || post.author) : post.author}</h3>
+                            {!isMyPost && user && (
+                              <button
+                                onClick={() => {
+                                  const conversationId = getConversationId(user.id, post.authorId);
+                                  const participant1Id = user.id < post.authorId ? user.id : post.authorId;
+                                  const participant2Id = user.id < post.authorId ? post.authorId : user.id;
+                                  
+                                  createOrUpdateConversation(
+                                    conversationId,
+                                    participant1Id,
+                                    participant2Id,
+                                    { name: user.name, avatar: user.avatar },
+                                    { name: post.author, avatar: post.avatar }
+                                  );
+                                  
+                                  navigate(`/messages?conversation=${conversationId}`);
+                                }}
+                                className="flex-shrink-0 p-1.5 text-gray-500 dark:text-gray-400 hover:text-red-600 dark:hover:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-colors"
+                                title={t('sendMessage')}
+                              >
+                                <MessageCircle size={16} />
+                              </button>
+                            )}
+                          </div>
                           <div className={`flex items-center gap-2 text-xs text-gray-500 dark:text-gray-400 mt-0.5 ${isRTL ? 'flex-row-reverse' : ''}`}>
                             <Clock size={12} />
                             <span>{formatTime(post.timestamp)}</span>

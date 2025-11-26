@@ -4,6 +4,7 @@ import { useAuthStore } from '../store/useStore';
 import { useSettingsStore } from '../store/settingsStore';
 import { useTranslation } from '../utils/translations';
 import { sendVerificationEmail, generateVerificationCode, isEmailJSConfigured } from '../utils/emailService';
+import { verifyPassword } from '../utils/password';
 import { db } from '../lib/instant';
 import { id } from '@instantdb/react';
 
@@ -13,14 +14,19 @@ export default function Login() {
   const { language } = useSettingsStore();
   const t = useTranslation();
   const isRTL = language === 'he';
-  const [phone, setPhone] = useState('');
   const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [showVerification, setShowVerification] = useState(false);
   const [verificationCode, setVerificationCode] = useState(['', '', '', '', '', '']);
-  const [isSending, setIsSending] = useState(false);
+  const [isAuthenticating, setIsAuthenticating] = useState(false);
+  const [isVerifying, setIsVerifying] = useState(false);
   const [isGoogleLoading, setIsGoogleLoading] = useState(false);
   const [googleUserEmail, setGoogleUserEmail] = useState(null);
+  const [isFacebookReady, setIsFacebookReady] = useState(false);
+  const [isFacebookLoading, setIsFacebookLoading] = useState(false);
+  const [verificationContext, setVerificationContext] = useState(null);
+  const facebookAppId = import.meta.env.VITE_FACEBOOK_APP_ID;
   const inputRefs = useRef([]);
   const googleButtonRef = useRef(null);
 
@@ -39,6 +45,22 @@ export default function Login() {
     // Initialize settings on mount
     const settingsStore = useSettingsStore.getState();
     settingsStore.initSettings();
+  }, []);
+
+  useEffect(() => {
+    const storedContext = sessionStorage.getItem('pending_login_context');
+    const storedCode = sessionStorage.getItem('verification_code');
+
+    if (storedContext && storedCode) {
+      try {
+        const parsedContext = JSON.parse(storedContext);
+        setVerificationContext(parsedContext);
+        setShowVerification(true);
+      } catch (err) {
+        console.error('Failed to parse pending login context:', err);
+        sessionStorage.removeItem('pending_login_context');
+      }
+    }
   }, []);
 
   useEffect(() => {
@@ -103,6 +125,134 @@ export default function Login() {
     }
   }, [googleUserEmail, existingGoogleUser]);
 
+  useEffect(() => {
+    if (typeof window === 'undefined') {
+      return;
+    }
+
+    if (!facebookAppId) {
+      console.warn('Facebook App ID not configured. Set VITE_FACEBOOK_APP_ID in your environment variables.');
+      return;
+    }
+
+    let isMounted = true;
+
+    const initializeFacebookSDK = () => {
+      try {
+        window.FB.init({
+          appId: facebookAppId,
+          cookie: true,
+          xfbml: false,
+          version: 'v19.0',
+        });
+
+        if (isMounted) {
+          setIsFacebookReady(true);
+        }
+      } catch (err) {
+        console.error('Error initializing Facebook SDK:', err);
+      }
+    };
+
+    if (window.FB) {
+      initializeFacebookSDK();
+    } else {
+      const previousFbAsyncInit = window.fbAsyncInit;
+      window.fbAsyncInit = () => {
+        if (typeof previousFbAsyncInit === 'function') {
+          previousFbAsyncInit();
+        }
+        initializeFacebookSDK();
+      };
+    }
+
+    return () => {
+      isMounted = false;
+    };
+  }, [facebookAppId]);
+
+  const sanitizeUserSnapshot = (user) => {
+    if (!user) return null;
+    const { passwordHash, ...safeUser } = user;
+    return safeUser;
+  };
+
+  const resetVerificationSession = () => {
+    sessionStorage.removeItem('verification_code');
+    sessionStorage.removeItem('pending_login_context');
+    sessionStorage.removeItem('pending_login_method');
+    setShowVerification(false);
+    setVerificationCode(['', '', '', '', '', '']);
+    setVerificationContext(null);
+  };
+
+  const startVerificationFlow = async ({ user, method }) => {
+    if (!user?.id || !user?.email) {
+      throw new Error('User data missing required fields for verification.');
+    }
+
+    const code = generateVerificationCode();
+    sessionStorage.setItem('verification_code', code);
+
+    const context = {
+      method,
+      userId: user.id,
+      email: user.email,
+      userSnapshot: sanitizeUserSnapshot(user),
+    };
+
+    sessionStorage.setItem('pending_login_context', JSON.stringify(context));
+    sessionStorage.setItem('pending_login_method', method);
+    setVerificationContext(context);
+    setVerificationCode(['', '', '', '', '', '']);
+    setShowVerification(true);
+
+    const emailSent = await sendVerificationEmail(user.email, code);
+
+    if (!emailSent) {
+      setError('Email could not be sent. Your verification code is displayed below.');
+    } else {
+      setError('');
+    }
+  };
+
+  const findUserByEmail = async (targetEmail) => {
+    if (!targetEmail) return null;
+    const trimmed = targetEmail.trim();
+    const normalized = trimmed.toLowerCase();
+
+    try {
+      const { data } = await db.query({
+        users: {
+          $: {
+            where: { emailLower: normalized }
+          }
+        }
+      });
+
+      const userByLower = data?.users?.[0];
+      if (userByLower) {
+        return userByLower;
+      }
+    } catch (err) {
+      console.error('Error querying user by emailLower:', err);
+    }
+
+    try {
+      const { data } = await db.query({
+        users: {
+          $: {
+            where: { email: trimmed }
+          }
+        }
+      });
+      return data?.users?.[0] || null;
+    } catch (err) {
+      console.error('Error querying user by email:', err);
+      throw err;
+    }
+  };
+
   const handleGoogleSignIn = async (response) => {
     setIsGoogleLoading(true);
     setError('');
@@ -147,6 +297,11 @@ export default function Login() {
 
     try {
       const googleUser = googleUserInfoRef.current;
+
+      if (!googleUser.email) {
+        throw new Error('Your Google account does not provide an email address. Please update your Google settings or use another login method.');
+      }
+
       let userId;
       let userData;
 
@@ -157,8 +312,10 @@ export default function Login() {
           ...existingGoogleUser,
           name: googleUser.name,
           email: googleUser.email,
+          emailLower: googleUser.email.toLowerCase(),
           avatar: googleUser.picture,
           updatedAt: Date.now(),
+          authProvider: existingGoogleUser.authProvider || 'google',
         };
       } else {
         // Create new user
@@ -167,10 +324,13 @@ export default function Login() {
           id: userId,
           name: googleUser.name,
           email: googleUser.email,
+          emailLower: googleUser.email.toLowerCase(),
           avatar: googleUser.picture,
           rating: 0,
           bio: '',
           createdAt: Date.now(),
+          authProvider: 'google',
+          passwordHash: null,
         };
       }
 
@@ -179,35 +339,127 @@ export default function Login() {
         db.tx.users[userId].update(userData)
       );
 
-      // Login the user
-      login(userData);
-
-      // Reset state
-      setGoogleUserEmail(null);
-      googleUserInfoRef.current = null;
-
-      // Navigate to feed
-      navigate('/feed');
+      await startVerificationFlow({ user: userData, method: 'google' });
     } catch (err) {
       console.error('Error creating/updating user:', err);
-      setError('Failed to sign in with Google. Please try again.');
+      setError(err.message || 'Failed to sign in with Google. Please try again.');
+    } finally {
       setIsGoogleLoading(false);
       setGoogleUserEmail(null);
       googleUserInfoRef.current = null;
     }
   };
 
-  const handlePhoneSubmit = async (e) => {
-    e.preventDefault();
+  const handleFacebookLogin = async () => {
     setError('');
 
-    if (!phone.trim()) {
-      setError(t('pleaseEnterPhoneNumber'));
+    if (typeof window === 'undefined' || !window.FB) {
+      setError('Facebook SDK is not ready. Please try again in a moment.');
       return;
     }
 
+    if (!facebookAppId) {
+      setError('Facebook login is not configured. Please contact support.');
+      return;
+    }
+
+    setIsFacebookLoading(true);
+
+    try {
+      const authResponse = await new Promise((resolve, reject) => {
+        window.FB.login(
+          (response) => {
+            if (response?.status === 'connected') {
+              resolve(response);
+            } else {
+              reject(new Error('Facebook login was cancelled or failed.'));
+            }
+          },
+          { scope: 'email' }
+        );
+      });
+
+      if (!authResponse?.authResponse) {
+        throw new Error('Missing Facebook authentication response.');
+      }
+
+      const profile = await new Promise((resolve, reject) => {
+        window.FB.api(
+          '/me',
+          { fields: 'id,name,email,picture.type(large)' },
+          (profileResponse) => {
+            if (profileResponse && !profileResponse.error) {
+              resolve(profileResponse);
+            } else {
+              reject(new Error(profileResponse?.error?.message || 'Failed to fetch Facebook profile.'));
+            }
+          }
+        );
+      });
+
+      if (!profile?.email) {
+        throw new Error('Your Facebook account does not provide an email address. Please update your Facebook settings or use another login method.');
+      }
+
+      const existingUserRecord = await findUserByEmail(profile.email);
+      const timestamp = Date.now();
+      const avatarFromFacebook = profile.picture?.data?.url || `https://graph.facebook.com/${profile.id}/picture?type=large`;
+      let userId;
+      let userData;
+
+      if (existingUserRecord) {
+        userId = existingUserRecord.id;
+        userData = {
+          ...existingUserRecord,
+          name: profile.name || existingUserRecord.name,
+          email: profile.email,
+          emailLower: profile.email.toLowerCase(),
+          avatar: avatarFromFacebook || existingUserRecord.avatar,
+          facebookId: profile.id,
+          authProvider: existingUserRecord.authProvider || 'facebook',
+          updatedAt: timestamp,
+        };
+      } else {
+        userId = id();
+        userData = {
+          id: userId,
+          name: profile.name || 'Facebook User',
+          email: profile.email,
+          emailLower: profile.email.toLowerCase(),
+          avatar: avatarFromFacebook,
+          rating: 0,
+          bio: '',
+          createdAt: timestamp,
+          authProvider: 'facebook',
+          facebookId: profile.id,
+          passwordHash: null,
+        };
+      }
+
+      await db.transact(
+        db.tx.users[userId].update(userData)
+      );
+
+      await startVerificationFlow({ user: userData, method: 'facebook' });
+    } catch (err) {
+      console.error('Facebook login error:', err);
+      setError(err.message || 'Failed to sign in with Facebook. Please try again.');
+    } finally {
+      setIsFacebookLoading(false);
+    }
+  };
+
+  const handlePasswordLogin = async (e) => {
+    e.preventDefault();
+    setError('');
+
     if (!email.trim()) {
       setError(t('pleaseEnterEmail'));
+      return;
+    }
+
+    if (!password) {
+      setError(t('pleaseEnterPassword'));
       return;
     }
 
@@ -218,36 +470,33 @@ export default function Login() {
       return;
     }
 
-    setIsSending(true);
-    
+    setIsAuthenticating(true);
+
     try {
-      // Generate verification code
-      const code = generateVerificationCode();
-      
-      // Store verification code and user info
-      sessionStorage.setItem('verification_code', code);
-      sessionStorage.setItem('phone', phone.trim());
-      sessionStorage.setItem('email', email.trim());
-      
-      // Send verification email
-      const emailSent = await sendVerificationEmail(email.trim(), code);
-      
-      // Always show verification screen (code is stored in sessionStorage)
-      setShowVerification(true);
-      
-      if (!emailSent) {
-        // Email failed to send, but show the code on screen
-        setError(`Email could not be sent. Your verification code is displayed below.`);
-      } else {
-        setError('');
+      const userRecord = await findUserByEmail(email);
+
+      if (!userRecord) {
+        setError(t('accountNotFound'));
+        return;
       }
+
+      if (!userRecord.passwordHash) {
+        setError(t('socialLoginOnly'));
+        return;
+      }
+
+      const isValidPassword = await verifyPassword(password, userRecord.passwordHash);
+      if (!isValidPassword) {
+        setError(t('incorrectPassword'));
+        return;
+      }
+
+      await startVerificationFlow({ user: userRecord, method: 'password' });
     } catch (err) {
-      console.error('Error sending verification email:', err);
-      // Still show verification screen since code is stored in sessionStorage
-      setShowVerification(true);
-      setError('Email service error. Your verification code is displayed below.');
+      console.error('Error logging in with password:', err);
+      setError(t('failedToLogin') || 'Failed to log in. Please try again.');
     } finally {
-      setIsSending(false);
+      setIsAuthenticating(false);
     }
   };
 
@@ -273,17 +522,74 @@ export default function Login() {
   const handleVerifyCode = async (e) => {
     e.preventDefault();
     setError('');
+    setIsVerifying(true);
 
-    const enteredCode = verificationCode.join('');
-    const storedCode = sessionStorage.getItem('verification_code');
+    try {
+      const enteredCode = verificationCode.join('');
+      const storedCode = sessionStorage.getItem('verification_code');
 
-    if (enteredCode !== storedCode) {
-      setError(t('invalidVerificationCode'));
-      return;
+      if (!storedCode) {
+        setError(t('verificationSessionExpired'));
+        resetVerificationSession();
+        return;
+      }
+
+      if (enteredCode !== storedCode) {
+        setError(t('invalidVerificationCode'));
+        return;
+      }
+
+      let context = verificationContext;
+      if (!context) {
+        const storedContext = sessionStorage.getItem('pending_login_context');
+        if (storedContext) {
+          context = JSON.parse(storedContext);
+          setVerificationContext(context);
+        }
+      }
+
+      if (!context?.userId) {
+        setError(t('verificationSessionExpired'));
+        resetVerificationSession();
+        return;
+      }
+
+      let userData = context.userSnapshot;
+
+      if (!userData) {
+        try {
+          const { data } = await db.query({
+            users: {
+              $: {
+                where: { id: context.userId }
+              }
+            }
+          });
+          userData = data?.users?.[0];
+        } catch (err) {
+          console.error('Error fetching user during verification:', err);
+          userData = null;
+        }
+      }
+
+      if (!userData) {
+        setError(t('accountNotFound'));
+        resetVerificationSession();
+        return;
+      }
+
+      login(userData);
+      resetVerificationSession();
+      setEmail('');
+      setPassword('');
+      setVerificationCode(['', '', '', '', '', '']);
+      navigate('/feed');
+    } catch (err) {
+      console.error('Error verifying code:', err);
+      setError(t('failedToVerifyCode') || 'Failed to verify code. Please try again.');
+    } finally {
+      setIsVerifying(false);
     }
-
-    // Code verified, navigate to register
-    navigate('/register');
   };
   return (
     <div className={`min-h-screen flex ${isRTL ? 'flex-row-reverse' : ''}`}>
@@ -334,48 +640,47 @@ export default function Login() {
             )}
 
             {!showVerification ? (
-              <form onSubmit={handlePhoneSubmit} className="space-y-5">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">{t('phoneNumber')}</label>
-                <input 
-                  type="tel" 
-                  placeholder="+1 (555) 000-0000" 
-                  value={phone}
-                  onChange={(e) => setPhone(e.target.value)}
-                  className="w-full bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 text-gray-900 dark:text-white p-3.5 rounded-xl focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent transition-all"
-                  required
-                />
-              </div>
-              
-              <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">{t('emailAddress')}</label>
-                <input 
-                  type="email" 
-                  placeholder="your.email@example.com" 
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  className="w-full bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 text-gray-900 dark:text-white p-3.5 rounded-xl focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent transition-all"
-                  required
-                />
-                <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-                  {t('verificationCodeSent')} {t('checkEmailAndEnter')}
-                </p>
-              </div>
-              
-              <button 
-                type="submit" 
-                disabled={isSending}
-                className="w-full bg-gradient-to-r from-red-600 to-rose-500 text-white font-semibold py-3.5 rounded-xl shadow-lg shadow-red-200 hover:shadow-xl hover:scale-[1.02] transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100"
-              >
-                {isSending ? t('sending') : t('sendVerificationCode')}
-              </button>
-            </form>
+              <form onSubmit={handlePasswordLogin} className="space-y-5">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">{t('emailAddress')}</label>
+                  <input 
+                    type="email" 
+                    placeholder="your.email@example.com" 
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    className="w-full bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 text-gray-900 dark:text-white p-3.5 rounded-xl focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent transition-all"
+                    required
+                  />
+                  <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                    {t('verificationCodeAfterLogin') || `${t('verificationCodeSent')} ${t('checkEmailAndEnter')}`}
+                  </p>
+                </div>
+                
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">{t('password')}</label>
+                  <input 
+                    type="password" 
+                    placeholder="********" 
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    className="w-full bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 text-gray-900 dark:text-white p-3.5 rounded-xl focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent transition-all"
+                    required
+                  />
+                </div>
+                
+                <button 
+                  type="submit" 
+                  disabled={isAuthenticating}
+                  className="w-full bg-gradient-to-r from-red-600 to-rose-500 text-white font-semibold py-3.5 rounded-xl shadow-lg shadow-red-200 hover:shadow-xl hover:scale-[1.02] transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100"
+                >
+                  {isAuthenticating ? (t('loading') || 'Loading...') : t('logIn')}
+                </button>
+              </form>
             ) : (
               <>
                 <button
                   onClick={() => {
-                    setShowVerification(false);
-                    setVerificationCode(['', '', '', '', '', '']);
+                    resetVerificationSession();
                     setError('');
                   }}
                   className={`mb-4 flex items-center gap-2 text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white transition-colors ${isRTL ? 'flex-row-reverse' : ''}`}
@@ -388,7 +693,7 @@ export default function Login() {
 
                 <h2 className="text-2xl font-bold text-gray-900 dark:text-white mb-2">{t('enterVerificationCode')}</h2>
                 <p className="text-gray-500 dark:text-gray-400 mb-8">
-                  {t('verificationCodeSent')} <span className="font-semibold text-gray-900 dark:text-white">{email}</span>. {t('checkEmailAndEnter')}
+                  {t('verificationCodeSent')} <span className="font-semibold text-gray-900 dark:text-white">{verificationContext?.email || email}</span>. {t('checkEmailAndEnter')}
                 </p>
 
                 <form onSubmit={handleVerifyCode} className="space-y-6">
@@ -432,10 +737,10 @@ export default function Login() {
                   
                   <button 
                     type="submit" 
-                    disabled={verificationCode.join('').length !== 6}
+                    disabled={verificationCode.join('').length !== 6 || isVerifying}
                     className="w-full bg-gradient-to-r from-red-600 to-rose-500 text-white font-semibold py-3.5 rounded-xl shadow-lg shadow-red-200 hover:shadow-xl hover:scale-[1.02] transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100"
                   >
-                    {t('verifyCode')}
+                    {isVerifying ? (t('loading') || 'Loading...') : t('verifyCode')}
                   </button>
                 </form>
               </>
@@ -454,13 +759,22 @@ export default function Login() {
               <div className="mt-6 grid grid-cols-2 gap-3">
                 <button 
                   className="flex items-center justify-center gap-2 px-4 py-3 bg-white dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-xl hover:bg-gray-50 dark:hover:bg-gray-600 transition-colors font-medium text-gray-700 dark:text-gray-300 disabled:opacity-50 disabled:cursor-not-allowed"
-                  disabled
-                  title="Facebook login coming soon"
+                  disabled={!isFacebookReady || isFacebookLoading}
+                  onClick={handleFacebookLogin}
+                  title={
+                    !facebookAppId
+                      ? 'Facebook login not configured'
+                      : !isFacebookReady
+                        ? 'Loading Facebook login...'
+                        : isFacebookLoading
+                          ? 'Connecting to Facebook...'
+                          : t('facebook')
+                  }
                 >
                   <svg className="w-5 h-5" viewBox="0 0 24 24" fill="#1877F2">
                     <path d="M24 12.073c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.99 4.388 10.954 10.125 11.854v-8.385H7.078v-3.47h3.047V9.43c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.874v2.25h3.328l-.532 3.47h-2.796v8.385C19.612 23.027 24 18.062 24 12.073z"/>
                   </svg>
-                  {t('facebook')}
+                  {isFacebookLoading ? (t('loading') || 'Loading...') : t('facebook')}
                 </button>
                 <div 
                   ref={googleButtonRef}

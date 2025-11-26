@@ -6,6 +6,7 @@ import { useSettingsStore } from '../store/settingsStore';
 import { useTranslation } from '../utils/translations';
 import { db } from '../lib/instant';
 import { id } from '@instantdb/react';
+import { hashPassword } from '../utils/password';
 
 export default function Register() {
   const navigate = useNavigate();
@@ -14,14 +15,15 @@ export default function Register() {
   const t = useTranslation();
   const isRTL = language === 'he';
 
-  const phone = sessionStorage.getItem('phone') || '';
-  const email = sessionStorage.getItem('email') || '';
+  const emailFromSession = sessionStorage.getItem('email') || '';
+  const [phone, setPhone] = useState(sessionStorage.getItem('phone') || '');
+  const trimmedPhone = phone.trim();
   
   // Query for existing user
   const { data: usersData } = db.useQuery({
-    users: phone ? {
+    users: trimmedPhone ? {
       $: {
-        where: { phone: phone }
+        where: { phone: trimmedPhone }
       }
     } : {}
   });
@@ -30,9 +32,11 @@ export default function Register() {
 
   const [formData, setFormData] = useState({
     name: existingUser?.name || '',
-    email: existingUser?.email || email || '',
+    email: existingUser?.email || emailFromSession || '',
     age: existingUser?.age?.toString() || '',
     location: existingUser?.location || '',
+    password: '',
+    confirmPassword: '',
   });
   const [profileImage, setProfileImage] = useState(null);
   const [profileImagePreview, setProfileImagePreview] = useState(existingUser?.avatar || null);
@@ -41,24 +45,26 @@ export default function Register() {
   const fileInputRef = useRef(null);
 
   useEffect(() => {
-    // Redirect to login if no phone number or email
-    if (!phone || !email) {
-      navigate('/login');
-    }
-  }, [phone, email, navigate]);
-
-  useEffect(() => {
     // Update form when existing user data loads
     if (existingUser) {
-      setFormData({
+      setFormData((prev) => ({
+        ...prev,
         name: existingUser.name || '',
-        email: existingUser.email || email || '',
+        email: existingUser.email || emailFromSession || '',
         age: existingUser.age?.toString() || '',
         location: existingUser.location || '',
-      });
+        password: '',
+        confirmPassword: '',
+      }));
       setProfileImagePreview(existingUser.avatar || null);
     }
-  }, [existingUser, email]);
+  }, [existingUser, emailFromSession]);
+
+  useEffect(() => {
+    if (existingUser?.phone) {
+      setPhone(existingUser.phone);
+    }
+  }, [existingUser]);
 
   const handleChange = (e) => {
     setFormData({
@@ -122,13 +128,37 @@ export default function Register() {
       return;
     }
 
-    if (!phone) {
+    if (!trimmedPhone) {
       setError(t('phoneNumberNotFound'));
-      setTimeout(() => navigate('/login'), 2000);
       return;
     }
 
+    const isUpdatingUser = Boolean(existingUser);
+    const passwordValue = (formData.password || '').trim();
+    const confirmPasswordValue = (formData.confirmPassword || '').trim();
+    const isPasswordChangeRequested = passwordValue.length > 0 || confirmPasswordValue.length > 0;
+
+    if (!isUpdatingUser || isPasswordChangeRequested) {
+      if (!passwordValue) {
+        setError(t('pleaseEnterPassword'));
+        return;
+      }
+
+      if (passwordValue.length < 8) {
+        setError(t('passwordRequirements'));
+        return;
+      }
+
+      if (passwordValue !== confirmPasswordValue) {
+        setError(t('passwordsMustMatch'));
+        return;
+      }
+    }
+
     setIsSubmitting(true);
+
+    const normalizedEmail = formData.email.trim();
+    const normalizedEmailLower = normalizedEmail.toLowerCase();
 
     try {
       // In production, upload image to cloud storage and get URL
@@ -138,17 +168,26 @@ export default function Register() {
       let userId;
       let userData;
 
+      let passwordHashValue = existingUser?.passwordHash || null;
+
+      if (!isUpdatingUser || isPasswordChangeRequested) {
+        passwordHashValue = await hashPassword(passwordValue);
+      }
+
       if (existingUser) {
         // Update existing user
         userId = existingUser.id;
         userData = {
           ...existingUser,
           name: formData.name.trim(),
-          email: formData.email.trim(),
+          email: normalizedEmail,
+          emailLower: normalizedEmailLower,
           age: parseInt(formData.age),
           location: formData.location.trim(),
           avatar: avatarUrl,
           updatedAt: Date.now(),
+          passwordHash: passwordHashValue,
+          authProvider: existingUser.authProvider || 'email',
         };
       } else {
         // Create new user
@@ -156,14 +195,17 @@ export default function Register() {
         userData = {
           id: userId,
           name: formData.name.trim(),
-          email: formData.email.trim(),
+          email: normalizedEmail,
+          emailLower: normalizedEmailLower,
           age: parseInt(formData.age),
           location: formData.location.trim(),
-          phone: phone,
+          phone: trimmedPhone,
           avatar: avatarUrl,
           rating: 0,
           bio: '',
           createdAt: Date.now(),
+          passwordHash: passwordHashValue,
+          authProvider: 'email',
         };
       }
 
@@ -292,6 +334,44 @@ export default function Register() {
               </div>
             </div>
 
+            {/* Password */}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                {t('password')} {!existingUser && '*'}
+              </label>
+              <input
+                type="password"
+                name="password"
+                value={formData.password}
+                onChange={handleChange}
+                placeholder="********"
+                autoComplete="new-password"
+                className="w-full bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 text-gray-900 dark:text-white p-3.5 rounded-xl focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent transition-all"
+              />
+              <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                {existingUser ? t('optionalChangePassword') : t('passwordHelper')}
+              </p>
+            </div>
+
+            {/* Confirm Password */}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                {t('confirmPassword')} {!existingUser && '*'}
+              </label>
+              <input
+                type="password"
+                name="confirmPassword"
+                value={formData.confirmPassword}
+                onChange={handleChange}
+                placeholder="********"
+                autoComplete="new-password"
+                className="w-full bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 text-gray-900 dark:text-white p-3.5 rounded-xl focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent transition-all"
+              />
+              <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                {t('confirmPasswordHelper')}
+              </p>
+            </div>
+
             {/* Age */}
             <div>
               <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
@@ -329,23 +409,21 @@ export default function Register() {
               </div>
             </div>
 
-            {/* Phone (read-only, from verification) */}
-            {phone && (
-              <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                  {t('phoneNumber')}
-                </label>
-                <input
-                  type="tel"
-                  value={phone}
-                  disabled
-                  className="w-full bg-gray-100 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 text-gray-500 dark:text-gray-400 p-3.5 rounded-xl cursor-not-allowed"
-                />
-                <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-                  {t('verifiedViaEmail')}
-                </p>
-              </div>
-            )}
+            {/* Phone */}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                {t('phoneNumber')} *
+              </label>
+              <input
+                type="tel"
+                name="phone"
+                value={phone}
+                onChange={(e) => setPhone(e.target.value)}
+                placeholder="+1 (555) 000-0000"
+                className="w-full bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 text-gray-900 dark:text-white p-3.5 rounded-xl focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent transition-all"
+                required
+              />
+            </div>
 
             <button
               type="submit"

@@ -81,6 +81,7 @@ export default function NewPost() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [showMapPicker, setShowMapPicker] = useState(false);
   const [selectedCoordinates, setSelectedCoordinates] = useState(null);
+  const [isGeocoding, setIsGeocoding] = useState(false);
   const fileInputRef = useRef(null);
 
   const handlePhotoUpload = async (e) => {
@@ -117,19 +118,74 @@ export default function NewPost() {
     fileInputRef.current?.click();
   };
 
-  const handleLocationSelect = (coords) => {
+  // Reverse geocode coordinates to get street address
+  const reverseGeocode = async (lat, lon) => {
+    try {
+      setIsGeocoding(true);
+      const response = await fetch(
+        `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lon}&addressdetails=1&accept-language=en,he`,
+        {
+          headers: {
+            'User-Agent': 'DOTO App'
+          }
+        }
+      );
+      
+      if (!response.ok) {
+        throw new Error('Geocoding failed');
+      }
+      
+      const data = await response.json();
+      
+      if (data && data.address) {
+        const address = data.address;
+        // Build address string with street name and number
+        let addressParts = [];
+        
+        if (address.house_number) {
+          addressParts.push(address.house_number);
+        }
+        if (address.road || address.street || address.pedestrian) {
+          addressParts.push(address.road || address.street || address.pedestrian);
+        }
+        
+        // If we have street info, use it; otherwise fall back to more general location
+        if (addressParts.length > 0) {
+          return addressParts.join(' ');
+        } else if (address.suburb || address.neighbourhood) {
+          return address.suburb || address.neighbourhood;
+        } else if (address.city || address.town) {
+          return address.city || address.town;
+        } else {
+          // Fallback to display name if available
+          return data.display_name?.split(',')[0] || `${lat.toFixed(4)}, ${lon.toFixed(4)}`;
+        }
+      }
+      
+      // Fallback to coordinates if geocoding fails
+      return `${lat.toFixed(4)}, ${lon.toFixed(4)}`;
+    } catch (error) {
+      console.error('Reverse geocoding error:', error);
+      // Fallback to coordinates on error
+      return `${lat.toFixed(4)}, ${lon.toFixed(4)}`;
+    } finally {
+      setIsGeocoding(false);
+    }
+  };
+
+  const handleLocationSelect = async (coords) => {
     // Validate coordinates are within Israel bounds
     const [validLat, validLon] = validateIsraelBounds(coords[0], coords[1]);
     setSelectedCoordinates([validLat, validLon]);
-    // In a real app, you'd reverse geocode the coordinates to get an address
-    // For now, we'll just update the location field with coordinates
-    setLocation(`${validLat.toFixed(4)}, ${validLon.toFixed(4)}`);
+    // Reverse geocode to get street address
+    const address = await reverseGeocode(validLat, validLon);
+    setLocation(address);
   };
 
-  const handleUseCurrentLocation = () => {
+  const handleUseCurrentLocation = async () => {
     if (navigator.geolocation) {
       navigator.geolocation.getCurrentPosition(
-        (position) => {
+        async (position) => {
           const { latitude, longitude } = position.coords;
           // Validate coordinates are within Israel bounds
           const [validLat, validLon] = validateIsraelBounds(latitude, longitude);
@@ -141,7 +197,9 @@ export default function NewPost() {
           }
           
           setSelectedCoordinates([validLat, validLon]);
-          setLocation(`${validLat.toFixed(4)}, ${validLon.toFixed(4)}`);
+          // Reverse geocode to get street address
+          const address = await reverseGeocode(validLat, validLon);
+          setLocation(address);
         },
         (error) => {
           console.error('Error getting location:', error);
@@ -322,13 +380,14 @@ export default function NewPost() {
               required
             />
           </div>
-          <div className="flex gap-2 mt-2">
+          <div className="flex gap-2 mt-2 items-center">
             <button 
               type="button" 
               onClick={handleUseCurrentLocation}
-              className="text-sm text-red-600 dark:text-red-400 font-medium hover:text-red-700 dark:hover:text-red-500"
+              disabled={isGeocoding}
+              className="text-sm text-red-600 dark:text-red-400 font-medium hover:text-red-700 dark:hover:text-red-500 disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              {t('useMyCurrentLocation')}
+              {isGeocoding ? t('loading') || 'Loading...' : t('useMyCurrentLocation')}
             </button>
             <span className="text-gray-400">|</span>
             <button 
@@ -338,6 +397,11 @@ export default function NewPost() {
             >
               {showMapPicker ? t('hideMap') : t('selectOnMap')}
             </button>
+            {isGeocoding && (
+              <span className="text-xs text-gray-500 dark:text-gray-400 ml-2">
+                {t('gettingAddress') || 'Getting address...'}
+              </span>
+            )}
           </div>
           {showMapPicker && (
             <div className="mt-4 h-64 rounded-xl overflow-hidden border border-gray-200 dark:border-gray-600">

@@ -10,6 +10,7 @@ import { useTranslation } from '../utils/translations';
 import { db } from '../lib/instant';
 import { id } from '@instantdb/react';
 import { ISRAEL_CENTER, ISRAEL_BOUNDS, validateIsraelBounds } from '../utils/israelBounds';
+import { getConversationId, createOrUpdateConversation } from '../utils/messaging';
 
 // Fix for default marker icons
 import icon from 'leaflet/dist/images/marker-icon.png';
@@ -944,7 +945,30 @@ export default function PostDetails() {
                 </span>
               </div>
             </div>
-            <button className="w-full mt-6 py-2.5 border border-gray-200 dark:border-gray-600 rounded-xl font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors">
+            {!isMyPost && user && (
+              <button 
+                onClick={() => {
+                  const conversationId = getConversationId(user.id, post.authorId);
+                  const participant1Id = user.id < post.authorId ? user.id : post.authorId;
+                  const participant2Id = user.id < post.authorId ? post.authorId : user.id;
+                  
+                  createOrUpdateConversation(
+                    conversationId,
+                    participant1Id,
+                    participant2Id,
+                    { name: user.name, avatar: user.avatar },
+                    { name: post.author, avatar: post.avatar }
+                  );
+                  
+                  navigate(`/messages?conversation=${conversationId}`);
+                }}
+                className="w-full mt-6 py-2.5 bg-red-600 text-white rounded-xl font-medium hover:bg-red-700 transition-colors flex items-center justify-center gap-2"
+              >
+                <MessageCircle size={18} />
+                {t('sendMessage')}
+              </button>
+            )}
+            <button className="w-full mt-3 py-2.5 border border-gray-200 dark:border-gray-600 rounded-xl font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors">
               View Profile
             </button>
           </div>
