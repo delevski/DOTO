@@ -34,6 +34,7 @@ test('can navigate to feed after login', async ({ page }) => {
           id: 'test-user',
           name: 'Test User',
           email: 'test@example.com',
+          phone: '+1234567890',
           avatar: 'https://i.pravatar.cc/150?u=test'
         },
         isAuthenticated: true
@@ -55,7 +56,12 @@ test('dark mode toggle works', async ({ page }) => {
   await page.evaluate(() => {
     localStorage.setItem('auth-storage', JSON.stringify({
       state: {
-        user: { id: 'test-user', name: 'Test User' },
+        user: { 
+          id: 'test-user', 
+          name: 'Test User',
+          email: 'test@example.com',
+          phone: '+1234567890'
+        },
         isAuthenticated: true
       }
     }));
@@ -89,7 +95,12 @@ test('RTL support works for Hebrew', async ({ page }) => {
   await page.evaluate(() => {
     localStorage.setItem('auth-storage', JSON.stringify({
       state: {
-        user: { id: 'test-user', name: 'Test User' },
+        user: { 
+          id: 'test-user', 
+          name: 'Test User',
+          email: 'test@example.com',
+          phone: '+1234567890'
+        },
         isAuthenticated: true
       }
     }));
@@ -126,6 +137,7 @@ test('can create a new post', async ({ page }) => {
           id: 'test-user',
           name: 'Test User',
           email: 'test@example.com',
+          phone: '+1234567890',
           avatar: 'https://i.pravatar.cc/150?u=test'
         },
         isAuthenticated: true

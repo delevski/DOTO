@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate, Link, useSearchParams } from 'react-router-dom';
 import { ArrowLeft, MapPin, Clock, Share2, MessageCircle, Heart, Star, CheckCircle, Lock, AlertCircle, MoreHorizontal, Edit, Trash2, Save, X, Image, Send, Copy, UserPlus } from 'lucide-react';
-import { MapContainer, TileLayer, Marker, Popup } from 'react-leaflet';
+import { MapContainer, TileLayer, Marker, Popup, useMap } from 'react-leaflet';
 import 'leaflet/dist/leaflet.css';
 import L from 'leaflet';
 import { useAuthStore } from '../store/useStore';
@@ -9,6 +9,7 @@ import { useSettingsStore } from '../store/settingsStore';
 import { useTranslation } from '../utils/translations';
 import { db } from '../lib/instant';
 import { id } from '@instantdb/react';
+import { ISRAEL_CENTER, ISRAEL_BOUNDS, validateIsraelBounds } from '../utils/israelBounds';
 
 // Fix for default marker icons
 import icon from 'leaflet/dist/images/marker-icon.png';
@@ -22,6 +23,58 @@ let DefaultIcon = L.icon({
 });
 
 L.Marker.prototype.options.icon = DefaultIcon;
+
+// Geocode location string to coordinates using Nominatim (restricted to Israel)
+const geocodeLocation = async (locationString) => {
+  if (!locationString || locationString.trim() === '') return null;
+  
+  try {
+    const params = new URLSearchParams({
+      format: 'json',
+      q: locationString,
+      limit: '1',
+      countrycodes: 'il',
+      bounded: '1',
+      viewbox: '34.2,33.5,35.9,29.4',
+      addressdetails: '1'
+    });
+    
+    const response = await fetch(
+      `https://nominatim.openstreetmap.org/search?${params.toString()}`,
+      {
+        headers: {
+          'User-Agent': 'DOTO-App/1.0'
+        }
+      }
+    );
+    const data = await response.json();
+    if (data && data.length > 0) {
+      const result = data[0];
+      const lat = parseFloat(result.lat);
+      const lon = parseFloat(result.lon);
+      if (lat >= 29.4 && lat <= 33.5 && lon >= 34.2 && lon <= 35.9) {
+        return [lat, lon];
+      }
+    }
+  } catch (error) {
+    console.error('Geocoding error:', error);
+  }
+  return null;
+};
+
+// Component to enforce Israel bounds on map
+function MapBoundsEnforcer() {
+  const map = useMap();
+  
+  useEffect(() => {
+    const bounds = L.latLngBounds(ISRAEL_BOUNDS);
+    map.setMaxBounds(bounds);
+    map.setMinZoom(8);
+    map.setMaxZoom(18);
+  }, [map]);
+  
+  return null;
+}
 
 export default function PostDetails() {
   const { postId } = useParams();
@@ -49,6 +102,7 @@ export default function PostDetails() {
   const [newComment, setNewComment] = useState('');
   const [showShareMenu, setShowShareMenu] = useState(false);
   const shareMenuRef = useRef(null);
+  const [postCoordinates, setPostCoordinates] = useState(null);
 
   // Fetch post and comments from InstantDB
   const { isLoading, error, data } = db.useQuery({ 
@@ -72,6 +126,21 @@ export default function PostDetails() {
       navigate('/feed');
     }
   }, [post, isLoading, error, navigate]);
+
+  // Geocode post location when post loads
+  useEffect(() => {
+    if (post?.location) {
+      geocodeLocation(post.location).then(coords => {
+        if (coords) {
+          setPostCoordinates(coords);
+        } else {
+          setPostCoordinates(ISRAEL_CENTER);
+        }
+      });
+    } else {
+      setPostCoordinates(ISRAEL_CENTER);
+    }
+  }, [post?.location]);
 
   // Initialize edit form when post loads or edit mode is enabled
   useEffect(() => {
@@ -372,15 +441,26 @@ export default function PostDetails() {
     setShowMenu(false);
   };
 
-  const handlePhotoUpload = (e) => {
+  const handlePhotoUpload = async (e) => {
     const files = Array.from(e.target.files || []);
     if (files.length === 0) return;
     
-    const newPhotos = files.map(file => ({
-      file,
-      preview: URL.createObjectURL(file),
-      name: file.name
-    }));
+    // Convert files to base64 data URLs for persistence
+    const newPhotos = await Promise.all(
+      files.map(async (file) => {
+        return new Promise((resolve) => {
+          const reader = new FileReader();
+          reader.onloadend = () => {
+            resolve({
+              file,
+              preview: reader.result, // Base64 data URL
+              name: file.name
+            });
+          };
+          reader.readAsDataURL(file);
+        });
+      })
+    );
     
     setEditPhotos([...editPhotos, ...newPhotos]);
   };
@@ -592,15 +672,22 @@ export default function PostDetails() {
                   {/* Display Images */}
                   {post.photos && post.photos.length > 0 && (
                     <div className="mb-6 grid grid-cols-1 md:grid-cols-2 gap-4">
-                      {post.photos.map((photo, index) => (
-                        <div key={index} className="relative aspect-video overflow-hidden rounded-xl">
-                          <img
-                            src={photo}
-                            alt={`Post image ${index + 1}`}
-                            className="w-full h-full object-cover"
-                          />
-                        </div>
-                      ))}
+                      {post.photos.map((photo, index) => {
+                        const photoUrl = typeof photo === 'string' ? photo : (photo?.preview || photo);
+                        return (
+                          <div key={index} className="relative aspect-video overflow-hidden rounded-xl bg-gray-100 dark:bg-gray-700">
+                            <img
+                              src={photoUrl}
+                              alt={`Post image ${index + 1}`}
+                              className="w-full h-full object-cover"
+                              onError={(e) => {
+                                console.error('Failed to load image:', photoUrl);
+                                e.target.style.display = 'none';
+                              }}
+                            />
+                          </div>
+                        );
+                      })}
                     </div>
                   )}
                 </>
@@ -622,28 +709,31 @@ export default function PostDetails() {
               </div>
 
               {/* Map Preview */}
-              <div className="h-64 bg-gray-200 dark:bg-gray-700 rounded-xl mb-6 overflow-hidden relative">
-                <MapContainer 
-                  center={[40.7128, -74.0060]} 
-                  zoom={13} 
-                  style={{ height: '100%', width: '100%' }}
-                  zoomControl={false}
-                  scrollWheelZoom={false}
-                  dragging={false}
-                  doubleClickZoom={false}
-                  touchZoom={false}
-                >
-                  <TileLayer
-                    url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-                    attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
-                  />
-                  <Marker position={[40.7128, -74.0060]}>
-                    <Popup>
-                      {post.location || 'Location'}
-                    </Popup>
-                  </Marker>
-                </MapContainer>
-              </div>
+              {postCoordinates && (
+                <div className="h-64 bg-gray-200 dark:bg-gray-700 rounded-xl mb-6 overflow-hidden relative">
+                  <MapContainer 
+                    center={postCoordinates} 
+                    zoom={13} 
+                    style={{ height: '100%', width: '100%' }}
+                    zoomControl={false}
+                    scrollWheelZoom={false}
+                    dragging={false}
+                    doubleClickZoom={false}
+                    touchZoom={false}
+                  >
+                    <MapBoundsEnforcer />
+                    <TileLayer
+                      url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+                      attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+                    />
+                    <Marker position={postCoordinates}>
+                      <Popup>
+                        {post.location || 'Location'}
+                      </Popup>
+                    </Marker>
+                  </MapContainer>
+                </div>
+              )}
 
               {/* Actions */}
               <div className={`flex items-center justify-between pt-6 border-t border-gray-100 dark:border-gray-700 ${isRTL ? 'flex-row-reverse' : ''}`}>

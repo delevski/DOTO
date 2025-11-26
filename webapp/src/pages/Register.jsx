@@ -71,7 +71,7 @@ export default function Register() {
     const file = e.target.files?.[0];
     if (file) {
       if (file.size > 5 * 1024 * 1024) {
-        setError('Image size should be less than 5MB');
+        setError(t('imageSizeShouldBeLess'));
         return;
       }
       setProfileImage(file);
@@ -96,34 +96,34 @@ export default function Register() {
     setError('');
 
     if (!formData.name.trim()) {
-      setError('Please enter your name');
+      setError(t('pleaseEnterName'));
       return;
     }
 
     if (!formData.email.trim()) {
-      setError('Please enter your email address');
+      setError(t('pleaseEnterEmail'));
       return;
     }
 
     // Validate email format
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     if (!emailRegex.test(formData.email.trim())) {
-      setError('Please enter a valid email address');
+      setError(t('pleaseEnterValidEmail'));
       return;
     }
 
     if (!formData.age || parseInt(formData.age) < 13 || parseInt(formData.age) > 120) {
-      setError('Please enter a valid age (13-120)');
+      setError(t('pleaseEnterValidAge'));
       return;
     }
 
     if (!formData.location.trim()) {
-      setError('Please enter your location');
+      setError(t('pleaseEnterLocation'));
       return;
     }
 
     if (!phone) {
-      setError('Phone number not found. Please start from login.');
+      setError(t('phoneNumberNotFound'));
       setTimeout(() => navigate('/login'), 2000);
       return;
     }
@@ -186,7 +186,7 @@ export default function Register() {
       }, 500);
     } catch (err) {
       console.error('Failed to register:', err);
-      setError(err.message || 'Failed to register. Please try again.');
+      setError(err.message || t('failedToRegister'));
       setIsSubmitting(false);
     }
   };
@@ -196,10 +196,10 @@ export default function Register() {
       <div className="w-full max-w-md">
         <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-xl border border-gray-100 dark:border-gray-700 p-8">
           <h2 className="text-2xl font-bold text-gray-900 dark:text-white mb-2">
-            {existingUser ? 'Update Your Profile' : 'Complete Your Profile'}
+            {existingUser ? t('updateYourProfile') : t('completeYourProfile')}
           </h2>
           <p className="text-gray-500 dark:text-gray-400 mb-8">
-            {existingUser ? 'Update your information' : 'Tell us a bit about yourself'}
+            {existingUser ? t('updateYourInformation') : t('tellUsAboutYourself')}
           </p>
 
           {error && (
@@ -212,7 +212,7 @@ export default function Register() {
             {/* Profile Image */}
             <div>
               <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                Profile Image
+                {t('profileImage')}
               </label>
               <div className="flex items-center gap-4">
                 <div className="relative">
@@ -250,9 +250,9 @@ export default function Register() {
                     onClick={() => fileInputRef.current?.click()}
                     className="px-4 py-2 border border-gray-200 dark:border-gray-600 rounded-xl text-sm font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
                   >
-                    {profileImagePreview ? 'Change Image' : 'Upload Image'}
+                    {profileImagePreview ? t('changeImage') : t('uploadImage')}
                   </button>
-                  <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">PNG, JPG up to 5MB</p>
+                  <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">{t('pngJpgUpTo5MB')}</p>
                 </div>
               </div>
             </div>
@@ -260,7 +260,7 @@ export default function Register() {
             {/* Name */}
             <div>
               <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                Full Name *
+                {t('fullName')} *
               </label>
               <input
                 type="text"
@@ -276,7 +276,7 @@ export default function Register() {
             {/* Email */}
             <div>
               <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                Email Address *
+                {t('emailAddress')} *
               </label>
               <div className="relative">
                 <Mail size={20} className={`absolute ${isRTL ? 'right' : 'left'}-3 top-1/2 transform -translate-y-1/2 text-gray-400`} />
@@ -295,7 +295,7 @@ export default function Register() {
             {/* Age */}
             <div>
               <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                Age *
+                {t('age')} *
               </label>
               <input
                 type="number"
@@ -333,7 +333,7 @@ export default function Register() {
             {phone && (
               <div>
                 <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                  Phone Number
+                  {t('phoneNumber')}
                 </label>
                 <input
                   type="tel"
@@ -342,7 +342,7 @@ export default function Register() {
                   className="w-full bg-gray-100 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 text-gray-500 dark:text-gray-400 p-3.5 rounded-xl cursor-not-allowed"
                 />
                 <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-                  Verified via email verification
+                  {t('verifiedViaEmail')}
                 </p>
               </div>
             )}
@@ -353,8 +353,8 @@ export default function Register() {
               className="w-full bg-gradient-to-r from-red-600 to-rose-500 text-white font-semibold py-3.5 rounded-xl shadow-lg shadow-red-200 hover:shadow-xl hover:scale-[1.02] transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100"
             >
               {isSubmitting 
-                ? (existingUser ? 'Updating Profile...' : 'Creating Account...') 
-                : (existingUser ? 'Update Profile' : 'Complete Registration')}
+                ? (existingUser ? t('updatingProfile') : t('creatingAccount')) 
+                : (existingUser ? t('updateProfile') : t('completeRegistration'))}
             </button>
           </form>
         </div>

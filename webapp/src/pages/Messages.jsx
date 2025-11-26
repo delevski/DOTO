@@ -13,7 +13,7 @@ export default function Messages() {
       <div className={`flex items-center justify-between mb-8 ${isRTL ? 'flex-row-reverse' : ''}`}>
         <div>
           <h1 className="text-3xl font-bold text-gray-900 dark:text-white mb-2">{t('messages')}</h1>
-          <p className="text-gray-500 dark:text-gray-400">Connect with your community</p>
+          <p className="text-gray-500 dark:text-gray-400">{t('connectWithCommunity')}</p>
         </div>
         <div className={`flex gap-3 ${isRTL ? 'flex-row-reverse' : ''}`}>
           <div className="relative">

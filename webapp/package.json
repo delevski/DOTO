@@ -9,11 +9,13 @@
     "lint": "eslint .",
     "preview": "vite preview",
     "test": "playwright test",
+    "test:smoke": "playwright test smoke.spec.js",
     "test:ui": "playwright test --ui",
     "test:headed": "playwright test --headed",
     "test:debug": "playwright test --debug"
   },
   "dependencies": {
+    "@emailjs/browser": "^4.4.1",
     "@instantdb/react": "^0.22.73",
     "leaflet": "^1.9.4",
     "lucide-react": "^0.554.0",

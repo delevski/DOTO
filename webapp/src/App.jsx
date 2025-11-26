@@ -10,6 +10,7 @@ import Messages from './pages/Messages';
 import Profile from './pages/Profile';
 import Settings from './pages/Settings';
 import EditProfile from './pages/EditProfile';
+import AdminCleanup from './pages/AdminCleanup';
 import Layout from './components/Layout';
 import { useAuthStore } from './store/useStore';
 import { useSettingsStore } from './store/settingsStore';
@@ -50,6 +51,7 @@ function App() {
           <Route path="/profile" element={<Profile />} />
           <Route path="/edit-profile" element={<EditProfile />} />
           <Route path="/settings" element={<Settings />} />
+          <Route path="/admin/cleanup" element={<AdminCleanup />} />
         </Route>
 
         <Route path="*" element={<Navigate to="/" replace />} />

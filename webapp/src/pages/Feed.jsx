@@ -14,9 +14,52 @@ export default function Feed() {
   const isRTL = language === 'he';
   const navigate = useNavigate();
   const [openMenuId, setOpenMenuId] = useState(null);
+  const [activeTab, setActiveTab] = useState('nearby'); // 'nearby', 'friends', 'following', 'myPosts'
   const menuRefs = useRef({});
 
-  const posts = data?.posts || [];
+  const allPosts = data?.posts || [];
+
+  // Filter and sort posts based on active tab
+  const posts = React.useMemo(() => {
+    let filtered = [...allPosts];
+
+    switch (activeTab) {
+      case 'myPosts':
+        // Show only posts created by the current user, sorted by newest first
+        filtered = filtered.filter(post => post.authorId === user?.id);
+        filtered.sort((a, b) => (b.timestamp || b.createdAt || 0) - (a.timestamp || a.createdAt || 0));
+        break;
+      case 'friends':
+        // TODO: Implement friends filter when friends feature is added
+        filtered = [];
+        break;
+      case 'following':
+        // TODO: Implement following filter when following feature is added
+        filtered = [];
+        break;
+      case 'nearby':
+      default:
+        // Show all posts, sorted by newest first
+        filtered.sort((a, b) => (b.timestamp || b.createdAt || 0) - (a.timestamp || a.createdAt || 0));
+        break;
+    }
+
+    return filtered;
+  }, [allPosts, activeTab, user?.id]);
+
+  // Debug: Log posts with photos
+  useEffect(() => {
+    if (posts.length > 0) {
+      console.log('Posts loaded:', posts.length);
+      posts.forEach((post, index) => {
+        if (post.photos) {
+          console.log(`Post ${index} (ID: ${post.id}) has ${post.photos.length} photos:`, post.photos);
+        } else {
+          console.log(`Post ${index} (ID: ${post.id}) has no photos property`);
+        }
+      });
+    }
+  }, [posts]);
 
   // Close menu when clicking outside
   useEffect(() => {
@@ -33,7 +76,7 @@ export default function Feed() {
   }, []);
 
   const handleDeletePost = (postId) => {
-    if (window.confirm('Are you sure you want to delete this post?')) {
+    if (window.confirm(t('areYouSureDeletePost'))) {
       db.transact(
         db.tx.posts[postId].delete()
       );
@@ -47,9 +90,9 @@ export default function Feed() {
     const hours = Math.floor(diff / (1000 * 60 * 60));
     const days = Math.floor(hours / 24);
     
-    if (days > 0) return `${days} day${days > 1 ? 's' : ''} ago`;
-    if (hours > 0) return `${hours} hr${hours > 1 ? 's' : ''} ago`;
-    return 'Just now';
+    if (days > 0) return `${days} ${days > 1 ? t('days') : t('day')} ${t('ago')}`;
+    if (hours > 0) return `${hours} ${hours > 1 ? t('hrs') : t('hr')} ${t('ago')}`;
+    return t('justNow');
   };
 
   return (
@@ -67,17 +110,53 @@ export default function Feed() {
               {t('topWeekly')}
             </button>
             <button className="px-4 py-2 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl text-sm font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors">
-              Filters
+              {t('filters')}
             </button>
           </div>
         </div>
 
         {/* Tabs */}
         <div className={`flex gap-6 border-b border-gray-200 dark:border-gray-700 ${isRTL ? 'flex-row-reverse' : ''}`}>
-          <button className="text-gray-900 dark:text-white font-semibold border-b-2 border-red-600 pb-3 text-sm px-1">{t('nearby')}</button>
-          <button className="text-gray-500 dark:text-gray-400 font-medium pb-3 text-sm hover:text-gray-800 dark:hover:text-gray-200 transition-colors px-1">{t('friends')}</button>
-          <button className="text-gray-500 dark:text-gray-400 font-medium pb-3 text-sm hover:text-gray-800 dark:hover:text-gray-200 transition-colors px-1">{t('following')}</button>
-          <button className="text-gray-500 dark:text-gray-400 font-medium pb-3 text-sm hover:text-gray-800 dark:hover:text-gray-200 transition-colors px-1">{t('myPosts')}</button>
+          <button 
+            onClick={() => setActiveTab('nearby')}
+            className={`pb-3 text-sm px-1 transition-colors ${
+              activeTab === 'nearby'
+                ? 'text-gray-900 dark:text-white font-semibold border-b-2 border-red-600'
+                : 'text-gray-500 dark:text-gray-400 font-medium hover:text-gray-800 dark:hover:text-gray-200'
+            }`}
+          >
+            {t('nearby')}
+          </button>
+          <button 
+            onClick={() => setActiveTab('friends')}
+            className={`pb-3 text-sm px-1 transition-colors ${
+              activeTab === 'friends'
+                ? 'text-gray-900 dark:text-white font-semibold border-b-2 border-red-600'
+                : 'text-gray-500 dark:text-gray-400 font-medium hover:text-gray-800 dark:hover:text-gray-200'
+            }`}
+          >
+            {t('friends')}
+          </button>
+          <button 
+            onClick={() => setActiveTab('following')}
+            className={`pb-3 text-sm px-1 transition-colors ${
+              activeTab === 'following'
+                ? 'text-gray-900 dark:text-white font-semibold border-b-2 border-red-600'
+                : 'text-gray-500 dark:text-gray-400 font-medium hover:text-gray-800 dark:hover:text-gray-200'
+            }`}
+          >
+            {t('following')}
+          </button>
+          <button 
+            onClick={() => setActiveTab('myPosts')}
+            className={`pb-3 text-sm px-1 transition-colors ${
+              activeTab === 'myPosts'
+                ? 'text-gray-900 dark:text-white font-semibold border-b-2 border-red-600'
+                : 'text-gray-500 dark:text-gray-400 font-medium hover:text-gray-800 dark:hover:text-gray-200'
+            }`}
+          >
+            {t('myPosts')}
+          </button>
         </div>
       </div>
 
@@ -87,15 +166,31 @@ export default function Feed() {
         <div className="lg:col-span-2 space-y-6">
           {isLoading ? (
              <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-sm border border-gray-100 dark:border-gray-700 p-12 text-center">
-               <p className="text-gray-500 dark:text-gray-400 text-lg">Loading posts...</p>
+               <p className="text-gray-500 dark:text-gray-400 text-lg">{t('loadingPosts')}</p>
              </div>
           ) : error ? (
             <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-sm border border-gray-100 dark:border-gray-700 p-12 text-center">
-              <p className="text-red-500 text-lg">Error loading posts: {error.message}</p>
+              <p className="text-red-500 text-lg">{t('errorLoadingPosts')} {error.message}</p>
             </div>
           ) : posts.length === 0 ? (
             <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-sm border border-gray-100 dark:border-gray-700 p-12 text-center">
-              <p className="text-gray-500 dark:text-gray-400 text-lg">No posts yet. Be the first to create one!</p>
+              <p className="text-gray-500 dark:text-gray-400 text-lg">
+                {activeTab === 'myPosts' 
+                  ? (user ? t('noMyPosts') || 'You haven\'t created any posts yet' : t('mustBeLoggedIn'))
+                  : activeTab === 'friends'
+                  ? t('noFriendsPosts') || 'No posts from friends yet'
+                  : activeTab === 'following'
+                  ? t('noFollowingPosts') || 'No posts from people you follow yet'
+                  : t('noPostsYet')}
+              </p>
+              {activeTab === 'myPosts' && user && (
+                <button
+                  onClick={() => navigate('/new-post')}
+                  className="mt-4 px-6 py-2 bg-gradient-to-r from-red-600 to-rose-500 text-white font-semibold rounded-xl hover:shadow-lg transition-all"
+                >
+                  {t('createYourFirstPost') || 'Create Your First Post'}
+                </button>
+              )}
             </div>
           ) : (
             posts.map(post => {
@@ -110,7 +205,7 @@ export default function Feed() {
                 e.preventDefault();
                 e.stopPropagation();
                 if (!user) {
-                  alert('You must be logged in to like a post');
+                  alert(t('mustBeLoggedInToLike'));
                   return;
                 }
 
@@ -142,7 +237,7 @@ export default function Feed() {
                 if (navigator.share) {
                   try {
                     await navigator.share({
-                      title: post.title || 'Check out this post',
+                      title: post.title || t('checkOutThisPost'),
                       text: post.description,
                       url: postUrl
                     });
@@ -151,7 +246,7 @@ export default function Feed() {
                       // Fallback to copy
                       try {
                         await navigator.clipboard.writeText(postUrl);
-                        alert('Link copied to clipboard!');
+                        alert(t('linkCopiedToClipboard'));
                       } catch (copyErr) {
                         console.error('Failed to copy:', copyErr);
                       }
@@ -161,7 +256,7 @@ export default function Feed() {
                   // Fallback to copy
                   try {
                     await navigator.clipboard.writeText(postUrl);
-                    alert('Link copied to clipboard!');
+                    alert(t('linkCopiedToClipboard'));
                   } catch (copyErr) {
                     console.error('Failed to copy:', copyErr);
                   }
@@ -223,14 +318,14 @@ export default function Feed() {
                                 className="w-full px-4 py-2 text-left text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 flex items-center gap-2"
                               >
                                 <Edit size={16} />
-                                Edit
+                                {t('edit')}
                               </button>
                               <button
                                 onClick={() => handleDeletePost(post.id)}
                                 className="w-full px-4 py-2 text-left text-sm text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 flex items-center gap-2"
                               >
                                 <Trash2 size={16} />
-                                Delete
+                                {t('delete')}
                               </button>
                             </div>
                           )}
@@ -254,12 +349,16 @@ export default function Feed() {
                           // Single image - full width
                           <div className="relative w-full aspect-video overflow-hidden rounded-xl bg-gray-100 dark:bg-gray-700">
                             <img
-                              src={typeof post.photos[0] === 'string' ? post.photos[0] : (post.photos[0].preview || post.photos[0])}
+                              src={typeof post.photos[0] === 'string' ? post.photos[0] : (post.photos[0]?.preview || post.photos[0])}
                               alt={`Post image`}
                               className="w-full h-full object-cover cursor-pointer hover:scale-105 transition-transform duration-300"
                               onClick={(e) => {
                                 e.preventDefault();
                                 navigate(`/post/${post.id}`);
+                              }}
+                              onError={(e) => {
+                                console.error('Failed to load image in feed:', post.photos[0], 'Post ID:', post.id);
+                                e.target.style.display = 'none';
                               }}
                             />
                           </div>
@@ -269,12 +368,16 @@ export default function Feed() {
                             {post.photos.map((photo, index) => (
                               <div key={index} className="relative aspect-video overflow-hidden rounded-xl bg-gray-100 dark:bg-gray-700">
                                 <img
-                                  src={typeof photo === 'string' ? photo : (photo.preview || photo)}
+                                  src={typeof photo === 'string' ? photo : (photo?.preview || photo)}
                                   alt={`Post image ${index + 1}`}
                                   className="w-full h-full object-cover cursor-pointer hover:scale-105 transition-transform duration-300"
                                   onClick={(e) => {
                                     e.preventDefault();
                                     navigate(`/post/${post.id}`);
+                                  }}
+                                  onError={(e) => {
+                                    console.error('Failed to load image in feed:', photo, 'Post ID:', post.id);
+                                    e.target.style.display = 'none';
                                   }}
                                 />
                               </div>
@@ -285,23 +388,31 @@ export default function Feed() {
                           <div className="grid grid-cols-2 gap-2">
                             <div className="relative aspect-video overflow-hidden rounded-xl bg-gray-100 dark:bg-gray-700 row-span-2">
                               <img
-                                src={typeof post.photos[0] === 'string' ? post.photos[0] : (post.photos[0].preview || post.photos[0])}
+                                src={typeof post.photos[0] === 'string' ? post.photos[0] : (post.photos[0]?.preview || post.photos[0])}
                                 alt={`Post image 1`}
                                 className="w-full h-full object-cover cursor-pointer hover:scale-105 transition-transform duration-300"
                                 onClick={(e) => {
                                   e.preventDefault();
                                   navigate(`/post/${post.id}`);
                                 }}
+                                onError={(e) => {
+                                  console.error('Failed to load image in feed:', post.photos[0], 'Post ID:', post.id);
+                                  e.target.style.display = 'none';
+                                }}
                               />
                             </div>
                             <div className="relative aspect-video overflow-hidden rounded-xl bg-gray-100 dark:bg-gray-700">
                               <img
-                                src={typeof post.photos[1] === 'string' ? post.photos[1] : (post.photos[1].preview || post.photos[1])}
+                                src={typeof post.photos[1] === 'string' ? post.photos[1] : (post.photos[1]?.preview || post.photos[1])}
                                 alt={`Post image 2`}
                                 className="w-full h-full object-cover cursor-pointer hover:scale-105 transition-transform duration-300"
                                 onClick={(e) => {
                                   e.preventDefault();
                                   navigate(`/post/${post.id}`);
+                                }}
+                                onError={(e) => {
+                                  console.error('Failed to load image in feed:', post.photos[1], 'Post ID:', post.id);
+                                  e.target.style.display = 'none';
                                 }}
                               />
                             </div>
@@ -309,12 +420,16 @@ export default function Feed() {
                               {post.photos.length > 2 ? (
                                 <>
                                   <img
-                                    src={typeof post.photos[2] === 'string' ? post.photos[2] : (post.photos[2].preview || post.photos[2])}
+                                    src={typeof post.photos[2] === 'string' ? post.photos[2] : (post.photos[2]?.preview || post.photos[2])}
                                     alt={`Post image 3`}
                                     className="w-full h-full object-cover cursor-pointer hover:scale-105 transition-transform duration-300"
                                     onClick={(e) => {
                                       e.preventDefault();
                                       navigate(`/post/${post.id}`);
+                                    }}
+                                    onError={(e) => {
+                                      console.error('Failed to load image in feed:', post.photos[2], 'Post ID:', post.id);
+                                      e.target.style.display = 'none';
                                     }}
                                   />
                                   {post.photos.length > 3 && (
@@ -367,7 +482,7 @@ export default function Feed() {
                       </div>
                       {isClaimed ? (
                         <div className="text-sm text-gray-500 dark:text-gray-400 font-medium">
-                          {isClaimedByMe ? t('claimedByYou') : `${t('claimed')} ${post.claimedByName || 'someone'}`}
+                          {isClaimedByMe ? t('claimedByYou') : `${t('claimed')} ${post.claimedByName || t('someone')}`}
                         </div>
                       ) : (
                         <Link 
@@ -407,8 +522,8 @@ export default function Feed() {
                 <div key={i} className={`flex gap-3 p-3 bg-gray-50 dark:bg-gray-700 rounded-xl hover:bg-gray-100 dark:hover:bg-gray-600 transition-colors cursor-pointer group ${isRTL ? 'flex-row-reverse' : ''}`}>
                   <div className="w-16 h-16 bg-gradient-to-br from-gray-800 to-gray-900 rounded-lg flex-shrink-0"></div>
                   <div className="flex-1 min-w-0">
-                    <h4 className="font-semibold text-sm text-gray-900 dark:text-white group-hover:text-red-600 dark:group-hover:text-red-400 transition-colors truncate">Community Event #{i}</h4>
-                    <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">12 people joining</p>
+                    <h4 className="font-semibold text-sm text-gray-900 dark:text-white group-hover:text-red-600 dark:group-hover:text-red-400 transition-colors truncate">{t('communityEvent')}{i}</h4>
+                    <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">12 {t('peopleJoining')}</p>
                   </div>
                 </div>
               ))}
@@ -417,18 +532,18 @@ export default function Feed() {
 
           {/* Stats Widget */}
           <div className="bg-gradient-to-br from-red-600 to-rose-500 rounded-2xl shadow-lg p-6 text-white">
-            <h3 className="font-bold text-lg mb-4">Your Impact</h3>
+            <h3 className="font-bold text-lg mb-4">{t('yourImpact')}</h3>
             <div className="space-y-4">
               <div className={`flex justify-between items-center ${isRTL ? 'flex-row-reverse' : ''}`}>
-                <span className="text-red-100">Tasks Completed</span>
+                <span className="text-red-100">{t('tasksCompleted')}</span>
                 <span className="font-bold text-xl">24</span>
               </div>
               <div className={`flex justify-between items-center ${isRTL ? 'flex-row-reverse' : ''}`}>
-                <span className="text-red-100">Angel Rating</span>
+                <span className="text-red-100">{t('angelRating')}</span>
                 <span className="font-bold text-xl">4.9 ⭐</span>
               </div>
               <div className={`flex justify-between items-center ${isRTL ? 'flex-row-reverse' : ''}`}>
-                <span className="text-red-100">Badges Earned</span>
+                <span className="text-red-100">{t('badgesEarned')}</span>
                 <span className="font-bold text-xl">8</span>
               </div>
             </div>

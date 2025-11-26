@@ -1,11 +1,50 @@
-# React + Vite
+# DOTO Web App
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+A React + Vite application for the DOTO (Do One Thing Others) community platform.
 
-Currently, two official plugins are available:
+## Features
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Babel](https://babeljs.io/) (or [oxc](https://oxc.rs) when used in [rolldown-vite](https://vite.dev/guide/rolldown)) for Fast Refresh
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/) for Fast Refresh
+- User authentication (email/phone verification and Google OAuth)
+- Community feed and posts
+- Interactive map view
+- User profiles and messaging
+- Real-time data with InstantDB
+
+## Google OAuth Setup
+
+To enable Google Sign-In functionality:
+
+1. **Create a Google Cloud Project**
+   - Go to [Google Cloud Console](https://console.cloud.google.com/)
+   - Create a new project or select an existing one
+
+2. **Enable Google+ API**
+   - Navigate to "APIs & Services" > "Library"
+   - Search for "Google+ API" and enable it
+
+3. **Create OAuth 2.0 Credentials**
+   - Go to "APIs & Services" > "Credentials"
+   - Click "Create Credentials" > "OAuth client ID"
+   - Choose "Web application"
+   - Add authorized JavaScript origins:
+     - `http://localhost:5173` (for development)
+     - Your production domain (e.g., `https://yourdomain.com`)
+   - Add authorized redirect URIs:
+     - `http://localhost:5173` (for development)
+     - Your production domain
+
+4. **Configure Environment Variables**
+   - Create a `.env` file in the `webapp` directory
+   - Add your Google Client ID:
+     ```
+     VITE_GOOGLE_CLIENT_ID=your-google-client-id-here.apps.googleusercontent.com
+     ```
+
+5. **Restart Development Server**
+   - Stop your dev server (if running)
+   - Run `npm run dev` again to load the new environment variable
+
+The Google Sign-In button will automatically appear on the login page once configured.
 
 ## React Compiler
 

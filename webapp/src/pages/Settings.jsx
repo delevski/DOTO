@@ -36,7 +36,7 @@ export default function Settings() {
   };
 
   const handleDeleteAccount = () => {
-    if (window.confirm('Are you sure you want to delete your account? This action cannot be undone.')) {
+    if (window.confirm(t('areYouSureDeleteAccount'))) {
       logout();
       navigate('/login');
     }
@@ -171,8 +171,8 @@ export default function Settings() {
                   </svg>
                 </div>
                 <div>
-                  <div className="font-semibold text-gray-900 dark:text-white">Log Out</div>
-                  <div className="text-sm text-gray-500 dark:text-gray-400">Sign out of your account</div>
+                  <div className="font-semibold text-gray-900 dark:text-white">{t('logOut')}</div>
+                  <div className="text-sm text-gray-500 dark:text-gray-400">{t('signOutOfAccount')}</div>
                 </div>
               </div>
               <ChevronRight size={20} className={`text-gray-400 ${isRTL ? 'rotate-180' : ''}`} />

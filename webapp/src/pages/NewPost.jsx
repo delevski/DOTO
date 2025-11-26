@@ -1,7 +1,7 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ArrowLeft, MapPin, Image, Tag, Clock, AlertCircle, CheckCircle, X } from 'lucide-react';
-import { MapContainer, TileLayer, Marker, useMapEvents } from 'react-leaflet';
+import { MapContainer, TileLayer, Marker, useMapEvents, useMap } from 'react-leaflet';
 import 'leaflet/dist/leaflet.css';
 import L from 'leaflet';
 import { useAuthStore } from '../store/useStore';
@@ -9,6 +9,7 @@ import { useSettingsStore } from '../store/settingsStore';
 import { useTranslation } from '../utils/translations';
 import { db } from '../lib/instant';
 import { id } from '@instantdb/react';
+import { ISRAEL_CENTER, ISRAEL_BOUNDS, validateIsraelBounds } from '../utils/israelBounds';
 
 // Fix for default marker icons
 import icon from 'leaflet/dist/images/marker-icon.png';
@@ -23,15 +24,40 @@ let DefaultIcon = L.icon({
 
 L.Marker.prototype.options.icon = DefaultIcon;
 
+// Component to enforce Israel bounds on map
+function MapBoundsEnforcer() {
+  const map = useMap();
+  
+  useEffect(() => {
+    const bounds = L.latLngBounds(ISRAEL_BOUNDS);
+    map.setMaxBounds(bounds);
+    map.setMinZoom(8);
+    map.setMaxZoom(18);
+    
+    // Ensure initial center is within bounds
+    const center = map.getCenter();
+    if (center) {
+      const [lat, lon] = validateIsraelBounds(center.lat, center.lng);
+      if (lat !== center.lat || lon !== center.lng) {
+        map.setView([lat, lon], map.getZoom());
+      }
+    }
+  }, [map]);
+  
+  return null;
+}
+
 // Component to handle map clicks for location selection
 function LocationPicker({ onLocationSelect, selectedLocation }) {
-  const [position, setPosition] = useState(selectedLocation || [40.7128, -74.0060]);
+  const [position, setPosition] = useState(selectedLocation || ISRAEL_CENTER);
   
   useMapEvents({
     click(e) {
       const { lat, lng } = e.latlng;
-      setPosition([lat, lng]);
-      onLocationSelect([lat, lng]);
+      // Validate and constrain to Israel bounds
+      const [validLat, validLon] = validateIsraelBounds(lat, lng);
+      setPosition([validLat, validLon]);
+      onLocationSelect([validLat, validLon]);
     },
   });
 
@@ -57,23 +83,32 @@ export default function NewPost() {
   const [selectedCoordinates, setSelectedCoordinates] = useState(null);
   const fileInputRef = useRef(null);
 
-  const handlePhotoUpload = (e) => {
+  const handlePhotoUpload = async (e) => {
     const files = Array.from(e.target.files || []);
     if (files.length === 0) return;
     
-    // Create object URLs for preview (in production, you'd upload to storage first)
-    const newPhotos = files.map(file => ({
-      file,
-      preview: URL.createObjectURL(file),
-      name: file.name
-    }));
+    // Convert files to base64 data URLs for persistence
+    const newPhotos = await Promise.all(
+      files.map(async (file) => {
+        return new Promise((resolve) => {
+          const reader = new FileReader();
+          reader.onloadend = () => {
+            resolve({
+              file,
+              preview: reader.result, // Base64 data URL
+              name: file.name
+            });
+          };
+          reader.readAsDataURL(file);
+        });
+      })
+    );
     
     setPhotos([...photos, ...newPhotos]);
   };
 
   const removePhoto = (index) => {
-    // Revoke object URL to free memory
-    URL.revokeObjectURL(photos[index].preview);
+    // Remove photo from array (no need to revoke base64 URLs)
     const newPhotos = photos.filter((_, i) => i !== index);
     setPhotos(newPhotos);
   };
@@ -83,10 +118,12 @@ export default function NewPost() {
   };
 
   const handleLocationSelect = (coords) => {
-    setSelectedCoordinates(coords);
+    // Validate coordinates are within Israel bounds
+    const [validLat, validLon] = validateIsraelBounds(coords[0], coords[1]);
+    setSelectedCoordinates([validLat, validLon]);
     // In a real app, you'd reverse geocode the coordinates to get an address
     // For now, we'll just update the location field with coordinates
-    setLocation(`${coords[0].toFixed(4)}, ${coords[1].toFixed(4)}`);
+    setLocation(`${validLat.toFixed(4)}, ${validLon.toFixed(4)}`);
   };
 
   const handleUseCurrentLocation = () => {
@@ -94,17 +131,36 @@ export default function NewPost() {
       navigator.geolocation.getCurrentPosition(
         (position) => {
           const { latitude, longitude } = position.coords;
-          setSelectedCoordinates([latitude, longitude]);
-          setLocation(`${latitude.toFixed(4)}, ${longitude.toFixed(4)}`);
+          // Validate coordinates are within Israel bounds
+          const [validLat, validLon] = validateIsraelBounds(latitude, longitude);
+          
+          // Check if location is actually in Israel
+          if (validLat !== latitude || validLon !== longitude) {
+            setError('Location is outside Israel region. Please select a location within Israel.');
+            return;
+          }
+          
+          setSelectedCoordinates([validLat, validLon]);
+          setLocation(`${validLat.toFixed(4)}, ${validLon.toFixed(4)}`);
         },
         (error) => {
           console.error('Error getting location:', error);
-          setError('Unable to get your current location. Please enter it manually.');
+          setError(t('unableToGetLocation'));
         }
       );
     } else {
-      setError('Geolocation is not supported by your browser.');
+      setError(t('geolocationNotSupported'));
     }
+  };
+
+  // Convert File to base64 data URL
+  const fileToBase64 = (file) => {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result);
+      reader.onerror = reject;
+      reader.readAsDataURL(file);
+    });
   };
 
   const handleSubmit = async (e) => {
@@ -112,30 +168,42 @@ export default function NewPost() {
     setError('');
 
     if (!user) {
-      setError('You must be logged in to create a post');
+      setError(t('mustBeLoggedInToCreatePost'));
       return;
     }
 
     if (!description.trim()) {
-      setError('Please enter a description');
+      setError(t('pleaseEnterDescription'));
       return;
     }
 
     if (!location.trim()) {
-      setError('Please enter a location');
+      setError(t('pleaseEnterLocation'));
       return;
     }
 
     setIsSubmitting(true);
 
     try {
+      // Convert photos to base64 data URLs for persistent storage
+      let photoDataUrls = [];
+      if (photos && photos.length > 0) {
+        photoDataUrls = await Promise.all(
+          photos
+            .filter(photo => photo && photo.file) // Filter out invalid photos
+            .map(photo => fileToBase64(photo.file))
+        );
+      }
+
+      console.log('Saving post with photos:', photoDataUrls.length, 'images');
+
       const newPostId = id();
       const newPost = {
         id: newPostId,
         author: user.name,
         authorId: user.id,
         avatar: user.avatar,
-        title: title.trim() || 'Help Needed',
+        title: title.trim() || t('helpNeeded'),
         description: description.trim(),
         location: location.trim(),
         category: category || 'Other',
@@ -144,7 +212,7 @@ export default function NewPost() {
         time: timeframe || 'Flexible',
         timeframe: timeframe || null,
         timestamp: Date.now(),
-        photos: photos.map(p => p.preview), // Store photo preview URLs (in production, upload to storage and store URLs)
+        photos: photoDataUrls.length > 0 ? photoDataUrls : [], // Store base64 data URLs for persistent storage
         likes: 0,
         comments: 0,
         claimedBy: null,
@@ -161,7 +229,7 @@ export default function NewPost() {
       }, 500);
     } catch (err) {
       console.error('Failed to create post:', err);
-      setError(err.message || 'Failed to create post. Please try again.');
+      setError(err.message || t('failedToCreatePost'));
       setIsSubmitting(false);
     }
   };
@@ -191,17 +259,17 @@ export default function NewPost() {
           <img src={user?.avatar || 'https://i.pravatar.cc/150?u=user'} alt="You" className="w-12 h-12 rounded-full ring-2 ring-gray-100 dark:ring-gray-700" />
           <div>
             <div className="font-bold text-gray-900 dark:text-white">{user?.name || 'You'}</div>
-            <div className="text-sm text-gray-500 dark:text-gray-400">What do you need help with?</div>
+            <div className="text-sm text-gray-500 dark:text-gray-400">{t('whatDoYouNeedHelpWith')}</div>
           </div>
         </div>
 
         {/* Title */}
         <div>
-          <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">Title (Optional)</label>
+          <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">{t('titleOptional')}</label>
           <input
             type="text"
             className="w-full p-4 text-gray-900 dark:text-white dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-xl focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent transition-all"
-            placeholder="Brief title for your post..."
+            placeholder={t('briefTitleForPost')}
             value={title}
             onChange={(e) => setTitle(e.target.value)}
           />
@@ -230,7 +298,7 @@ export default function NewPost() {
               value={category}
               onChange={(e) => setCategory(e.target.value)}
             >
-              <option value="">Select a category</option>
+              <option value="">{t('selectCategory')}</option>
               <option value="Moving">Moving</option>
               <option value="Pet Care">Pet Care</option>
               <option value="Borrow">Borrow Item</option>
@@ -247,7 +315,7 @@ export default function NewPost() {
             <MapPin size={20} className={`absolute ${isRTL ? 'right' : 'left'}-3 top-1/2 transform -translate-y-1/2 text-gray-400`} />
             <input
               type="text"
-              placeholder="Enter address or select on map"
+              placeholder={t('enterAddressOrSelect')}
               className={`w-full ${isRTL ? 'pr-10 pl-4' : 'pl-10 pr-4'} py-3 border border-gray-200 dark:border-gray-600 rounded-xl focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent text-gray-900 dark:text-white dark:bg-gray-700`}
               value={location}
               onChange={(e) => setLocation(e.target.value)}
@@ -260,7 +328,7 @@ export default function NewPost() {
               onClick={handleUseCurrentLocation}
               className="text-sm text-red-600 dark:text-red-400 font-medium hover:text-red-700 dark:hover:text-red-500"
             >
-              Use my current location
+              {t('useMyCurrentLocation')}
             </button>
             <span className="text-gray-400">|</span>
             <button 
@@ -268,16 +336,17 @@ export default function NewPost() {
               onClick={() => setShowMapPicker(!showMapPicker)}
               className="text-sm text-red-600 dark:text-red-400 font-medium hover:text-red-700 dark:hover:text-red-500"
             >
-              {showMapPicker ? 'Hide map' : 'Select on map'}
+              {showMapPicker ? t('hideMap') : t('selectOnMap')}
             </button>
           </div>
           {showMapPicker && (
             <div className="mt-4 h-64 rounded-xl overflow-hidden border border-gray-200 dark:border-gray-600">
               <MapContainer 
-                center={selectedCoordinates || [40.7128, -74.0060]} 
+                center={selectedCoordinates || ISRAEL_CENTER} 
                 zoom={13} 
                 style={{ height: '100%', width: '100%' }}
               >
+                <MapBoundsEnforcer />
                 <TileLayer
                   url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
                   attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
@@ -322,8 +391,8 @@ export default function NewPost() {
             className="w-full border-2 border-dashed border-gray-300 dark:border-gray-600 rounded-xl p-8 hover:border-red-500 dark:hover:border-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors flex flex-col items-center justify-center gap-2 text-gray-600 dark:text-gray-400 cursor-pointer"
           >
             <Image size={32} className="text-gray-400" />
-            <span className="font-medium">Click to upload or drag and drop</span>
-            <span className="text-sm">PNG, JPG up to 10MB</span>
+            <span className="font-medium">{t('clickToUpload')}</span>
+            <span className="text-sm">{t('pngJpgUpTo10MB')}</span>
           </button>
           
           {/* Photo Preview */}
@@ -367,7 +436,7 @@ export default function NewPost() {
             {isSubmitting ? (
               <>
                 <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-                Publishing...
+                {t('publishing')}
               </>
             ) : (
               <>

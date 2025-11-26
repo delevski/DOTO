@@ -22,11 +22,11 @@ export default function Layout() {
   };
 
   return (
-    <div className="flex h-screen bg-gray-50 dark:bg-gray-900 overflow-hidden">
+    <div className={`flex h-screen bg-gray-50 dark:bg-gray-900 overflow-hidden ${isRTL ? 'flex-row-reverse' : ''}`}>
       {/* Sidebar Navigation */}
-      <aside className={`${isSidebarOpen ? 'w-64' : 'w-20'} bg-white dark:bg-gray-800 ${isRTL ? 'border-l order-2' : 'border-r order-1'} border-gray-200 dark:border-gray-700 flex flex-col transition-all duration-300 shadow-sm`}>
+      <aside className={`${isSidebarOpen ? 'w-64' : 'w-20'} bg-white dark:bg-gray-800 ${isRTL ? 'border-l' : 'border-r'} border-gray-200 dark:border-gray-700 flex flex-col transition-all duration-300 shadow-sm`}>
         {/* Logo */}
-        <div className="p-6 border-b border-gray-100 dark:border-gray-700 flex items-center justify-between">
+        <div className={`p-6 border-b border-gray-100 dark:border-gray-700 flex items-center ${isRTL ? 'flex-row-reverse' : 'justify-between'}`}>
           {isSidebarOpen ? (
             <span className="text-2xl font-extrabold bg-gradient-to-r from-red-600 to-rose-500 bg-clip-text text-transparent">DOTO</span>
           ) : (
@@ -50,8 +50,8 @@ export default function Layout() {
           
           <div className="my-4 border-t border-gray-100 dark:border-gray-700"></div>
           
-          <NavItem to="/profile" icon={<Shield size={20} />} label="Badges" isCollapsed={!isSidebarOpen} />
-          <NavItem to="/profile" icon={<HelpCircle size={20} />} label="Help" isCollapsed={!isSidebarOpen} />
+          <NavItem to="/profile" icon={<Shield size={20} />} label={t('badges')} isCollapsed={!isSidebarOpen} />
+          <NavItem to="/profile" icon={<HelpCircle size={20} />} label={t('help')} isCollapsed={!isSidebarOpen} />
           <NavItem to="/settings" icon={<SettingsIcon size={20} />} label={t('settings')} isCollapsed={!isSidebarOpen} />
         </nav>
 
@@ -59,7 +59,7 @@ export default function Layout() {
         <div className="p-4 border-t border-gray-100 dark:border-gray-700">
           <Link 
             to="/new-post" 
-            className="w-full bg-gradient-to-r from-red-600 to-rose-500 text-white font-semibold py-3 px-4 rounded-xl flex items-center justify-center gap-2 shadow-lg shadow-red-200 hover:shadow-xl hover:scale-[1.02] transition-all duration-200"
+            className={`w-full bg-gradient-to-r from-red-600 to-rose-500 text-white font-semibold py-3 px-4 rounded-xl flex items-center ${isRTL ? 'flex-row-reverse' : 'justify-center'} gap-2 shadow-lg shadow-red-200 hover:shadow-xl hover:scale-[1.02] transition-all duration-200`}
           >
             <Plus size={20} />
             {isSidebarOpen && <span>{t('createPost')}</span>}
@@ -68,7 +68,7 @@ export default function Layout() {
       </aside>
 
       {/* Main Content Area */}
-      <div className={`flex-1 flex flex-col overflow-hidden ${isRTL ? 'order-1' : 'order-2'}`}>
+      <div className="flex-1 flex flex-col overflow-hidden">
         {/* Top Header */}
         <header className="bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 px-6 py-4 flex items-center justify-between shadow-sm z-10">
           <div className="flex-1 max-w-2xl">
@@ -120,7 +120,7 @@ export default function Layout() {
                     className={`w-full text-left px-4 py-3 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors text-sm text-red-600 dark:text-red-400 flex items-center gap-2 ${isRTL ? 'flex-row-reverse text-right' : ''}`}
                   >
                     <LogOut size={16} />
-                    Log Out
+                    {t('logOut')}
                   </button>
                 </div>
               )}
@@ -154,7 +154,7 @@ function NavItem({ to, icon, label, isCollapsed }) {
     <NavLink 
       to={to} 
       className={({ isActive }) => 
-        `flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200 font-medium ${
+        `flex items-center ${isRTL ? 'flex-row-reverse' : ''} gap-3 px-4 py-3 rounded-xl transition-all duration-200 font-medium ${
           isActive 
             ? 'bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 shadow-sm' 
             : 'text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 hover:text-gray-900 dark:hover:text-white'

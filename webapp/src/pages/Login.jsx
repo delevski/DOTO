@@ -2,6 +2,8 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { useAuthStore } from '../store/useStore';
 import { useSettingsStore } from '../store/settingsStore';
+import { useTranslation } from '../utils/translations';
+import { sendVerificationEmail, generateVerificationCode, isEmailJSConfigured } from '../utils/emailService';
 import { db } from '../lib/instant';
 import { id } from '@instantdb/react';
 
@@ -9,14 +11,29 @@ export default function Login() {
   const navigate = useNavigate();
   const login = useAuthStore((state) => state.login);
   const { language } = useSettingsStore();
+  const t = useTranslation();
   const isRTL = language === 'he';
   const [phone, setPhone] = useState('');
   const [email, setEmail] = useState('');
-  const [verificationCode, setVerificationCode] = useState(['', '', '', '', '', '']);
-  const [showVerification, setShowVerification] = useState(false);
-  const [isNewUser, setIsNewUser] = useState(false);
   const [error, setError] = useState('');
+  const [showVerification, setShowVerification] = useState(false);
+  const [verificationCode, setVerificationCode] = useState(['', '', '', '', '', '']);
+  const [isSending, setIsSending] = useState(false);
+  const [isGoogleLoading, setIsGoogleLoading] = useState(false);
+  const [googleUserEmail, setGoogleUserEmail] = useState(null);
   const inputRefs = useRef([]);
+  const googleButtonRef = useRef(null);
+
+  // Query for existing user by email (when Google user email is set)
+  const { data: usersData } = db.useQuery({
+    users: googleUserEmail ? {
+      $: {
+        where: { email: googleUserEmail }
+      }
+    } : {}
+  });
+
+  const existingGoogleUser = usersData?.users?.[0];
 
   useEffect(() => {
     // Initialize settings on mount
@@ -24,9 +41,160 @@ export default function Login() {
     settingsStore.initSettings();
   }, []);
 
-  // Generate a 6-digit verification code (in production, send via email)
-  const generateVerificationCode = () => {
-    return Math.floor(100000 + Math.random() * 900000).toString();
+  useEffect(() => {
+    // Initialize Google Sign-In when component mounts and Google API is loaded
+    const initGoogleSignIn = () => {
+      const clientId = import.meta.env.VITE_GOOGLE_CLIENT_ID;
+      
+      if (!clientId) {
+        console.warn('Google Client ID not configured. Set VITE_GOOGLE_CLIENT_ID in your .env file.');
+        return;
+      }
+
+      if (window.google && googleButtonRef.current && !googleButtonRef.current.hasChildNodes()) {
+        try {
+          window.google.accounts.id.initialize({
+            client_id: clientId,
+            callback: handleGoogleSignIn,
+          });
+
+          window.google.accounts.id.renderButton(
+            googleButtonRef.current,
+            {
+              type: 'standard',
+              theme: 'outline',
+              size: 'large',
+              text: 'signin_with',
+              width: '100%',
+            }
+          );
+        } catch (err) {
+          console.error('Error initializing Google Sign-In:', err);
+        }
+      }
+    };
+
+    // Check if Google API is already loaded
+    if (window.google) {
+      initGoogleSignIn();
+    } else {
+      // Wait for Google API to load
+      const checkGoogle = setInterval(() => {
+        if (window.google) {
+          clearInterval(checkGoogle);
+          initGoogleSignIn();
+        }
+      }, 100);
+
+      // Cleanup interval after 10 seconds
+      setTimeout(() => clearInterval(checkGoogle), 10000);
+    }
+
+    // Cleanup function
+    return () => {
+      // Cleanup if needed
+    };
+  }, []);
+
+  // Handle user creation/update when Google user email and existing user data are available
+  useEffect(() => {
+    if (googleUserEmail && existingGoogleUser !== undefined) {
+      handleGoogleUserAuth();
+    }
+  }, [googleUserEmail, existingGoogleUser]);
+
+  const handleGoogleSignIn = async (response) => {
+    setIsGoogleLoading(true);
+    setError('');
+
+    try {
+      // Decode the credential to get user info
+      const credential = response.credential;
+      
+      // Decode JWT token (base64url decode)
+      const base64Url = credential.split('.')[1];
+      const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
+      const jsonPayload = decodeURIComponent(
+        atob(base64)
+          .split('')
+          .map((c) => '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2))
+          .join('')
+      );
+      const userInfo = JSON.parse(jsonPayload);
+
+      // Store Google user email to trigger query
+      setGoogleUserEmail(userInfo.email);
+      
+      // Store full user info in ref for later use
+      googleUserInfoRef.current = {
+        email: userInfo.email,
+        name: userInfo.name,
+        picture: userInfo.picture,
+        emailVerified: userInfo.email_verified,
+      };
+    } catch (err) {
+      console.error('Google sign-in error:', err);
+      setError('Failed to sign in with Google. Please try again.');
+      setIsGoogleLoading(false);
+      setGoogleUserEmail(null);
+    }
+  };
+
+  const googleUserInfoRef = useRef(null);
+
+  const handleGoogleUserAuth = async () => {
+    if (!googleUserInfoRef.current) return;
+
+    try {
+      const googleUser = googleUserInfoRef.current;
+      let userId;
+      let userData;
+
+      if (existingGoogleUser) {
+        // Update existing user
+        userId = existingGoogleUser.id;
+        userData = {
+          ...existingGoogleUser,
+          name: googleUser.name,
+          email: googleUser.email,
+          avatar: googleUser.picture,
+          updatedAt: Date.now(),
+        };
+      } else {
+        // Create new user
+        userId = id();
+        userData = {
+          id: userId,
+          name: googleUser.name,
+          email: googleUser.email,
+          avatar: googleUser.picture,
+          rating: 0,
+          bio: '',
+          createdAt: Date.now(),
+        };
+      }
+
+      // Save/update user in InstantDB
+      await db.transact(
+        db.tx.users[userId].update(userData)
+      );
+
+      // Login the user
+      login(userData);
+
+      // Reset state
+      setGoogleUserEmail(null);
+      googleUserInfoRef.current = null;
+
+      // Navigate to feed
+      navigate('/feed');
+    } catch (err) {
+      console.error('Error creating/updating user:', err);
+      setError('Failed to sign in with Google. Please try again.');
+      setIsGoogleLoading(false);
+      setGoogleUserEmail(null);
+      googleUserInfoRef.current = null;
+    }
   };
 
   const handlePhoneSubmit = async (e) => {
@@ -34,35 +202,53 @@ export default function Login() {
     setError('');
 
     if (!phone.trim()) {
-      setError('Please enter your phone number');
+      setError(t('pleaseEnterPhoneNumber'));
       return;
     }
 
     if (!email.trim()) {
-      setError('Please enter your email address');
+      setError(t('pleaseEnterEmail'));
       return;
     }
 
     // Validate email format
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     if (!emailRegex.test(email.trim())) {
-      setError('Please enter a valid email address');
+      setError(t('pleaseEnterValidEmail'));
       return;
     }
 
-    // Generate verification code
-    const verificationCode = generateVerificationCode();
+    setIsSending(true);
     
-    // Store verification code temporarily (in production, send via email)
-    sessionStorage.setItem('verification_code', verificationCode);
-    sessionStorage.setItem('phone', phone.trim());
-    sessionStorage.setItem('email', email.trim());
-    
-    // Check if user exists in InstantDB (we'll check this after verification)
-    // For now, assume new user - will be checked after code verification
-    setIsNewUser(true); // Default to new user, will be updated after verification
-    
-    setShowVerification(true);
+    try {
+      // Generate verification code
+      const code = generateVerificationCode();
+      
+      // Store verification code and user info
+      sessionStorage.setItem('verification_code', code);
+      sessionStorage.setItem('phone', phone.trim());
+      sessionStorage.setItem('email', email.trim());
+      
+      // Send verification email
+      const emailSent = await sendVerificationEmail(email.trim(), code);
+      
+      // Always show verification screen (code is stored in sessionStorage)
+      setShowVerification(true);
+      
+      if (!emailSent) {
+        // Email failed to send, but show the code on screen
+        setError(`Email could not be sent. Your verification code is displayed below.`);
+      } else {
+        setError('');
+      }
+    } catch (err) {
+      console.error('Error sending verification email:', err);
+      // Still show verification screen since code is stored in sessionStorage
+      setShowVerification(true);
+      setError('Email service error. Your verification code is displayed below.');
+    } finally {
+      setIsSending(false);
+    }
   };
 
   const handleCodeChange = (index, value) => {
@@ -92,12 +278,11 @@ export default function Login() {
     const storedCode = sessionStorage.getItem('verification_code');
 
     if (enteredCode !== storedCode) {
-      setError('Invalid verification code. Please try again.');
+      setError(t('invalidVerificationCode'));
       return;
     }
 
-    // After verification, always go to register
-    // Register page will check if user exists and update or create accordingly
+    // Code verified, navigate to register
     navigate('/register');
   };
   return (
@@ -107,19 +292,19 @@ export default function Login() {
         <div className="relative z-10">
           <h1 className="text-5xl font-extrabold mb-4">DOTO</h1>
           <p className="text-xl text-red-50 mb-2">Do One Thing Others</p>
-          <p className="text-red-100">Building a community where neighbors help neighbors</p>
+          <p className="text-red-100">{t('buildingCommunity')}</p>
         </div>
         <div className="relative z-10">
           <div className="bg-white/10 backdrop-blur-sm rounded-2xl p-6 border border-white/20">
-            <p className="text-lg font-semibold mb-2">Join thousands helping their community</p>
+            <p className="text-lg font-semibold mb-2">{t('joinThousands')}</p>
             <div className="flex gap-4 text-sm text-red-50">
               <div>
                 <div className="font-bold text-white text-2xl">10K+</div>
-                <div>Active Users</div>
+                <div>{t('activeUsers')}</div>
               </div>
               <div>
                 <div className="font-bold text-white text-2xl">50K+</div>
-                <div>Tasks Completed</div>
+                <div>{t('tasksCompleted')}</div>
               </div>
             </div>
           </div>
@@ -139,53 +324,52 @@ export default function Login() {
           </div>
 
           <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-xl border border-gray-100 dark:border-gray-700 p-8">
+            <h2 className="text-2xl font-bold text-gray-900 dark:text-white mb-2">{t('welcomeBack')}</h2>
+            <p className="text-gray-500 dark:text-gray-400 mb-8">{t('signInToContinue')}</p>
+
+            {error && (
+              <div className="mb-4 p-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 text-red-700 dark:text-red-400 rounded-xl text-sm">
+                {error}
+              </div>
+            )}
+
             {!showVerification ? (
-              <>
-                <h2 className="text-2xl font-bold text-gray-900 dark:text-white mb-2">Welcome back</h2>
-                <p className="text-gray-500 dark:text-gray-400 mb-8">Sign in to continue helping your community</p>
-
-                {error && (
-                  <div className="mb-4 p-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 text-red-700 dark:text-red-400 rounded-xl text-sm">
-                    {error}
-                  </div>
-                )}
-
-                <form onSubmit={handlePhoneSubmit} className="space-y-5">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Phone Number</label>
-                    <input 
-                      type="tel" 
-                      placeholder="+1 (555) 000-0000" 
-                      value={phone}
-                      onChange={(e) => setPhone(e.target.value)}
-                      className="w-full bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 text-gray-900 dark:text-white p-3.5 rounded-xl focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent transition-all"
-                      required
-                    />
-                  </div>
-                  
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Email Address</label>
-                    <input 
-                      type="email" 
-                      placeholder="your.email@example.com" 
-                      value={email}
-                      onChange={(e) => setEmail(e.target.value)}
-                      className="w-full bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 text-gray-900 dark:text-white p-3.5 rounded-xl focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent transition-all"
-                      required
-                    />
-                    <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-                      We'll send the verification code to this email
-                    </p>
-                  </div>
-                  
-                  <button 
-                    type="submit" 
-                    className="w-full bg-gradient-to-r from-red-600 to-rose-500 text-white font-semibold py-3.5 rounded-xl shadow-lg shadow-red-200 hover:shadow-xl hover:scale-[1.02] transition-all duration-200"
-                  >
-                    Send Verification Code
-                  </button>
-                </form>
-              </>
+              <form onSubmit={handlePhoneSubmit} className="space-y-5">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">{t('phoneNumber')}</label>
+                <input 
+                  type="tel" 
+                  placeholder="+1 (555) 000-0000" 
+                  value={phone}
+                  onChange={(e) => setPhone(e.target.value)}
+                  className="w-full bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 text-gray-900 dark:text-white p-3.5 rounded-xl focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent transition-all"
+                  required
+                />
+              </div>
+              
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">{t('emailAddress')}</label>
+                <input 
+                  type="email" 
+                  placeholder="your.email@example.com" 
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  className="w-full bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 text-gray-900 dark:text-white p-3.5 rounded-xl focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent transition-all"
+                  required
+                />
+                <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                  {t('verificationCodeSent')} {t('checkEmailAndEnter')}
+                </p>
+              </div>
+              
+              <button 
+                type="submit" 
+                disabled={isSending}
+                className="w-full bg-gradient-to-r from-red-600 to-rose-500 text-white font-semibold py-3.5 rounded-xl shadow-lg shadow-red-200 hover:shadow-xl hover:scale-[1.02] transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100"
+              >
+                {isSending ? t('sending') : t('sendVerificationCode')}
+              </button>
+            </form>
             ) : (
               <>
                 <button
@@ -199,24 +383,18 @@ export default function Login() {
                   <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
                   </svg>
-                  Back
+                  {t('back')}
                 </button>
 
-                <h2 className="text-2xl font-bold text-gray-900 dark:text-white mb-2">Enter Verification Code</h2>
+                <h2 className="text-2xl font-bold text-gray-900 dark:text-white mb-2">{t('enterVerificationCode')}</h2>
                 <p className="text-gray-500 dark:text-gray-400 mb-8">
-                  We sent a 6-digit code to <span className="font-semibold text-gray-900 dark:text-white">{email}</span>. Please check your email and enter it below.
+                  {t('verificationCodeSent')} <span className="font-semibold text-gray-900 dark:text-white">{email}</span>. {t('checkEmailAndEnter')}
                 </p>
-
-                {error && (
-                  <div className="mb-4 p-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 text-red-700 dark:text-red-400 rounded-xl text-sm">
-                    {error}
-                  </div>
-                )}
 
                 <form onSubmit={handleVerifyCode} className="space-y-6">
                   <div>
                     <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-4 text-center">
-                      Verification Code
+                      {t('verificationCode')}
                     </label>
                     <div className={`flex gap-2 justify-center ${isRTL ? 'flex-row-reverse' : ''}`}>
                       {verificationCode.map((digit, index) => (
@@ -233,12 +411,23 @@ export default function Login() {
                         />
                       ))}
                     </div>
-                    <p className="text-xs text-gray-500 dark:text-gray-400 mt-4 text-center">
-                      Verification code sent to: <span className="font-semibold">{email}</span>
-                    </p>
-                    <p className="text-xs text-gray-400 dark:text-gray-500 mt-2 text-center">
-                      Demo code: {sessionStorage.getItem('verification_code')} (Remove in production)
-                    </p>
+                    {isEmailJSConfigured() ? (
+                      <p className="text-xs text-gray-500 dark:text-gray-400 mt-4 text-center">
+                        {t('verificationCodeSentTo')} <span className="font-semibold">{email}</span>
+                      </p>
+                    ) : (
+                      <div className="mt-4 p-4 bg-yellow-50 dark:bg-yellow-900/20 border-2 border-yellow-300 dark:border-yellow-700 rounded-xl">
+                        <p className="text-sm font-semibold text-yellow-800 dark:text-yellow-300 mb-2 text-center">
+                          📧 EmailJS not configured - Verification code:
+                        </p>
+                        <p className="text-2xl font-bold text-yellow-900 dark:text-yellow-200 text-center tracking-wider">
+                          {sessionStorage.getItem('verification_code')}
+                        </p>
+                        <p className="text-xs text-yellow-700 dark:text-yellow-400 mt-2 text-center">
+                          Check your browser console for more details. To enable email sending, configure EmailJS in your .env file.
+                        </p>
+                      </div>
+                    )}
                   </div>
                   
                   <button 
@@ -246,7 +435,7 @@ export default function Login() {
                     disabled={verificationCode.join('').length !== 6}
                     className="w-full bg-gradient-to-r from-red-600 to-rose-500 text-white font-semibold py-3.5 rounded-xl shadow-lg shadow-red-200 hover:shadow-xl hover:scale-[1.02] transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100"
                   >
-                    Verify Code
+                    {t('verifyCode')}
                   </button>
                 </form>
               </>
@@ -258,35 +447,62 @@ export default function Login() {
                   <div className="w-full border-t border-gray-200 dark:border-gray-700"></div>
                 </div>
                 <div className="relative flex justify-center text-sm">
-                  <span className="px-4 bg-white dark:bg-gray-800 text-gray-500 dark:text-gray-400">Or continue with</span>
+                  <span className="px-4 bg-white dark:bg-gray-800 text-gray-500 dark:text-gray-400">{t('orContinueWith')}</span>
                 </div>
               </div>
 
               <div className="mt-6 grid grid-cols-2 gap-3">
-                <button className="flex items-center justify-center gap-2 px-4 py-3 bg-white dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-xl hover:bg-gray-50 dark:hover:bg-gray-600 transition-colors font-medium text-gray-700 dark:text-gray-300">
+                <button 
+                  className="flex items-center justify-center gap-2 px-4 py-3 bg-white dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-xl hover:bg-gray-50 dark:hover:bg-gray-600 transition-colors font-medium text-gray-700 dark:text-gray-300 disabled:opacity-50 disabled:cursor-not-allowed"
+                  disabled
+                  title="Facebook login coming soon"
+                >
                   <svg className="w-5 h-5" viewBox="0 0 24 24" fill="#1877F2">
                     <path d="M24 12.073c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.99 4.388 10.954 10.125 11.854v-8.385H7.078v-3.47h3.047V9.43c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.874v2.25h3.328l-.532 3.47h-2.796v8.385C19.612 23.027 24 18.062 24 12.073z"/>
                   </svg>
-                  Facebook
+                  {t('facebook')}
                 </button>
-                <button className="flex items-center justify-center gap-2 px-4 py-3 bg-white dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-xl hover:bg-gray-50 dark:hover:bg-gray-600 transition-colors font-medium text-gray-700 dark:text-gray-300">
-                  <svg className="w-5 h-5" viewBox="0 0 24 24">
-                    <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
-                    <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
-                    <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/>
-                    <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/>
-                  </svg>
-                  Google
-                </button>
+                <div 
+                  ref={googleButtonRef}
+                  className="flex items-center justify-center w-full"
+                  style={{ minHeight: '48px' }}
+                >
+                  {(!window.google || !import.meta.env.VITE_GOOGLE_CLIENT_ID) && (
+                    <button 
+                      className="flex items-center justify-center gap-2 px-4 py-3 bg-white dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-xl hover:bg-gray-50 dark:hover:bg-gray-600 transition-colors font-medium text-gray-700 dark:text-gray-300 w-full disabled:opacity-50 disabled:cursor-not-allowed"
+                      disabled={isGoogleLoading || !import.meta.env.VITE_GOOGLE_CLIENT_ID}
+                      onClick={() => {
+                        if (!import.meta.env.VITE_GOOGLE_CLIENT_ID) {
+                          setError('Google Sign-In is not configured. Please set VITE_GOOGLE_CLIENT_ID in your environment variables.');
+                        } else {
+                          setError('Google Sign-In is loading. Please wait...');
+                        }
+                      }}
+                      title={!import.meta.env.VITE_GOOGLE_CLIENT_ID ? 'Google Sign-In not configured' : 'Loading Google Sign-In...'}
+                    >
+                      {isGoogleLoading ? (
+                        <span className="text-sm">{t('loading') || 'Loading...'}</span>
+                      ) : (
+                        <>
+                          <svg className="w-5 h-5" viewBox="0 0 24 24">
+                            <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
+                            <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
+                            <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/>
+                            <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/>
+                          </svg>
+                          {t('google')}
+                        </>
+                      )}
+                    </button>
+                  )}
+                </div>
               </div>
             </div>
           </div>
 
-          {!showVerification && (
-            <p className="mt-6 text-center text-sm text-gray-500 dark:text-gray-400">
-              Don't have an account? <Link to="/register" className="text-red-600 dark:text-red-400 font-semibold hover:text-red-700 dark:hover:text-red-500">Sign up</Link>
-            </p>
-          )}
+          <p className="mt-6 text-center text-sm text-gray-500 dark:text-gray-400">
+            {t('dontHaveAccount')} <Link to="/register" className="text-red-600 dark:text-red-400 font-semibold hover:text-red-700 dark:hover:text-red-500">{t('signUp')}</Link>
+          </p>
         </div>
       </div>
     </div>
