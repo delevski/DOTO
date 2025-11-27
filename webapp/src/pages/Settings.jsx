@@ -76,7 +76,10 @@ export default function Settings() {
               </div>
               <ChevronRight size={20} className={`text-gray-400 ${isRTL ? 'rotate-180' : ''}`} />
             </Link>
-            <button className={`w-full text-left px-6 py-4 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors flex items-center justify-between`}>
+            <Link 
+              to="/privacy-policy"
+              className={`w-full text-left px-6 py-4 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors flex items-center justify-between`}
+            >
               <div className="flex items-center gap-3">
                 <div className="p-2 bg-gray-100 dark:bg-gray-700 rounded-lg">
                   <Lock size={20} className="text-gray-600 dark:text-gray-300" />
@@ -87,7 +90,7 @@ export default function Settings() {
                 </div>
               </div>
               <ChevronRight size={20} className={`text-gray-400 ${isRTL ? 'rotate-180' : ''}`} />
-            </button>
+            </Link>
             <button className={`w-full text-left px-6 py-4 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors flex items-center justify-between`}>
               <div className="flex items-center gap-3">
                 <div className="p-2 bg-gray-100 dark:bg-gray-700 rounded-lg">

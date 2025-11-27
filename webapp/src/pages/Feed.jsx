@@ -195,8 +195,11 @@ export default function Feed() {
             </div>
           ) : (
             posts.map(post => {
-              const isClaimed = !!post.claimedBy;
-              const isClaimedByMe = post.claimedBy === user?.id;
+              // Support both old (claimedBy) and new (claimers array) format for backward compatibility
+              const claimers = post.claimers || [];
+              const approvedClaimerId = post.approvedClaimerId || null;
+              const isClaimed = approvedClaimerId !== null || (post.claimedBy && !claimers.length);
+              const isClaimedByMe = approvedClaimerId === user?.id || post.claimedBy === user?.id;
               const isMyPost = post.authorId === user?.id;
               const likedBy = post.likedBy || [];
               const isLiked = user && likedBy.includes(user.id);
@@ -266,7 +269,7 @@ export default function Feed() {
 
               return (
                 <article key={post.id} className={`bg-white dark:bg-gray-800 rounded-2xl shadow-sm border overflow-hidden transition-shadow duration-200 ${
-                  isClaimed ? 'border-green-200 dark:border-green-800 bg-green-50/30 dark:bg-green-900/20' : 'border-gray-100 dark:border-gray-700 hover:shadow-md'
+                  approvedClaimerId ? 'border-green-200 dark:border-green-800 bg-green-50/30 dark:bg-green-900/20' : 'border-gray-100 dark:border-gray-700 hover:shadow-md'
                 }`}>
                   <div className="p-6">
                     <div className={`flex justify-between items-start mb-4 ${isRTL ? 'flex-row-reverse' : ''}`}>
@@ -307,7 +310,7 @@ export default function Feed() {
                           </div>
                         </div>
                       </div>
-                      {isClaimed && (
+                      {approvedClaimerId && (
                         <div className={`flex items-center gap-2 px-3 py-1.5 rounded-full text-sm font-semibold ${isRTL ? 'flex-row-reverse' : ''} ${
                           isClaimedByMe 
                             ? 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400' 
@@ -320,8 +323,8 @@ export default function Feed() {
                             </>
                           ) : (
                             <>
-                              <Lock size={14} />
-                              {t('claimed')}
+                              <CheckCircle size={14} />
+                              {t('approved')}
                             </>
                           )}
                         </div>
@@ -367,6 +370,32 @@ export default function Feed() {
                         {post.description}
                       </p>
                     </Link>
+                    
+                    {/* Claimers Avatars */}
+                    {claimers.length > 0 && (
+                      <div className={`mb-4 flex items-center gap-2 ${isRTL ? 'flex-row-reverse' : ''}`}>
+                        <div className={`flex items-center ${isRTL ? 'flex-row-reverse' : ''}`}>
+                          {claimers.slice(0, 5).map((claimer, index) => (
+                            <img
+                              key={claimer.userId}
+                              src={claimer.userAvatar || `https://i.pravatar.cc/150?u=${claimer.userId}`}
+                              alt={claimer.userName}
+                              className={`w-8 h-8 rounded-full border-2 border-white dark:border-gray-800 object-cover ${isRTL ? 'mr-[-6px]' : 'ml-[-6px]'}`}
+                              style={{ zIndex: claimers.length - index }}
+                              title={claimer.userName}
+                            />
+                          ))}
+                          {claimers.length > 5 && (
+                            <div className={`w-8 h-8 rounded-full border-2 border-white dark:border-gray-800 bg-gray-200 dark:bg-gray-700 flex items-center justify-center text-xs font-semibold text-gray-600 dark:text-gray-300 ${isRTL ? 'mr-[-6px]' : 'ml-[-6px]'}`} style={{ zIndex: 0 }}>
+                              +{claimers.length - 5}
+                            </div>
+                          )}
+                        </div>
+                        <span className="text-xs text-gray-500 dark:text-gray-400">
+                          {claimers.length} {claimers.length === 1 ? 'claimer' : 'claimers'}
+                        </span>
+                      </div>
+                    )}
                     
                     {/* Display Images */}
                     {post.photos && post.photos.length > 0 && (
@@ -506,9 +535,13 @@ export default function Feed() {
                           <Share2 size={20} />
                         </button>
                       </div>
-                      {isClaimed ? (
+                      {approvedClaimerId ? (
                         <div className="text-sm text-gray-500 dark:text-gray-400 font-medium">
-                          {isClaimedByMe ? t('claimedByYou') : `${t('claimed')} ${post.claimedByName || t('someone')}`}
+                          {isClaimedByMe ? t('claimedByYou') : t('approved')}
+                        </div>
+                      ) : claimers.length > 0 ? (
+                        <div className="text-sm text-gray-500 dark:text-gray-400 font-medium">
+                          {claimers.length} {claimers.length === 1 ? 'claimer' : 'claimers'}
                         </div>
                       ) : (
                         <Link 

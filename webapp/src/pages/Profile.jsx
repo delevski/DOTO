@@ -1,15 +1,37 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import { Settings as SettingsIcon, Award, HelpCircle, Edit3, LogOut } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { useAuthStore } from '../store/useStore';
 import { useSettingsStore } from '../store/settingsStore';
 import { useTranslation } from '../utils/translations';
+import Badge from '../components/Badge';
+import { getAllBadges, getUserEarnedBadges, BADGE_TYPES } from '../utils/badges';
 
 export default function Profile() {
   const { user, logout } = useAuthStore();
   const { language } = useSettingsStore();
   const t = useTranslation();
   const isRTL = language === 'he';
+
+  // Get user's earned badges
+  const earnedBadgeIds = useMemo(() => {
+    // Mock user stats - replace with actual user data
+    const mockUser = {
+      ...user,
+      postsCreated: user?.postsCreated || 12,
+      tasksCompleted: user?.tasksCompleted || 8,
+      rating: user?.rating || 4.9,
+    };
+    return getUserEarnedBadges(mockUser);
+  }, [user]);
+
+  // Get all badges and mark which are earned
+  const allBadges = useMemo(() => {
+    return getAllBadges().map(badge => ({
+      ...badge,
+      earned: earnedBadgeIds.includes(badge.id),
+    }));
+  }, [earnedBadgeIds]);
 
   const handleLogout = () => {
     logout();
@@ -69,18 +91,23 @@ export default function Profile() {
 
           {/* Badges Section */}
           <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-sm border border-gray-100 dark:border-gray-700 p-8">
-            <h3 className="text-xl font-bold text-gray-900 dark:text-white mb-6 flex items-center gap-2">
-              <Award size={24} className="text-yellow-500" />
-              {t('badgesEarned')}
-            </h3>
-            <div className="grid grid-cols-4 gap-4">
-              {[1, 2, 3, 4, 5, 6, 7, 8].map(i => (
-                <div key={i} className="flex flex-col items-center p-4 bg-gray-50 dark:bg-gray-700 rounded-xl hover:bg-gray-100 dark:hover:bg-gray-600 transition-colors cursor-pointer">
-                  <div className="w-16 h-16 bg-gradient-to-br from-yellow-400 to-orange-500 rounded-full mb-2 flex items-center justify-center text-white font-bold text-xl">
-                    {i}
-                  </div>
-                  <span className="text-xs font-medium text-gray-700 dark:text-gray-300 text-center">Badge {i}</span>
-                </div>
+            <div className={`flex items-center justify-between mb-6 ${isRTL ? 'flex-row-reverse' : ''}`}>
+              <h3 className="text-xl font-bold text-gray-900 dark:text-white flex items-center gap-2">
+                <Award size={24} className="text-yellow-500" />
+                {t('badgesEarned')}
+              </h3>
+              <span className="text-sm text-gray-500 dark:text-gray-400">
+                {earnedBadgeIds.length} / {allBadges.length}
+              </span>
+            </div>
+            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-6">
+              {allBadges.map(badge => (
+                <Badge
+                  key={badge.id}
+                  badgeId={badge.id}
+                  earned={badge.earned}
+                  size="md"
+                />
               ))}
             </div>
           </div>
@@ -102,7 +129,7 @@ export default function Profile() {
               </div>
               <div className={`flex justify-between items-center ${isRTL ? 'flex-row-reverse' : ''}`}>
                 <span className="text-red-100">{t('badgesEarned')}</span>
-                <span className="font-bold text-xl">8</span>
+                <span className="font-bold text-xl">{earnedBadgeIds.length}</span>
               </div>
               <div className={`flex justify-between items-center ${isRTL ? 'flex-row-reverse' : ''}`}>
                 <span className="text-red-100">{t('points')}</span>

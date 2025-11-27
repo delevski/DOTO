@@ -183,8 +183,12 @@ export default function PostDetails() {
     return null; // Handled by useEffect
   }
 
-  const isClaimed = !!post.claimedBy;
-  const isClaimedByMe = post.claimedBy === user?.id;
+  // Support both old (claimedBy) and new (claimers array) format for backward compatibility
+  const claimers = post.claimers || [];
+  const approvedClaimerId = post.approvedClaimerId || null;
+  const isClaimed = approvedClaimerId !== null || (post.claimedBy && !claimers.length);
+  const isClaimedByMe = approvedClaimerId === user?.id || post.claimedBy === user?.id;
+  const hasClaimed = user && claimers.some(c => c.userId === user.id);
   const isMyPost = post.authorId === user?.id;
   const likedBy = post.likedBy || [];
   const isLiked = user && likedBy.includes(user.id);
@@ -210,8 +214,8 @@ export default function PostDetails() {
       return;
     }
 
-    if (isClaimed) {
-      setLocalError('This post has already been claimed');
+    if (approvedClaimerId) {
+      setLocalError('This post already has an approved claimer');
       return;
     }
 
@@ -220,19 +224,56 @@ export default function PostDetails() {
       return;
     }
 
+    // Check if user already claimed
+    if (hasClaimed) {
+      setLocalError('You have already claimed this post');
+      return;
+    }
+
+    try {
+      const newClaimer = {
+        userId: user.id,
+        userName: user.name,
+        userAvatar: user.avatar || 'https://i.pravatar.cc/150?u=' + user.id,
+        claimedAt: Date.now()
+      };
+
+      db.transact(
+        db.tx.posts[postId].update({
+          claimers: [...claimers, newClaimer]
+        })
+      );
+      setLocalSuccess('Post claimed successfully! The poster will review your claim.');
+    } catch (err) {
+      setLocalError(err.message || 'Failed to claim post. Please try again.');
+    }
+  };
+
+  const handleApproveClaimer = async (claimerUserId) => {
+    setLocalError('');
+    setLocalSuccess('');
+
+    if (!isMyPost) {
+      setLocalError('Only the poster can approve claimers');
+      return;
+    }
+
+    if (approvedClaimerId) {
+      setLocalError('A claimer has already been approved');
+      return;
+    }
+
     try {
       db.transact(
         db.tx.posts[postId].update({
-          claimedBy: user.id,
-          claimedByName: user.name
+          approvedClaimerId: claimerUserId,
+          claimedBy: claimerUserId, // Keep for backward compatibility
+          claimedByName: claimers.find(c => c.userId === claimerUserId)?.userName || 'Someone'
         })
       );
-      setLocalSuccess('Post claimed successfully!');
-      setTimeout(() => {
-        navigate('/feed');
-      }, 1500);
+      setLocalSuccess('Claimer approved successfully!');
     } catch (err) {
-      setLocalError(err.message || 'Failed to claim post. Please try again.');
+      setLocalError(err.message || 'Failed to approve claimer. Please try again.');
     }
   };
 
@@ -500,7 +541,7 @@ export default function PostDetails() {
         <div className="lg:col-span-2 space-y-6">
           {/* Post Card */}
           <div className={`bg-white dark:bg-gray-800 rounded-2xl shadow-sm border overflow-hidden ${
-            isClaimed ? 'border-green-200 dark:border-green-800 bg-green-50/30 dark:bg-green-900/20' : 'border-gray-100 dark:border-gray-700'
+            approvedClaimerId ? 'border-green-200 dark:border-green-800 bg-green-50/30 dark:bg-green-900/20' : 'border-gray-100 dark:border-gray-700'
           }`}>
             <div className="p-8">
               {/* Author Header */}
@@ -521,7 +562,7 @@ export default function PostDetails() {
                   </div>
                 </div>
                 <div className={`flex items-center gap-2 ${isRTL ? 'flex-row-reverse' : ''}`}>
-                  {isClaimed && (
+                  {approvedClaimerId && (
                     <div className={`flex items-center gap-2 px-4 py-2 rounded-full text-sm font-semibold ${isRTL ? 'flex-row-reverse' : ''} ${
                       isClaimedByMe 
                         ? 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400' 
@@ -534,8 +575,8 @@ export default function PostDetails() {
                         </>
                       ) : (
                         <>
-                          <Lock size={16} />
-                          {t('alreadyClaimed')}
+                          <CheckCircle size={16} />
+                          {t('approved')}
                         </>
                       )}
                     </div>
@@ -669,6 +710,30 @@ export default function PostDetails() {
                 <>
                   <h3 className="text-2xl font-bold text-gray-900 dark:text-white mb-4">{post.title}</h3>
                   <p className="text-gray-700 dark:text-gray-300 leading-relaxed text-lg mb-6">{post.description}</p>
+                  
+                  {/* Claimers Avatars */}
+                  {claimers.length > 0 && (
+                    <div className={`mb-6 flex items-center gap-2 ${isRTL ? 'flex-row-reverse' : ''}`}>
+                      <span className="text-sm text-gray-600 dark:text-gray-400 font-medium">{claimers.length} {claimers.length === 1 ? 'claimer' : 'claimers'}:</span>
+                      <div className={`flex items-center ${isRTL ? 'flex-row-reverse' : ''}`}>
+                        {claimers.slice(0, 5).map((claimer, index) => (
+                          <img
+                            key={claimer.userId}
+                            src={claimer.userAvatar || `https://i.pravatar.cc/150?u=${claimer.userId}`}
+                            alt={claimer.userName}
+                            className={`w-10 h-10 rounded-full border-2 border-white dark:border-gray-800 object-cover ${isRTL ? 'mr-[-8px]' : 'ml-[-8px]'}`}
+                            style={{ zIndex: claimers.length - index }}
+                            title={claimer.userName}
+                          />
+                        ))}
+                        {claimers.length > 5 && (
+                          <div className={`w-10 h-10 rounded-full border-2 border-white dark:border-gray-800 bg-gray-200 dark:bg-gray-700 flex items-center justify-center text-xs font-semibold text-gray-600 dark:text-gray-300 ${isRTL ? 'mr-[-8px]' : 'ml-[-8px]'}`} style={{ zIndex: 0 }}>
+                            +{claimers.length - 5}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  )}
                   
                   {/* Display Images */}
                   {post.photos && post.photos.length > 0 && (
@@ -872,44 +937,114 @@ export default function PostDetails() {
         <div className="space-y-6">
           {/* Claim Card */}
           <div className={`rounded-2xl shadow-xl p-8 text-white sticky top-8 ${
-            isClaimed 
+            approvedClaimerId 
               ? 'bg-gradient-to-br from-gray-600 to-gray-700' 
               : 'bg-gradient-to-br from-red-600 to-rose-500'
           }`}>
-            {isClaimed ? (
+            {approvedClaimerId ? (
               <>
                 <div className="flex items-center gap-3 mb-4">
-                  <Lock size={24} />
-                  <h3 className="text-2xl font-bold">Already Claimed</h3>
+                  <CheckCircle size={24} />
+                  <h3 className="text-2xl font-bold">Approved</h3>
                 </div>
-                <p className="text-gray-200 mb-6">
-                  {isClaimedByMe 
-                    ? 'You have claimed this task. Good luck!' 
-                    : `This task has been claimed by ${post.claimedByName || 'someone'}.`}
-                </p>
-                {isClaimedByMe && (
-                  <button className="w-full bg-white/20 text-white font-bold py-4 rounded-xl hover:bg-white/30 transition-colors text-lg border border-white/30">
-                    View My Claims
-                  </button>
-                )}
+                {(() => {
+                  const approvedClaimer = claimers.find(c => c.userId === approvedClaimerId);
+                  return (
+                    <div className="mb-6">
+                      <p className="text-gray-200 mb-4">
+                        {isClaimedByMe 
+                          ? 'You have been approved for this task!' 
+                          : `This task has been approved for ${approvedClaimer?.userName || 'someone'}.`}
+                      </p>
+                      {approvedClaimer && (
+                        <div className="flex items-center gap-3 bg-white/10 p-3 rounded-xl">
+                          <img 
+                            src={approvedClaimer.userAvatar || `https://i.pravatar.cc/150?u=${approvedClaimer.userId}`} 
+                            alt={approvedClaimer.userName}
+                            className="w-12 h-12 rounded-full border-2 border-white/30"
+                          />
+                          <div>
+                            <div className="font-semibold">{approvedClaimer.userName}</div>
+                            <div className="text-sm text-gray-300">Approved claimer</div>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })()}
               </>
             ) : (
               <>
                 <h3 className="text-2xl font-bold mb-2">Claim This Task</h3>
                 <p className="text-red-50 mb-6">Help {isMyPost ? (user?.name || post.author) : post.author} and earn rewards!</p>
                 {isMyPost ? (
-                  <div className="bg-white/20 p-4 rounded-xl text-center text-red-50">
-                    <p className="font-medium">This is your own post</p>
-                    <p className="text-sm mt-1">You cannot claim your own tasks</p>
-                  </div>
+                  <>
+                    {claimers.length > 0 ? (
+                      <div className="space-y-4">
+                        <div className="bg-white/10 p-4 rounded-xl">
+                          <h4 className="font-semibold mb-3 text-lg">Choose a Claimer ({claimers.length})</h4>
+                          <div className="space-y-3 max-h-64 overflow-y-auto">
+                            {claimers.map((claimer) => (
+                              <div key={claimer.userId} className="bg-white/10 p-3 rounded-lg flex items-center gap-3">
+                                <img 
+                                  src={claimer.userAvatar || `https://i.pravatar.cc/150?u=${claimer.userId}`} 
+                                  alt={claimer.userName}
+                                  className="w-10 h-10 rounded-full border-2 border-white/30"
+                                />
+                                <div className="flex-1">
+                                  <div className="font-medium">{claimer.userName}</div>
+                                  <div className="text-xs text-gray-300">{formatTime(claimer.claimedAt)}</div>
+                                </div>
+                                <button
+                                  onClick={() => handleApproveClaimer(claimer.userId)}
+                                  className="px-4 py-2 bg-white text-red-600 rounded-lg font-semibold hover:bg-gray-100 transition-colors text-sm"
+                                >
+                                  Approve
+                                </button>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="bg-white/20 p-4 rounded-xl text-center text-red-50">
+                        <p className="font-medium">No claimers yet</p>
+                        <p className="text-sm mt-1">Wait for people to claim your task</p>
+                      </div>
+                    )}
+                  </>
                 ) : (
                   <>
-                    <button 
-                      onClick={handleClaim}
-                      className="w-full bg-white text-red-600 font-bold py-4 rounded-xl shadow-lg hover:bg-gray-50 transition-colors text-lg mb-6"
-                    >
-                      Claim Now
-                    </button>
+                    {hasClaimed ? (
+                      <div className="bg-white/20 p-4 rounded-xl text-center text-red-50 mb-6">
+                        <p className="font-medium">You've claimed this task</p>
+                        <p className="text-sm mt-1">Waiting for approval from the poster</p>
+                      </div>
+                    ) : (
+                      <button 
+                        onClick={handleClaim}
+                        disabled={approvedClaimerId !== null}
+                        className="w-full bg-white text-red-600 font-bold py-4 rounded-xl shadow-lg hover:bg-gray-50 transition-colors text-lg mb-6 disabled:opacity-50 disabled:cursor-not-allowed"
+                      >
+                        Claim Now
+                      </button>
+                    )}
+                    {claimers.length > 0 && (
+                      <div className="mb-6">
+                        <p className="text-red-100 text-sm mb-2">{claimers.length} {claimers.length === 1 ? 'person has' : 'people have'} claimed this task</p>
+                        <div className="flex flex-wrap gap-2">
+                          {claimers.map((claimer) => (
+                            <img
+                              key={claimer.userId}
+                              src={claimer.userAvatar || `https://i.pravatar.cc/150?u=${claimer.userId}`}
+                              alt={claimer.userName}
+                              className="w-8 h-8 rounded-full border-2 border-white/30"
+                              title={claimer.userName}
+                            />
+                          ))}
+                        </div>
+                      </div>
+                    )}
                     <div className="pt-6 border-t border-red-400/30">
                       <div className="flex justify-between items-center mb-3">
                         <span className="text-red-100">Estimated Time</span>

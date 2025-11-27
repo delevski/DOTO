@@ -1,23 +1,11 @@
 import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
 
-// Mock user - in real app this would come from auth
-const CURRENT_USER = {
-  id: 'user-1',
-  name: 'John Doe',
-  email: 'john.doe@example.com',
-  phone: '+1 (555) 123-4567',
-  avatar: 'https://i.pravatar.cc/150?u=user',
-  rating: 4.9,
-  bio: 'Community helper passionate about making neighborhoods better places to live.',
-  location: 'New York, NY',
-};
-
 export const useAuthStore = create(
   persist(
     (set, get) => ({
-      user: CURRENT_USER,
-      isAuthenticated: true,
+      user: null,
+      isAuthenticated: false,
       login: (user) => set({ user, isAuthenticated: true }),
       logout: () => {
         // Clear session storage (verification codes, etc.)
@@ -26,7 +14,7 @@ export const useAuthStore = create(
         set({ user: null, isAuthenticated: false });
       },
       updateProfile: (updates) => set((state) => ({
-        user: { ...state.user, ...updates }
+        user: state.user ? { ...state.user, ...updates } : null
       })),
     }),
     {

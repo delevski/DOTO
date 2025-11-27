@@ -273,7 +273,9 @@ export default function NewPost() {
         photos: photoDataUrls.length > 0 ? photoDataUrls : [], // Store base64 data URLs for persistent storage
         likes: 0,
         comments: 0,
-        claimedBy: null,
+        claimers: [], // Array of claimer objects: { userId, userName, userAvatar, claimedAt }
+        approvedClaimerId: null, // ID of the approved claimer (only one can be approved)
+        claimedBy: null, // Keep for backward compatibility, but use claimers array instead
         createdAt: Date.now(),
       };
 

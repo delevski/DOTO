@@ -48,3 +48,17 @@
 .animate-fade-in {
   animation: fade-in 0.3s ease-out;
 }
+
+/* Slow pulse animation for badges */
+@keyframes pulse-slow {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.85;
+  }
+}
+
+.animate-pulse-slow {
+  animation: pulse-slow 3s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}

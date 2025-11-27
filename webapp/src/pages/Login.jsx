@@ -34,10 +34,14 @@ export default function Login() {
   const { data: usersData } = db.useQuery({
     users: googleUserEmail ? {
       $: {
-        where: { email: googleUserEmail }
+        where: { emailLower: googleUserEmail.toLowerCase() }
       }
     } : {}
   });
+
+  // Query all users for email lookup (we'll filter client-side)
+  const { data: allUsersData } = db.useQuery({ users: {} });
+  const allUsers = allUsersData?.users || [];
 
   const existingGoogleUser = usersData?.users?.[0];
 
@@ -216,42 +220,6 @@ export default function Login() {
     }
   };
 
-  const findUserByEmail = async (targetEmail) => {
-    if (!targetEmail) return null;
-    const trimmed = targetEmail.trim();
-    const normalized = trimmed.toLowerCase();
-
-    try {
-      const { data } = await db.query({
-        users: {
-          $: {
-            where: { emailLower: normalized }
-          }
-        }
-      });
-
-      const userByLower = data?.users?.[0];
-      if (userByLower) {
-        return userByLower;
-      }
-    } catch (err) {
-      console.error('Error querying user by emailLower:', err);
-    }
-
-    try {
-      const { data } = await db.query({
-        users: {
-          $: {
-            where: { email: trimmed }
-          }
-        }
-      });
-      return data?.users?.[0] || null;
-    } catch (err) {
-      console.error('Error querying user by email:', err);
-      throw err;
-    }
-  };
 
   const handleGoogleSignIn = async (response) => {
     setIsGoogleLoading(true);
@@ -401,7 +369,12 @@ export default function Login() {
         throw new Error('Your Facebook account does not provide an email address. Please update your Facebook settings or use another login method.');
       }
 
-      const existingUserRecord = await findUserByEmail(profile.email);
+      // Find user from allUsers array
+      const normalizedEmail = profile.email.toLowerCase();
+      const existingUserRecord = allUsers.find(u => 
+        (u.emailLower && u.emailLower === normalizedEmail) || 
+        (u.email && u.email.toLowerCase() === normalizedEmail)
+      );
       const timestamp = Date.now();
       const avatarFromFacebook = profile.picture?.data?.url || `https://graph.facebook.com/${profile.id}/picture?type=large`;
       let userId;
@@ -473,28 +446,44 @@ export default function Login() {
     setIsAuthenticating(true);
 
     try {
-      const userRecord = await findUserByEmail(email);
+      const trimmedEmail = email.trim();
+      const normalizedEmail = trimmedEmail.toLowerCase();
+      
+      // Find user from the allUsers array (filtered client-side)
+      const userRecord = allUsers.find(u => 
+        (u.emailLower && u.emailLower === normalizedEmail) || 
+        (u.email && u.email.toLowerCase() === normalizedEmail)
+      );
 
       if (!userRecord) {
+        console.log('User not found for email:', trimmedEmail);
         setError(t('accountNotFound'));
+        setIsAuthenticating(false);
         return;
       }
 
       if (!userRecord.passwordHash) {
+        console.log('User found but no password hash - social login only');
         setError(t('socialLoginOnly'));
+        setIsAuthenticating(false);
         return;
       }
 
+      console.log('Verifying password for user:', userRecord.email);
       const isValidPassword = await verifyPassword(password, userRecord.passwordHash);
+      
       if (!isValidPassword) {
+        console.log('Password verification failed');
         setError(t('incorrectPassword'));
+        setIsAuthenticating(false);
         return;
       }
 
+      console.log('Password verified successfully, starting verification flow');
       await startVerificationFlow({ user: userRecord, method: 'password' });
     } catch (err) {
       console.error('Error logging in with password:', err);
-      setError(t('failedToLogin') || 'Failed to log in. Please try again.');
+      setError(err.message || t('failedToLogin') || 'Failed to log in. Please try again.');
     } finally {
       setIsAuthenticating(false);
     }
@@ -557,18 +546,10 @@ export default function Login() {
       let userData = context.userSnapshot;
 
       if (!userData) {
-        try {
-          const { data } = await db.query({
-            users: {
-              $: {
-                where: { id: context.userId }
-              }
-            }
-          });
-          userData = data?.users?.[0];
-        } catch (err) {
-          console.error('Error fetching user during verification:', err);
-          userData = null;
+        // Find user from allUsers array
+        userData = allUsers.find(u => u.id === context.userId) || null;
+        if (!userData) {
+          console.error('User not found during verification:', context.userId);
         }
       }
 
@@ -718,18 +699,18 @@ export default function Login() {
                     </div>
                     {isEmailJSConfigured() ? (
                       <p className="text-xs text-gray-500 dark:text-gray-400 mt-4 text-center">
-                        {t('verificationCodeSentTo')} <span className="font-semibold">{email}</span>
+                        {t('verificationCodeSentTo')} <span className="font-semibold">{verificationContext?.email || email}</span>
                       </p>
                     ) : (
-                      <div className="mt-4 p-4 bg-yellow-50 dark:bg-yellow-900/20 border-2 border-yellow-300 dark:border-yellow-700 rounded-xl">
-                        <p className="text-sm font-semibold text-yellow-800 dark:text-yellow-300 mb-2 text-center">
-                          📧 EmailJS not configured - Verification code:
+                      <div className="mt-4 p-4 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-xl">
+                        <p className="text-sm font-semibold text-blue-800 dark:text-blue-300 mb-2 text-center">
+                          📧 Development Mode - Your Verification Code:
                         </p>
-                        <p className="text-2xl font-bold text-yellow-900 dark:text-yellow-200 text-center tracking-wider">
+                        <p className="text-2xl font-bold text-blue-900 dark:text-blue-200 text-center tracking-wider mb-2">
                           {sessionStorage.getItem('verification_code')}
                         </p>
-                        <p className="text-xs text-yellow-700 dark:text-yellow-400 mt-2 text-center">
-                          Check your browser console for more details. To enable email sending, configure EmailJS in your .env file.
+                        <p className="text-xs text-blue-700 dark:text-blue-400 text-center">
+                          Email sending is not configured. Enter the code above to continue.
                         </p>
                       </div>
                     )}
