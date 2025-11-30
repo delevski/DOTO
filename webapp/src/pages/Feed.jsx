@@ -275,6 +275,30 @@ export default function Feed() {
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
+  // Check which descriptions are truncated (more than 3 lines)
+  useEffect(() => {
+    const checkTruncation = () => {
+      const newTruncated = {};
+      Object.entries(descriptionRefs.current).forEach(([postId, el]) => {
+        if (el && !expandedDescriptions[postId]) {
+          // Check if content is truncated by comparing scrollHeight with clientHeight
+          newTruncated[postId] = el.scrollHeight > el.clientHeight;
+        }
+      });
+      setTruncatedPosts(prev => {
+        // Only update if something changed to avoid infinite loops
+        const hasChanges = Object.keys(newTruncated).some(
+          key => prev[key] !== newTruncated[key]
+        );
+        return hasChanges ? { ...prev, ...newTruncated } : prev;
+      });
+    };
+    
+    // Run after render
+    const timer = setTimeout(checkTruncation, 100);
+    return () => clearTimeout(timer);
+  }, [posts, expandedDescriptions]);
+
   const toggleFilter = (filterName) => {
     const newValue = !filters[filterName];
     setFilters(prev => ({
@@ -734,10 +758,13 @@ export default function Feed() {
                         </h4>
                       </Link>
                       <div className="relative">
-                        <p className={`text-sm text-gray-700 dark:text-gray-300 leading-relaxed whitespace-pre-wrap ${expandedDescriptions[post.id] ? '' : 'line-clamp-3'}`}>
+                        <p 
+                          ref={el => descriptionRefs.current[post.id] = el}
+                          className={`text-sm text-gray-700 dark:text-gray-300 leading-relaxed whitespace-pre-wrap ${expandedDescriptions[post.id] ? '' : 'line-clamp-3'}`}
+                        >
                           {post.description}
                         </p>
-                        {post.description && (post.description.length > 100 || (post.description.match(/\n/g) || []).length >= 3) && (
+                        {(truncatedPosts[post.id] || expandedDescriptions[post.id]) && (
                           <button
                             onClick={(e) => {
                               e.preventDefault();
