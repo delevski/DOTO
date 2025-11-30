@@ -9,7 +9,8 @@ import { useSettingsStore } from '../store/settingsStore';
 import { useTranslation } from '../utils/translations';
 import { db } from '../lib/instant';
 import { id } from '@instantdb/react';
-import { ISRAEL_CENTER, ISRAEL_BOUNDS, validateIsraelBounds } from '../utils/israelBounds';
+import { ISRAEL_CENTER, ISRAEL_BOUNDS, validateIsraelBounds, ISRAEL_NOMINATIM_PARAMS } from '../utils/israelBounds';
+import { updateUserStreak } from '../utils/streakTracking';
 
 // Fix for default marker icons
 import icon from 'leaflet/dist/images/marker-icon.png';
@@ -82,7 +83,13 @@ export default function NewPost() {
   const [showMapPicker, setShowMapPicker] = useState(false);
   const [selectedCoordinates, setSelectedCoordinates] = useState(null);
   const [isGeocoding, setIsGeocoding] = useState(false);
+  const [locationSuggestions, setLocationSuggestions] = useState([]);
+  const [showSuggestions, setShowSuggestions] = useState(false);
+  const [isSearchingLocation, setIsSearchingLocation] = useState(false);
   const fileInputRef = useRef(null);
+  const locationInputRef = useRef(null);
+  const suggestionsRef = useRef(null);
+  const searchTimeoutRef = useRef(null);
 
   const handlePhotoUpload = async (e) => {
     const files = Array.from(e.target.files || []);
@@ -173,6 +180,81 @@ export default function NewPost() {
     }
   };
 
+  // Search for location autocomplete suggestions
+  const searchLocations = async (query) => {
+    if (!query || query.trim().length < 2) {
+      setLocationSuggestions([]);
+      setShowSuggestions(false);
+      return;
+    }
+    
+    setIsSearchingLocation(true);
+    try {
+      const params = new URLSearchParams({
+        format: 'json',
+        q: query,
+        limit: '5',
+        ...ISRAEL_NOMINATIM_PARAMS,
+        addressdetails: '1'
+      });
+      
+      const response = await fetch(
+        `https://nominatim.openstreetmap.org/search?${params.toString()}`,
+        {
+          headers: {
+            'User-Agent': 'DOTO-App/1.0'
+          }
+        }
+      );
+      const data = await response.json();
+      const suggestions = data
+        .filter(item => {
+          const lat = parseFloat(item.lat);
+          const lon = parseFloat(item.lon);
+          return lat >= 29.4 && lat <= 33.5 && lon >= 34.2 && lon <= 35.9;
+        })
+        .map(item => ({
+          lat: parseFloat(item.lat),
+          lon: parseFloat(item.lon),
+          displayName: item.display_name,
+          address: item.address || {}
+        }));
+      
+      setLocationSuggestions(suggestions);
+      setShowSuggestions(suggestions.length > 0);
+    } catch (error) {
+      console.error('Location search error:', error);
+      setLocationSuggestions([]);
+      setShowSuggestions(false);
+    } finally {
+      setIsSearchingLocation(false);
+    }
+  };
+
+  // Handle location input change with debouncing
+  const handleLocationChange = (e) => {
+    const value = e.target.value;
+    setLocation(value);
+    
+    // Clear previous timeout
+    if (searchTimeoutRef.current) {
+      clearTimeout(searchTimeoutRef.current);
+    }
+    
+    // Debounce search
+    searchTimeoutRef.current = setTimeout(() => {
+      searchLocations(value);
+    }, 300);
+  };
+
+  // Handle location suggestion selection
+  const handleLocationSuggestionSelect = (suggestion) => {
+    setLocation(suggestion.displayName);
+    setSelectedCoordinates([suggestion.lat, suggestion.lon]);
+    setShowSuggestions(false);
+    setLocationSuggestions([]);
+  };
+
   const handleLocationSelect = async (coords) => {
     // Validate coordinates are within Israel bounds
     const [validLat, validLon] = validateIsraelBounds(coords[0], coords[1]);
@@ -180,7 +262,30 @@ export default function NewPost() {
     // Reverse geocode to get street address
     const address = await reverseGeocode(validLat, validLon);
     setLocation(address);
+    setShowSuggestions(false);
   };
+
+  // Close suggestions when clicking outside and cleanup timeout
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      if (
+        suggestionsRef.current &&
+        !suggestionsRef.current.contains(event.target) &&
+        locationInputRef.current &&
+        !locationInputRef.current.contains(event.target)
+      ) {
+        setShowSuggestions(false);
+      }
+    };
+
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+      if (searchTimeoutRef.current) {
+        clearTimeout(searchTimeoutRef.current);
+      }
+    };
+  }, []);
 
   const handleUseCurrentLocation = async () => {
     if (navigator.geolocation) {
@@ -283,6 +388,9 @@ export default function NewPost() {
         db.tx.posts[newPostId].update(newPost)
       );
 
+      // Update user's activity streak
+      updateUserStreak(user.id);
+
       // Navigate to the new post
       setTimeout(() => {
         navigate(`/post/${newPostId}`);
@@ -372,15 +480,57 @@ export default function NewPost() {
         <div>
           <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">{t('location')} *</label>
           <div className="relative">
-            <MapPin size={20} className={`absolute ${isRTL ? 'right' : 'left'}-3 top-1/2 transform -translate-y-1/2 text-gray-400`} />
+            <MapPin size={20} className={`absolute ${isRTL ? 'right' : 'left'}-3 top-1/2 transform -translate-y-1/2 text-gray-400 z-10`} />
             <input
+              ref={locationInputRef}
               type="text"
               placeholder={t('enterAddressOrSelect')}
               className={`w-full ${isRTL ? 'pr-10 pl-4' : 'pl-10 pr-4'} py-3 border border-gray-200 dark:border-gray-600 rounded-xl focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent text-gray-900 dark:text-white dark:bg-gray-700`}
               value={location}
-              onChange={(e) => setLocation(e.target.value)}
+              onChange={handleLocationChange}
+              onFocus={() => {
+                if (locationSuggestions.length > 0) {
+                  setShowSuggestions(true);
+                }
+              }}
               required
             />
+            
+            {/* Autocomplete Suggestions */}
+            {showSuggestions && locationSuggestions.length > 0 && (
+              <div
+                ref={suggestionsRef}
+                className={`absolute ${isRTL ? 'right-0' : 'left-0'} top-full mt-1 w-full bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl shadow-lg z-50 max-h-60 overflow-y-auto`}
+              >
+                {locationSuggestions.map((suggestion, index) => (
+                  <button
+                    key={index}
+                    type="button"
+                    onClick={() => handleLocationSuggestionSelect(suggestion)}
+                    className={`w-full px-4 py-3 text-left hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors ${isRTL ? 'text-right' : ''} ${
+                      index === 0 ? 'rounded-t-xl' : ''
+                    } ${
+                      index === locationSuggestions.length - 1 ? 'rounded-b-xl' : 'border-b border-gray-100 dark:border-gray-700'
+                    }`}
+                  >
+                    <div className="flex items-start gap-2">
+                      <MapPin size={16} className="text-gray-400 mt-0.5 flex-shrink-0" />
+                      <div className="flex-1 min-w-0">
+                        <div className="text-sm font-medium text-gray-900 dark:text-white truncate">
+                          {suggestion.displayName}
+                        </div>
+                      </div>
+                    </div>
+                  </button>
+                ))}
+              </div>
+            )}
+            
+            {isSearchingLocation && (
+              <div className={`absolute ${isRTL ? 'right-12' : 'left-12'} top-1/2 transform -translate-y-1/2`}>
+                <div className="w-4 h-4 border-2 border-gray-300 border-t-red-500 rounded-full animate-spin"></div>
+              </div>
+            )}
           </div>
           <div className="flex gap-2 mt-2 items-center">
             <button 

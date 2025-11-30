@@ -205,41 +205,75 @@ export const getBadgeById = (id) => badgeData[id];
 export const getBadgesByCategory = (category) => 
   Object.values(badgeData).filter(badge => badge.category === category);
 
-// Mock function to get user's earned badges (replace with actual data from backend)
-export const getUserEarnedBadges = (user) => {
-  // This is a mock - replace with actual logic based on user stats
+/**
+ * Calculate user's earned badges based on their statistics
+ * @param {Object} stats - User statistics object (from useUserStats hook)
+ * @param {number} stats.postsCreated - Number of posts the user has created
+ * @param {number} stats.tasksCompleted - Number of tasks the user has completed as a helper
+ * @param {number} stats.averageRating - User's average rating received (0-5)
+ * @param {number} stats.firstClaimCount - Number of times user was first to claim a post
+ * @param {number} stats.currentStreak - Current activity streak in days
+ * @param {number} stats.longestStreak - Longest activity streak ever achieved
+ * @param {number} stats.totalEngagement - Total engagement (posts + tasks + comments)
+ * @returns {string[]} Array of earned badge IDs
+ */
+export const getUserEarnedBadges = (stats) => {
   const earnedBadges = [];
   
-  // Example logic (replace with real data)
-  if (user?.postsCreated >= 1) {
+  if (!stats) return earnedBadges;
+
+  // Posts milestones
+  if (stats.postsCreated >= 1) {
     earnedBadges.push(BADGE_TYPES.FIRST_POST);
   }
-  if (user?.tasksCompleted >= 10) {
-    earnedBadges.push(BADGE_TYPES.TASKS_10);
-  }
-  if (user?.tasksCompleted >= 25) {
-    earnedBadges.push(BADGE_TYPES.TASKS_25);
-  }
-  if (user?.tasksCompleted >= 50) {
-    earnedBadges.push(BADGE_TYPES.TASKS_50);
-  }
-  if (user?.postsCreated >= 10) {
+  if (stats.postsCreated >= 10) {
     earnedBadges.push(BADGE_TYPES.POSTS_10);
   }
-  if (user?.postsCreated >= 25) {
+  if (stats.postsCreated >= 25) {
     earnedBadges.push(BADGE_TYPES.POSTS_25);
   }
-  if (user?.rating >= 4.5) {
-    earnedBadges.push(BADGE_TYPES.COMMUNITY_STAR);
-  }
-  if (user?.rating === 5.0) {
-    earnedBadges.push(BADGE_TYPES.PERFECT_RATING);
-  }
-  if (user?.tasksCompleted >= 5) {
+
+  // Tasks completed milestones
+  if (stats.tasksCompleted >= 5) {
     earnedBadges.push(BADGE_TYPES.HELPER);
   }
-  if (user?.tasksCompleted >= 20) {
+  if (stats.tasksCompleted >= 10) {
+    earnedBadges.push(BADGE_TYPES.TASKS_10);
+  }
+  if (stats.tasksCompleted >= 20) {
     earnedBadges.push(BADGE_TYPES.SUPER_HELPER);
+  }
+  if (stats.tasksCompleted >= 25) {
+    earnedBadges.push(BADGE_TYPES.TASKS_25);
+  }
+  if (stats.tasksCompleted >= 50) {
+    earnedBadges.push(BADGE_TYPES.TASKS_50);
+  }
+
+  // Rating-based badges
+  if (stats.averageRating >= 4.5 && stats.totalRatingsReceived >= 3) {
+    earnedBadges.push(BADGE_TYPES.COMMUNITY_STAR);
+  }
+  if (stats.averageRating === 5.0 && stats.totalRatingsReceived >= 5) {
+    earnedBadges.push(BADGE_TYPES.PERFECT_RATING);
+  }
+
+  // Early Bird: First person to claim a post
+  if (stats.firstClaimCount >= 1) {
+    earnedBadges.push(BADGE_TYPES.EARLY_BIRD);
+  }
+
+  // Streak badges (check both current and longest streak)
+  if (stats.currentStreak >= 7 || stats.longestStreak >= 7) {
+    earnedBadges.push(BADGE_TYPES.STREAK_7);
+  }
+  if (stats.currentStreak >= 30 || stats.longestStreak >= 30) {
+    earnedBadges.push(BADGE_TYPES.STREAK_30);
+  }
+
+  // Community Leader: High total engagement (100+ posts + tasks + comments)
+  if (stats.totalEngagement >= 100) {
+    earnedBadges.push(BADGE_TYPES.COMMUNITY_LEADER);
   }
   
   return earnedBadges;

@@ -12,6 +12,7 @@ import Settings from './pages/Settings';
 import EditProfile from './pages/EditProfile';
 import AdminCleanup from './pages/AdminCleanup';
 import PrivacyPolicy from './pages/PrivacyPolicy';
+import Notifications from './pages/Notifications';
 import Layout from './components/Layout';
 import { useAuthStore } from './store/useStore';
 import { useSettingsStore } from './store/settingsStore';
@@ -49,6 +50,7 @@ function App() {
           <Route path="/post/:postId" element={<PostDetails />} />
           <Route path="/new-post" element={<NewPost />} />
           <Route path="/messages" element={<Messages />} />
+          <Route path="/notifications" element={<Notifications />} />
           <Route path="/profile" element={<Profile />} />
           <Route path="/edit-profile" element={<EditProfile />} />
           <Route path="/settings" element={<Settings />} />

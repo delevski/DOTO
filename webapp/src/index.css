@@ -22,8 +22,73 @@
   direction: rtl;
 }
 
+/* RTL Text Alignment - Override Tailwind text-left classes with higher specificity */
+[dir="rtl"] .text-left,
+[dir="rtl"] [class*="text-left"] {
+  text-align: right !important;
+}
+
+/* Default right alignment for text content elements in RTL - use !important to override Tailwind */
+[dir="rtl"] p,
+[dir="rtl"] span,
+[dir="rtl"] h1,
+[dir="rtl"] h2,
+[dir="rtl"] h3,
+[dir="rtl"] h4,
+[dir="rtl"] h5,
+[dir="rtl"] h6,
+[dir="rtl"] li,
+[dir="rtl"] td,
+[dir="rtl"] th,
+[dir="rtl"] label,
+[dir="rtl"] div:not([class*="text-center"]),
+[dir="rtl"] button:not([class*="text-center"]),
+[dir="rtl"] a:not([class*="text-center"]) {
+  text-align: right !important;
+}
+
+/* Form elements explicitly align right in RTL */
+[dir="rtl"] input:not([type="checkbox"]):not([type="radio"]),
+[dir="rtl"] textarea,
+[dir="rtl"] select {
+  text-align: right !important;
+}
+
+/* Preserve text-center in RTL (for buttons, titles, etc.) */
+[dir="rtl"] .text-center,
+[dir="rtl"] [class*="text-center"] {
+  text-align: center !important;
+}
+
+/* LTR Support */
 [dir="ltr"] {
   direction: ltr;
+}
+
+/* LTR Text Alignment - Ensure left alignment */
+[dir="ltr"] p,
+[dir="ltr"] span,
+[dir="ltr"] h1,
+[dir="ltr"] h2,
+[dir="ltr"] h3,
+[dir="ltr"] h4,
+[dir="ltr"] h5,
+[dir="ltr"] h6,
+[dir="ltr"] li,
+[dir="ltr"] td,
+[dir="ltr"] th,
+[dir="ltr"] label,
+[dir="ltr"] div,
+[dir="ltr"] button,
+[dir="ltr"] a {
+  text-align: left;
+}
+
+/* Form elements explicitly align left in LTR */
+[dir="ltr"] input:not([type="checkbox"]):not([type="radio"]),
+[dir="ltr"] textarea,
+[dir="ltr"] select {
+  text-align: left;
 }
 
 /* Dark mode transitions */

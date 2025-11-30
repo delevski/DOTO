@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate, Link, useSearchParams } from 'react-router-dom';
-import { ArrowLeft, MapPin, Clock, Share2, MessageCircle, Heart, Star, CheckCircle, Lock, AlertCircle, MoreHorizontal, Edit, Trash2, Save, X, Image, Send, Copy, UserPlus } from 'lucide-react';
+import { ArrowLeft, MapPin, Clock, Share2, MessageCircle, Heart, Star, CheckCircle, Lock, AlertCircle, MoreHorizontal, Edit, Trash2, Save, X, Image, Send, Copy, UserPlus, Award, CheckCircle2 } from 'lucide-react';
 import { MapContainer, TileLayer, Marker, Popup, useMap } from 'react-leaflet';
 import 'leaflet/dist/leaflet.css';
 import L from 'leaflet';
@@ -11,6 +11,8 @@ import { db } from '../lib/instant';
 import { id } from '@instantdb/react';
 import { ISRAEL_CENTER, ISRAEL_BOUNDS, validateIsraelBounds } from '../utils/israelBounds';
 import { getConversationId, createOrUpdateConversation } from '../utils/messaging';
+import { updateUserStreak } from '../utils/streakTracking';
+import { useOtherUserStats } from '../hooks/useUserStats';
 
 // Fix for default marker icons
 import icon from 'leaflet/dist/images/marker-icon.png';
@@ -104,6 +106,10 @@ export default function PostDetails() {
   const [showShareMenu, setShowShareMenu] = useState(false);
   const shareMenuRef = useRef(null);
   const [postCoordinates, setPostCoordinates] = useState(null);
+  const [showRatingModal, setShowRatingModal] = useState(false);
+  const [selectedRating, setSelectedRating] = useState(0);
+  const [hoverRating, setHoverRating] = useState(0);
+  const [isSubmittingRating, setIsSubmittingRating] = useState(false);
 
   // Fetch post and comments from InstantDB
   const { isLoading, error, data } = db.useQuery({ 
@@ -121,6 +127,9 @@ export default function PostDetails() {
   
   const post = data?.posts?.[0];
   const comments = data?.comments || [];
+
+  // Get author stats for the "About Author" section
+  const authorStats = useOtherUserStats(post?.authorId);
 
   useEffect(() => {
     if (!isLoading && !error && !post) {
@@ -193,6 +202,12 @@ export default function PostDetails() {
   const likedBy = post.likedBy || [];
   const isLiked = user && likedBy.includes(user.id);
   const likeCount = likedBy.length || post.likes || 0;
+  
+  // Completion status
+  const completedByClaimer = post.completedByClaimer || false;
+  const completedByAuthor = post.completedByAuthor || false;
+  const isCompleted = post.isCompleted || false;
+  const helperRating = post.helperRating || null;
 
   const formatTime = (timestamp) => {
     const now = Date.now();
@@ -243,6 +258,10 @@ export default function PostDetails() {
           claimers: [...claimers, newClaimer]
         })
       );
+      
+      // Update user's activity streak
+      updateUserStreak(user.id);
+      
       setLocalSuccess('Post claimed successfully! The poster will review your claim.');
     } catch (err) {
       setLocalError(err.message || 'Failed to claim post. Please try again.');
@@ -264,15 +283,62 @@ export default function PostDetails() {
     }
 
     try {
-      db.transact(
+      const notificationId = id();
+      const approvedClaimer = claimers.find(c => c.userId === claimerUserId);
+      
+      if (!post) {
+        setLocalError('Post not found');
+        return;
+      }
+
+      const now = Date.now();
+      
+      // Prepare notification data - keep IDs as-is (same format as used in transaction)
+      const notificationData = {
+        id: notificationId,
+        userId: claimerUserId,
+        postId: postId,
+        type: 'claimer_approved',
+        message: t('youWereApproved'),
+        read: false,
+        timestamp: now,
+        postTitle: post.title || t('helpNeeded'),
+        createdAt: now
+      };
+
+      console.log('=== APPROVING CLAIMER ===');
+      console.log('Post ID:', postId);
+      console.log('Claimer User ID:', claimerUserId);
+      console.log('Notification ID:', notificationId);
+      console.log('Notification data:', JSON.stringify(notificationData, null, 2));
+      
+      // Update post first
+      await db.transact(
         db.tx.posts[postId].update({
           approvedClaimerId: claimerUserId,
-          claimedBy: claimerUserId, // Keep for backward compatibility
-          claimedByName: claimers.find(c => c.userId === claimerUserId)?.userName || 'Someone'
+          claimedBy: claimerUserId,
+          claimedByName: approvedClaimer?.userName || 'Someone'
         })
       );
+      
+      console.log('Post updated successfully');
+      
+      // Create notification separately to ensure it's created
+      await db.transact(
+        db.tx.notifications[notificationId].update(notificationData)
+      );
+      
+      console.log('Notification created successfully');
+      console.log('=== APPROVAL COMPLETE ===');
+      
       setLocalSuccess('Claimer approved successfully!');
     } catch (err) {
+      console.error('Error approving claimer:', err);
+      console.error('Error details:', {
+        message: err.message,
+        stack: err.stack,
+        name: err.name
+      });
       setLocalError(err.message || 'Failed to approve claimer. Please try again.');
     }
   };
@@ -335,6 +401,9 @@ export default function PostDetails() {
       })
     );
 
+    // Update user's activity streak
+    updateUserStreak(user.id);
+
     setNewComment('');
   };
 
@@ -384,6 +453,109 @@ export default function PostDetails() {
         // Fallback to copy if share API not available
         handleShare('copy');
       }
+    }
+  };
+
+  // Handle claimer marking task as complete
+  const handleClaimerMarkComplete = async () => {
+    setLocalError('');
+    setLocalSuccess('');
+
+    if (!isClaimedByMe) {
+      setLocalError('Only the approved claimer can mark this task as complete');
+      return;
+    }
+
+    try {
+      await db.transact(
+        db.tx.posts[postId].update({
+          completedByClaimer: true
+        })
+      );
+      
+      // Create notification for the post author
+      const notificationId = id();
+      await db.transact(
+        db.tx.notifications[notificationId].update({
+          id: notificationId,
+          userId: post.authorId,
+          postId: postId,
+          type: 'task_marked_complete',
+          message: t('claimerMarkedComplete') || 'The helper has marked the task as complete',
+          read: false,
+          timestamp: Date.now(),
+          postTitle: post.title || t('helpNeeded'),
+          createdAt: Date.now()
+        })
+      );
+      
+      // Update user's activity streak
+      updateUserStreak(user.id);
+      
+      setLocalSuccess('You marked this task as complete! Waiting for the poster to confirm.');
+    } catch (err) {
+      console.error('Error marking task complete:', err);
+      setLocalError(err.message || 'Failed to mark task as complete. Please try again.');
+    }
+  };
+
+  // Handle author confirming task completion (opens rating modal)
+  const handleAuthorConfirmComplete = () => {
+    setShowRatingModal(true);
+    setSelectedRating(0);
+    setHoverRating(0);
+  };
+
+  // Handle submitting the rating and completing the task
+  const handleSubmitRating = async () => {
+    if (selectedRating === 0) {
+      setLocalError('Please select a rating for the helper');
+      return;
+    }
+
+    setIsSubmittingRating(true);
+    setLocalError('');
+
+    try {
+      const now = Date.now();
+      
+      // Update post with completion status and rating
+      await db.transact(
+        db.tx.posts[postId].update({
+          completedByAuthor: true,
+          isCompleted: true,
+          completedAt: now,
+          helperRating: selectedRating
+        })
+      );
+
+      // Create notification for the helper
+      const notificationId = id();
+      await db.transact(
+        db.tx.notifications[notificationId].update({
+          id: notificationId,
+          userId: approvedClaimerId,
+          postId: postId,
+          type: 'task_completed',
+          message: t('taskCompletedNotification') || `Task completed! You received a ${selectedRating}-star rating.`,
+          read: false,
+          timestamp: now,
+          postTitle: post.title || t('helpNeeded'),
+          rating: selectedRating,
+          createdAt: now
+        })
+      );
+
+      // Update user's activity streak (author confirming)
+      updateUserStreak(user.id);
+
+      setShowRatingModal(false);
+      setLocalSuccess('Task completed and helper rated! Thank you for using DOTO.');
+    } catch (err) {
+      console.error('Error completing task:', err);
+      setLocalError(err.message || 'Failed to complete task. Please try again.');
+    } finally {
+      setIsSubmittingRating(false);
     }
   };
 
@@ -937,24 +1109,76 @@ export default function PostDetails() {
         <div className="space-y-6">
           {/* Claim Card */}
           <div className={`rounded-2xl shadow-xl p-8 text-white sticky top-8 ${
-            approvedClaimerId 
-              ? 'bg-gradient-to-br from-gray-600 to-gray-700' 
-              : 'bg-gradient-to-br from-red-600 to-rose-500'
+            isCompleted
+              ? 'bg-gradient-to-br from-green-600 to-emerald-500'
+              : approvedClaimerId 
+                ? 'bg-gradient-to-br from-gray-600 to-gray-700' 
+                : 'bg-gradient-to-br from-red-600 to-rose-500'
           }`}>
-            {approvedClaimerId ? (
+            {isCompleted ? (
+              // Task is fully completed
               <>
                 <div className="flex items-center gap-3 mb-4">
-                  <CheckCircle size={24} />
-                  <h3 className="text-2xl font-bold">Approved</h3>
+                  <Award size={24} />
+                  <h3 className="text-2xl font-bold">{t('taskCompleted') || 'Task Completed'}</h3>
                 </div>
                 {(() => {
                   const approvedClaimer = claimers.find(c => c.userId === approvedClaimerId);
                   return (
-                    <div className="mb-6">
-                      <p className="text-gray-200 mb-4">
+                    <div className="space-y-4">
+                      <p className="text-green-100">
                         {isClaimedByMe 
-                          ? 'You have been approved for this task!' 
-                          : `This task has been approved for ${approvedClaimer?.userName || 'someone'}.`}
+                          ? t('youCompletedTask') || 'Great job! You completed this task!' 
+                          : isMyPost 
+                            ? t('taskWasCompleted') || 'This task has been completed!'
+                            : `${approvedClaimer?.userName || 'Someone'} completed this task.`}
+                      </p>
+                      {approvedClaimer && (
+                        <div className="flex items-center gap-3 bg-white/10 p-3 rounded-xl">
+                          <img 
+                            src={approvedClaimer.userAvatar || `https://i.pravatar.cc/150?u=${approvedClaimer.userId}`} 
+                            alt={approvedClaimer.userName}
+                            className="w-12 h-12 rounded-full border-2 border-white/30"
+                          />
+                          <div className="flex-1">
+                            <div className="font-semibold">{approvedClaimer.userName}</div>
+                            <div className="text-sm text-green-200">{t('taskHelper') || 'Task Helper'}</div>
+                          </div>
+                          {helperRating && (
+                            <div className="flex items-center gap-1 bg-white/20 px-3 py-1 rounded-full">
+                              <Star size={16} className="text-yellow-300 fill-current" />
+                              <span className="font-semibold">{helperRating}</span>
+                            </div>
+                          )}
+                        </div>
+                      )}
+                      <div className="mt-4 pt-4 border-t border-green-400/30">
+                        <div className="flex justify-between items-center">
+                          <span className="text-green-100">{t('completedOn') || 'Completed on'}</span>
+                          <span className="font-semibold">
+                            {post.completedAt ? new Date(post.completedAt).toLocaleDateString() : 'Recently'}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })()}
+              </>
+            ) : approvedClaimerId ? (
+              // Task has an approved claimer but not completed
+              <>
+                <div className="flex items-center gap-3 mb-4">
+                  <CheckCircle size={24} />
+                  <h3 className="text-2xl font-bold">{t('approved') || 'Approved'}</h3>
+                </div>
+                {(() => {
+                  const approvedClaimer = claimers.find(c => c.userId === approvedClaimerId);
+                  return (
+                    <div className="space-y-4">
+                      <p className="text-gray-200">
+                        {isClaimedByMe 
+                          ? t('youAreApprovedHelper') || 'You are the approved helper for this task!' 
+                          : `${approvedClaimer?.userName || 'Someone'} is helping with this task.`}
                       </p>
                       {approvedClaimer && (
                         <div className="flex items-center gap-3 bg-white/10 p-3 rounded-xl">
@@ -965,10 +1189,74 @@ export default function PostDetails() {
                           />
                           <div>
                             <div className="font-semibold">{approvedClaimer.userName}</div>
-                            <div className="text-sm text-gray-300">Approved claimer</div>
+                            <div className="text-sm text-gray-300">{t('approvedHelper') || 'Approved helper'}</div>
                           </div>
                         </div>
                       )}
+                      
+                      {/* Completion Status Section */}
+                      <div className="mt-4 pt-4 border-t border-gray-500/30">
+                        <h4 className="font-semibold mb-3 flex items-center gap-2">
+                          <CheckCircle2 size={18} />
+                          {t('completionStatus') || 'Completion Status'}
+                        </h4>
+                        
+                        <div className="space-y-2 mb-4">
+                          <div className="flex items-center gap-2 text-sm">
+                            <div className={`w-5 h-5 rounded-full flex items-center justify-center ${completedByClaimer ? 'bg-green-500' : 'bg-white/20'}`}>
+                              {completedByClaimer && <CheckCircle size={14} />}
+                            </div>
+                            <span className={completedByClaimer ? 'text-green-300' : 'text-gray-300'}>
+                              {t('helperMarkedComplete') || 'Helper marked complete'}
+                            </span>
+                          </div>
+                          <div className="flex items-center gap-2 text-sm">
+                            <div className={`w-5 h-5 rounded-full flex items-center justify-center ${completedByAuthor ? 'bg-green-500' : 'bg-white/20'}`}>
+                              {completedByAuthor && <CheckCircle size={14} />}
+                            </div>
+                            <span className={completedByAuthor ? 'text-green-300' : 'text-gray-300'}>
+                              {t('posterConfirmed') || 'Poster confirmed'}
+                            </span>
+                          </div>
+                        </div>
+                        
+                        {/* Action Buttons */}
+                        {isClaimedByMe && !completedByClaimer && (
+                          <button
+                            onClick={handleClaimerMarkComplete}
+                            className="w-full bg-white text-gray-700 font-bold py-3 rounded-xl shadow-lg hover:bg-gray-50 transition-colors flex items-center justify-center gap-2"
+                          >
+                            <CheckCircle2 size={20} />
+                            {t('markAsComplete') || 'Mark as Complete'}
+                          </button>
+                        )}
+                        
+                        {isClaimedByMe && completedByClaimer && !completedByAuthor && (
+                          <div className="bg-white/10 p-3 rounded-xl text-center">
+                            <p className="text-sm text-gray-300">
+                              {t('waitingForPosterConfirm') || 'Waiting for the poster to confirm completion'}
+                            </p>
+                          </div>
+                        )}
+                        
+                        {isMyPost && completedByClaimer && !completedByAuthor && (
+                          <button
+                            onClick={handleAuthorConfirmComplete}
+                            className="w-full bg-green-500 text-white font-bold py-3 rounded-xl shadow-lg hover:bg-green-600 transition-colors flex items-center justify-center gap-2"
+                          >
+                            <Star size={20} />
+                            {t('confirmAndRate') || 'Confirm & Rate Helper'}
+                          </button>
+                        )}
+                        
+                        {isMyPost && !completedByClaimer && (
+                          <div className="bg-white/10 p-3 rounded-xl text-center">
+                            <p className="text-sm text-gray-300">
+                              {t('waitingForHelperComplete') || 'Waiting for the helper to mark task as complete'}
+                            </p>
+                          </div>
+                        )}
+                      </div>
                     </div>
                   );
                 })()}
@@ -1066,17 +1354,25 @@ export default function PostDetails() {
             <h3 className="font-bold text-gray-900 dark:text-white mb-4">About {isMyPost ? (user?.name || post.author) : post.author}</h3>
             <div className="space-y-3">
               <div className={`flex justify-between ${isRTL ? 'flex-row-reverse' : ''}`}>
-                <span className="text-gray-600 dark:text-gray-400">Tasks Posted</span>
-                <span className="font-semibold text-gray-900 dark:text-white">12</span>
+                <span className="text-gray-600 dark:text-gray-400">{t('tasksPosted') || 'Tasks Posted'}</span>
+                <span className="font-semibold text-gray-900 dark:text-white">
+                  {authorStats.isLoading ? '...' : authorStats.postsCreated}
+                </span>
               </div>
               <div className={`flex justify-between ${isRTL ? 'flex-row-reverse' : ''}`}>
-                <span className="text-gray-600 dark:text-gray-400">Tasks Completed</span>
-                <span className="font-semibold text-gray-900 dark:text-white">8</span>
+                <span className="text-gray-600 dark:text-gray-400">{t('tasksCompleted')}</span>
+                <span className="font-semibold text-gray-900 dark:text-white">
+                  {authorStats.isLoading ? '...' : authorStats.tasksCompleted}
+                </span>
               </div>
               <div className={`flex justify-between ${isRTL ? 'flex-row-reverse' : ''}`}>
-                <span className="text-gray-600 dark:text-gray-400">Angel Rating</span>
+                <span className="text-gray-600 dark:text-gray-400">{t('angelRating')}</span>
                 <span className="font-semibold flex items-center gap-1 text-gray-900 dark:text-white">
-                  4.8 <Star size={14} className="text-yellow-400 fill-current" />
+                  {authorStats.isLoading ? '...' : (
+                    authorStats.averageRating > 0 ? (
+                      <>{authorStats.averageRating} <Star size={14} className="text-yellow-400 fill-current" /></>
+                    ) : '-'
+                  )}
                 </span>
               </div>
             </div>
@@ -1109,6 +1405,89 @@ export default function PostDetails() {
           </div>
         </div>
       </div>
+
+      {/* Rating Modal */}
+      {showRatingModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl max-w-md w-full p-8 animate-in fade-in zoom-in duration-200">
+            <div className="text-center mb-6">
+              <div className="w-16 h-16 bg-gradient-to-br from-yellow-400 to-orange-500 rounded-full flex items-center justify-center mx-auto mb-4">
+                <Star size={32} className="text-white" />
+              </div>
+              <h3 className="text-2xl font-bold text-gray-900 dark:text-white mb-2">
+                {t('rateTheHelper') || 'Rate the Helper'}
+              </h3>
+              <p className="text-gray-600 dark:text-gray-400">
+                {t('howWasYourExperience') || 'How was your experience with this helper?'}
+              </p>
+            </div>
+
+            {/* Star Rating */}
+            <div className="flex justify-center gap-2 mb-8">
+              {[1, 2, 3, 4, 5].map((star) => (
+                <button
+                  key={star}
+                  onMouseEnter={() => setHoverRating(star)}
+                  onMouseLeave={() => setHoverRating(0)}
+                  onClick={() => setSelectedRating(star)}
+                  className="p-1 transition-transform hover:scale-110"
+                >
+                  <Star
+                    size={40}
+                    className={`transition-colors ${
+                      star <= (hoverRating || selectedRating)
+                        ? 'text-yellow-400 fill-yellow-400'
+                        : 'text-gray-300 dark:text-gray-600'
+                    }`}
+                  />
+                </button>
+              ))}
+            </div>
+
+            {selectedRating > 0 && (
+              <p className="text-center text-gray-700 dark:text-gray-300 mb-6 font-medium">
+                {selectedRating === 5 && (t('excellentRating') || 'Excellent! ⭐')}
+                {selectedRating === 4 && (t('greatRating') || 'Great! 👍')}
+                {selectedRating === 3 && (t('goodRating') || 'Good 👌')}
+                {selectedRating === 2 && (t('fairRating') || 'Fair 😐')}
+                {selectedRating === 1 && (t('poorRating') || 'Poor 😔')}
+              </p>
+            )}
+
+            {/* Action Buttons */}
+            <div className="flex gap-3">
+              <button
+                onClick={() => {
+                  setShowRatingModal(false);
+                  setSelectedRating(0);
+                  setHoverRating(0);
+                }}
+                disabled={isSubmittingRating}
+                className="flex-1 py-3 border border-gray-200 dark:border-gray-600 rounded-xl font-semibold text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors disabled:opacity-50"
+              >
+                {t('cancel') || 'Cancel'}
+              </button>
+              <button
+                onClick={handleSubmitRating}
+                disabled={selectedRating === 0 || isSubmittingRating}
+                className="flex-1 py-3 bg-gradient-to-r from-green-500 to-emerald-600 text-white rounded-xl font-semibold hover:from-green-600 hover:to-emerald-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+              >
+                {isSubmittingRating ? (
+                  <>
+                    <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                    {t('submitting') || 'Submitting...'}
+                  </>
+                ) : (
+                  <>
+                    <CheckCircle size={20} />
+                    {t('submitRating') || 'Submit Rating'}
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

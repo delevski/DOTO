@@ -10,6 +10,10 @@
     "preview": "vite preview",
     "test": "playwright test",
     "test:smoke": "playwright test smoke.spec.js",
+    "test:posts": "playwright test smoke-posts-claims.spec.js",
+    "test:claims": "playwright test mass-claims.spec.js",
+    "test:messaging": "playwright test messaging.spec.js",
+    "test:all": "playwright test",
     "test:ui": "playwright test --ui",
     "test:headed": "playwright test --headed",
     "test:debug": "playwright test --debug"

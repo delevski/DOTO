@@ -1,11 +1,12 @@
 import React, { useMemo } from 'react';
-import { Settings as SettingsIcon, Award, HelpCircle, Edit3, LogOut } from 'lucide-react';
+import { Settings as SettingsIcon, Award, HelpCircle, Edit3, LogOut, Star, Flame } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { useAuthStore } from '../store/useStore';
 import { useSettingsStore } from '../store/settingsStore';
 import { useTranslation } from '../utils/translations';
 import Badge from '../components/Badge';
-import { getAllBadges, getUserEarnedBadges, BADGE_TYPES } from '../utils/badges';
+import { getAllBadges, getUserEarnedBadges } from '../utils/badges';
+import { useUserStats } from '../hooks/useUserStats';
 
 export default function Profile() {
   const { user, logout } = useAuthStore();
@@ -13,17 +14,14 @@ export default function Profile() {
   const t = useTranslation();
   const isRTL = language === 'he';
 
-  // Get user's earned badges
+  // Fetch real user statistics
+  const stats = useUserStats(user?.id);
+
+  // Get user's earned badges based on real stats
   const earnedBadgeIds = useMemo(() => {
-    // Mock user stats - replace with actual user data
-    const mockUser = {
-      ...user,
-      postsCreated: user?.postsCreated || 12,
-      tasksCompleted: user?.tasksCompleted || 8,
-      rating: user?.rating || 4.9,
-    };
-    return getUserEarnedBadges(mockUser);
-  }, [user]);
+    if (stats.isLoading) return [];
+    return getUserEarnedBadges(stats);
+  }, [stats]);
 
   // Get all badges and mark which are earned
   const allBadges = useMemo(() => {
@@ -37,6 +35,25 @@ export default function Profile() {
     logout();
     window.location.href = '/login';
   };
+
+  // Format points with commas
+  const formatPoints = (points) => {
+    return points.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+  };
+  // Loading state
+  if (stats.isLoading) {
+    return (
+      <div className={`max-w-5xl mx-auto px-6 py-8 ${isRTL ? 'rtl' : ''}`}>
+        <div className="flex items-center justify-center h-64">
+          <div className="text-center">
+            <div className="w-12 h-12 border-4 border-red-200 border-t-red-600 rounded-full animate-spin mx-auto mb-4"></div>
+            <p className="text-gray-500 dark:text-gray-400">{t('loading') || 'Loading...'}</p>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className={`max-w-5xl mx-auto px-6 py-8 ${isRTL ? 'rtl' : ''}`}>
       {/* Header */}
@@ -66,15 +83,18 @@ export default function Profile() {
                 <p className="text-gray-500 dark:text-gray-400 mb-4">{t('communityHelperSince')}</p>
                 <div className={`flex items-center gap-6 ${isRTL ? 'flex-row-reverse' : ''}`}>
                   <div>
-                    <div className="text-2xl font-bold text-gray-900 dark:text-white">{user?.rating || 4.9}</div>
+                    <div className="text-2xl font-bold text-gray-900 dark:text-white flex items-center gap-1">
+                      {stats.averageRating > 0 ? stats.averageRating : '-'}
+                      {stats.averageRating > 0 && <Star size={18} className="text-yellow-400 fill-current" />}
+                    </div>
                     <div className="text-sm text-gray-500 dark:text-gray-400">{t('angelRating')}</div>
                   </div>
                   <div>
-                    <div className="text-2xl font-bold text-gray-900 dark:text-white">12</div>
+                    <div className="text-2xl font-bold text-gray-900 dark:text-white">{stats.postsCreated}</div>
                     <div className="text-sm text-gray-500 dark:text-gray-400">{t('postsCreated')}</div>
                   </div>
                   <div>
-                    <div className="text-2xl font-bold text-gray-900 dark:text-white">8</div>
+                    <div className="text-2xl font-bold text-gray-900 dark:text-white">{stats.tasksCompleted}</div>
                     <div className="text-sm text-gray-500 dark:text-gray-400">{t('tasksCompleted')}</div>
                   </div>
                 </div>
@@ -121,11 +141,13 @@ export default function Profile() {
             <div className="space-y-4">
               <div className={`flex justify-between items-center ${isRTL ? 'flex-row-reverse' : ''}`}>
                 <span className="text-red-100">{t('tasksCompleted')}</span>
-                <span className="font-bold text-xl">24</span>
+                <span className="font-bold text-xl">{stats.tasksCompleted}</span>
               </div>
               <div className={`flex justify-between items-center ${isRTL ? 'flex-row-reverse' : ''}`}>
                 <span className="text-red-100">{t('angelRating')}</span>
-                <span className="font-bold text-xl">4.9 ⭐</span>
+                <span className="font-bold text-xl">
+                  {stats.averageRating > 0 ? `${stats.averageRating} ⭐` : '-'}
+                </span>
               </div>
               <div className={`flex justify-between items-center ${isRTL ? 'flex-row-reverse' : ''}`}>
                 <span className="text-red-100">{t('badgesEarned')}</span>
@@ -133,8 +155,17 @@ export default function Profile() {
               </div>
               <div className={`flex justify-between items-center ${isRTL ? 'flex-row-reverse' : ''}`}>
                 <span className="text-red-100">{t('points')}</span>
-                <span className="font-bold text-xl">1,250</span>
+                <span className="font-bold text-xl">{formatPoints(stats.totalPoints)}</span>
               </div>
+              {stats.currentStreak > 0 && (
+                <div className={`flex justify-between items-center ${isRTL ? 'flex-row-reverse' : ''}`}>
+                  <span className="text-red-100 flex items-center gap-1">
+                    <Flame size={16} />
+                    {t('currentStreak') || 'Current Streak'}
+                  </span>
+                  <span className="font-bold text-xl">{stats.currentStreak} {t('days') || 'days'}</span>
+                </div>
+              )}
             </div>
           </div>
 

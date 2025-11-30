@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
-import { Upload, X, MapPin, Mail } from 'lucide-react';
+import { Upload, X, MapPin, Mail, Eye, EyeOff } from 'lucide-react';
 import { useAuthStore } from '../store/useStore';
 import { useSettingsStore } from '../store/settingsStore';
 import { useTranslation } from '../utils/translations';
@@ -8,6 +8,7 @@ import { db } from '../lib/instant';
 import { id } from '@instantdb/react';
 import { hashPassword } from '../utils/password';
 import { sendVerificationEmail, generateVerificationCode, isEmailJSConfigured } from '../utils/emailService';
+import { ISRAEL_NOMINATIM_PARAMS } from '../utils/israelBounds';
 
 export default function Register() {
   const navigate = useNavigate();
@@ -62,6 +63,8 @@ export default function Register() {
   });
   const [profileImage, setProfileImage] = useState(null);
   const [profileImagePreview, setProfileImagePreview] = useState(null);
+  const [showPassword, setShowPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [error, setError] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isGoogleLoading, setIsGoogleLoading] = useState(false);
@@ -77,6 +80,12 @@ export default function Register() {
   const googleButtonRef = useRef(null);
   const googleUserInfoRef = useRef(null);
   const inputRefs = useRef([]);
+  const locationInputRef = useRef(null);
+  const locationSuggestionsRef = useRef(null);
+  const locationSearchTimeoutRef = useRef(null);
+  const [locationSuggestions, setLocationSuggestions] = useState([]);
+  const [showLocationSuggestions, setShowLocationSuggestions] = useState(false);
+  const [isSearchingLocation, setIsSearchingLocation] = useState(false);
 
   // Query for existing user by email (when Google user email is set)
   const { data: usersDataByEmailForGoogle } = db.useQuery({
@@ -307,12 +316,111 @@ export default function Register() {
     }
   };
 
+  // Search for location autocomplete suggestions
+  const searchLocations = async (query) => {
+    if (!query || query.trim().length < 2) {
+      setLocationSuggestions([]);
+      setShowLocationSuggestions(false);
+      return;
+    }
+    
+    setIsSearchingLocation(true);
+    try {
+      const params = new URLSearchParams({
+        format: 'json',
+        q: query,
+        limit: '5',
+        ...ISRAEL_NOMINATIM_PARAMS,
+        addressdetails: '1'
+      });
+      
+      const response = await fetch(
+        `https://nominatim.openstreetmap.org/search?${params.toString()}`,
+        {
+          headers: {
+            'User-Agent': 'DOTO-App/1.0'
+          }
+        }
+      );
+      const data = await response.json();
+      const suggestions = data
+        .filter(item => {
+          const lat = parseFloat(item.lat);
+          const lon = parseFloat(item.lon);
+          return lat >= 29.4 && lat <= 33.5 && lon >= 34.2 && lon <= 35.9;
+        })
+        .map(item => ({
+          lat: parseFloat(item.lat),
+          lon: parseFloat(item.lon),
+          displayName: item.display_name,
+          address: item.address || {}
+        }));
+      
+      setLocationSuggestions(suggestions);
+      setShowLocationSuggestions(suggestions.length > 0);
+    } catch (error) {
+      console.error('Location search error:', error);
+      setLocationSuggestions([]);
+      setShowLocationSuggestions(false);
+    } finally {
+      setIsSearchingLocation(false);
+    }
+  };
+
+  // Handle location input change with debouncing
+  const handleLocationChange = (e) => {
+    const value = e.target.value;
+    handleChange(e); // Update form data
+    
+    // Clear previous timeout
+    if (locationSearchTimeoutRef.current) {
+      clearTimeout(locationSearchTimeoutRef.current);
+    }
+    
+    // Debounce search
+    locationSearchTimeoutRef.current = setTimeout(() => {
+      searchLocations(value);
+    }, 300);
+  };
+
+  // Handle location suggestion selection
+  const handleLocationSuggestionSelect = (suggestion) => {
+    setFormData({
+      ...formData,
+      location: suggestion.displayName
+    });
+    setShowLocationSuggestions(false);
+    setLocationSuggestions([]);
+  };
+
   const handleChange = (e) => {
     setFormData({
       ...formData,
       [e.target.name]: e.target.value,
     });
   };
+
+  // Close suggestions when clicking outside and cleanup timeout
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      if (
+        locationSuggestionsRef.current &&
+        !locationSuggestionsRef.current.contains(event.target) &&
+        locationInputRef.current &&
+        !locationInputRef.current.contains(event.target)
+      ) {
+        setShowLocationSuggestions(false);
+      }
+    };
+
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+      if (locationSearchTimeoutRef.current) {
+        clearTimeout(locationSearchTimeoutRef.current);
+      }
+    };
+  }, []);
 
   const handleImageSelect = (e) => {
     const file = e.target.files?.[0];
@@ -568,7 +676,9 @@ export default function Register() {
       return;
     }
 
-    const isUpdatingUser = Boolean(existingUser);
+    // Only update existing user if coming from verification flow AND user exists
+    // Otherwise, always create a new user (this is a registration, not an update)
+    const isUpdatingUser = Boolean(existingUser && isFromVerificationFlow);
     const passwordValue = (formData.password || '').trim();
     const confirmPasswordValue = (formData.confirmPassword || '').trim();
     const isPasswordChangeRequested = passwordValue.length > 0 || confirmPasswordValue.length > 0;
@@ -598,10 +708,13 @@ export default function Register() {
 
     try {
       // Check if email is already taken by another user (filter from allUsers)
+      // Only prevent registration if email exists AND we're not updating that same user
       const existingUserByEmailCheck = allUsers.find(u => 
         (u.emailLower && u.emailLower === normalizedEmailLower) || 
         (u.email && u.email.toLowerCase() === normalizedEmailLower)
       );
+      
+      // If email exists and we're not updating that same user, prevent registration
       if (existingUserByEmailCheck && (!isUpdatingUser || existingUserByEmailCheck.id !== existingUser?.id)) {
         setError('This email is already registered. Please use a different email or log in instead.');
         setIsSubmitting(false);
@@ -621,7 +734,9 @@ export default function Register() {
         passwordHashValue = await hashPassword(passwordValue);
       }
 
-      if (existingUser) {
+      // Only update if we're coming from verification flow AND user exists
+      // Otherwise, always create a new user
+      if (isUpdatingUser && existingUser && isFromVerificationFlow) {
         // Update existing user - ensure emailLower is set
         userId = existingUser.id;
         userData = {
@@ -638,7 +753,7 @@ export default function Register() {
           ...(trimmedPhone && { phone: trimmedPhone }),
         };
       } else {
-        // Create new user
+        // Create new user (always create new user when not from verification flow)
         userId = id();
         userData = {
           id: userId,
@@ -876,15 +991,29 @@ export default function Register() {
               <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                 {t('password')} {!existingUser && '*'}
               </label>
-              <input
-                type="password"
-                name="password"
-                value={formData.password}
-                onChange={handleChange}
-                placeholder="********"
-                autoComplete="new-password"
-                className="w-full bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 text-gray-900 dark:text-white p-3.5 rounded-xl focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent transition-all"
-              />
+              <div className="relative">
+                <input
+                  type={showPassword ? "text" : "password"}
+                  name="password"
+                  value={formData.password}
+                  onChange={handleChange}
+                  placeholder="********"
+                  autoComplete="new-password"
+                  className={`w-full bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 text-gray-900 dark:text-white p-3.5 rounded-xl focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent transition-all ${isRTL ? 'pl-12' : 'pr-12'}`}
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword(!showPassword)}
+                  className={`absolute ${isRTL ? 'left-3' : 'right-3'} top-1/2 transform -translate-y-1/2 text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300 transition-colors`}
+                  aria-label={showPassword ? 'Hide password' : 'Show password'}
+                >
+                  {showPassword ? (
+                    <EyeOff size={20} />
+                  ) : (
+                    <Eye size={20} />
+                  )}
+                </button>
+              </div>
               <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
                 {existingUser ? t('optionalChangePassword') : t('passwordHelper')}
               </p>
@@ -895,15 +1024,29 @@ export default function Register() {
               <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                 {t('confirmPassword')} {!existingUser && '*'}
               </label>
-              <input
-                type="password"
-                name="confirmPassword"
-                value={formData.confirmPassword}
-                onChange={handleChange}
-                placeholder="********"
-                autoComplete="new-password"
-                className="w-full bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 text-gray-900 dark:text-white p-3.5 rounded-xl focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent transition-all"
-              />
+              <div className="relative">
+                <input
+                  type={showConfirmPassword ? "text" : "password"}
+                  name="confirmPassword"
+                  value={formData.confirmPassword}
+                  onChange={handleChange}
+                  placeholder="********"
+                  autoComplete="new-password"
+                  className={`w-full bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 text-gray-900 dark:text-white p-3.5 rounded-xl focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent transition-all ${isRTL ? 'pl-12' : 'pr-12'}`}
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+                  className={`absolute ${isRTL ? 'left-3' : 'right-3'} top-1/2 transform -translate-y-1/2 text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300 transition-colors`}
+                  aria-label={showConfirmPassword ? 'Hide confirm password' : 'Show confirm password'}
+                >
+                  {showConfirmPassword ? (
+                    <EyeOff size={20} />
+                  ) : (
+                    <Eye size={20} />
+                  )}
+                </button>
+              </div>
               <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
                 {t('confirmPasswordHelper')}
               </p>
@@ -933,16 +1076,58 @@ export default function Register() {
                 Location *
               </label>
               <div className="relative">
-                <MapPin size={20} className={`absolute ${isRTL ? 'right' : 'left'}-3 top-1/2 transform -translate-y-1/2 text-gray-400`} />
+                <MapPin size={20} className={`absolute ${isRTL ? 'right' : 'left'}-3 top-1/2 transform -translate-y-1/2 text-gray-400 z-10`} />
                 <input
+                  ref={locationInputRef}
                   type="text"
                   name="location"
                   value={formData.location}
-                  onChange={handleChange}
+                  onChange={handleLocationChange}
+                  onFocus={() => {
+                    if (locationSuggestions.length > 0) {
+                      setShowLocationSuggestions(true);
+                    }
+                  }}
                   placeholder="City, State or Address"
                   className={`w-full ${isRTL ? 'pr-10 pl-4' : 'pl-10 pr-4'} bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 text-gray-900 dark:text-white p-3.5 rounded-xl focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent transition-all`}
                   required
                 />
+                
+                {/* Autocomplete Suggestions */}
+                {showLocationSuggestions && locationSuggestions.length > 0 && (
+                  <div
+                    ref={locationSuggestionsRef}
+                    className={`absolute ${isRTL ? 'right-0' : 'left-0'} top-full mt-1 w-full bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl shadow-lg z-50 max-h-60 overflow-y-auto`}
+                  >
+                    {locationSuggestions.map((suggestion, index) => (
+                      <button
+                        key={index}
+                        type="button"
+                        onClick={() => handleLocationSuggestionSelect(suggestion)}
+                        className={`w-full px-4 py-3 text-left hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors ${isRTL ? 'text-right' : ''} ${
+                          index === 0 ? 'rounded-t-xl' : ''
+                        } ${
+                          index === locationSuggestions.length - 1 ? 'rounded-b-xl' : 'border-b border-gray-100 dark:border-gray-700'
+                        }`}
+                      >
+                        <div className="flex items-start gap-2">
+                          <MapPin size={16} className="text-gray-400 mt-0.5 flex-shrink-0" />
+                          <div className="flex-1 min-w-0">
+                            <div className="text-sm font-medium text-gray-900 dark:text-white truncate">
+                              {suggestion.displayName}
+                            </div>
+                          </div>
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+                )}
+                
+                {isSearchingLocation && (
+                  <div className={`absolute ${isRTL ? 'right-12' : 'left-12'} top-1/2 transform -translate-y-1/2`}>
+                    <div className="w-4 h-4 border-2 border-gray-300 border-t-red-500 rounded-full animate-spin"></div>
+                  </div>
+                )}
               </div>
             </div>
 

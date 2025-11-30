@@ -4,6 +4,7 @@ import { Map, Home, MessageCircle, User, Menu, Plus, X, Shield, HelpCircle, Sett
 import { useSettingsStore } from '../store/settingsStore';
 import { useAuthStore } from '../store/useStore';
 import { useTranslation } from '../utils/translations';
+import NotificationBadge from './NotificationBadge';
 
 export default function Layout() {
   const location = useLocation();
@@ -22,8 +23,10 @@ export default function Layout() {
   };
 
   return (
-    <div className={`flex h-screen bg-gray-50 dark:bg-gray-900 overflow-hidden ${isRTL ? 'flex-row-reverse' : ''}`}>
+    <div className={`flex ${isRTL ? 'flex-row-reverse' : 'flex-row'} h-screen bg-gray-50 dark:bg-gray-900 overflow-hidden`}>
       {/* Sidebar Navigation */}
+      {/* For Hebrew (RTL): sidebar appears on right side with left border */}
+      {/* For English (LTR): sidebar appears on left side with right border */}
       <aside className={`${isSidebarOpen ? 'w-64' : 'w-20'} bg-white dark:bg-gray-800 ${isRTL ? 'border-l' : 'border-r'} border-gray-200 dark:border-gray-700 flex flex-col transition-all duration-300 shadow-sm`}>
         {/* Logo */}
         <div className={`p-6 border-b border-gray-100 dark:border-gray-700 flex items-center ${isRTL ? 'flex-row-reverse' : 'justify-between'}`}>
@@ -68,9 +71,11 @@ export default function Layout() {
       </aside>
 
       {/* Main Content Area */}
+      {/* For Hebrew (RTL): content appears on left side */}
+      {/* For English (LTR): content appears on right side */}
       <div className="flex-1 flex flex-col overflow-hidden">
         {/* Top Header */}
-        <header className="bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 px-6 py-4 flex items-center justify-between shadow-sm z-10">
+        <header className={`bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 px-6 py-4 flex items-center ${isRTL ? 'flex-row-reverse' : 'justify-between'} shadow-sm z-10`}>
           <div className="flex-1 max-w-2xl">
             <div className="relative">
               <Search size={20} className={`absolute ${isRTL ? 'right' : 'left'}-3 top-1/2 transform -translate-y-1/2 text-gray-400 dark:text-gray-500`} />
@@ -81,15 +86,12 @@ export default function Layout() {
               />
             </div>
           </div>
-          <div className={`flex items-center gap-4 ${isRTL ? 'mr-6' : 'ml-6'}`}>
-            <button className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors relative">
-              <Bell size={22} className="text-gray-600 dark:text-gray-300" />
-              <span className={`absolute top-1.5 ${isRTL ? 'left' : 'right'}-1.5 w-2 h-2 bg-red-500 rounded-full border-2 border-white dark:border-gray-800`}></span>
-            </button>
+          <div className={`flex items-center gap-4 ${isRTL ? 'flex-row-reverse mr-6' : 'ml-6'}`}>
+            <NotificationBadge />
             <div className="relative">
               <button 
                 onClick={() => setShowProfileMenu(!showProfileMenu)}
-                className="flex items-center gap-3 hover:bg-gray-50 dark:hover:bg-gray-700 rounded-lg px-3 py-2 transition-colors"
+                className={`flex items-center gap-3 hover:bg-gray-50 dark:hover:bg-gray-700 rounded-lg px-3 py-2 transition-colors ${isRTL ? 'flex-row-reverse' : ''}`}
               >
                 <img src={user?.avatar || 'https://i.pravatar.cc/150?u=user'} alt="Profile" className="w-8 h-8 rounded-full ring-2 ring-gray-200 dark:ring-gray-700" />
                 {isSidebarOpen && <span className="text-sm font-medium text-gray-700 dark:text-gray-300">{user?.name || 'User'}</span>}

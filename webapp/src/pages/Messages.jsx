@@ -34,67 +34,204 @@ export default function Messages() {
     conversations: {}
   });
 
-  // Fetch messages for selected conversation
+  // Fetch all messages (filter client-side to ensure both participants can see messages)
   const { isLoading: messagesLoading, data: messagesData } = db.useQuery({
-    messages: selectedConversationId ? {
-      $: {
-        where: { conversationId: selectedConversationId }
-      }
-    } : {}
+    messages: {}
   });
 
   const allConversations = conversationsData?.conversations || [];
-  const messages = messagesData?.messages || [];
+  const allMessages = messagesData?.messages || [];
 
-  // Debug: Log conversations and user ID
-  useEffect(() => {
-    if (allConversations.length > 0) {
-      console.log('All conversations:', allConversations);
-      console.log('Current user ID:', user?.id);
-    }
-  }, [allConversations, user?.id]);
+  // Convert IDs to strings for comparison to handle type mismatches
+  const currentUserId = user?.id ? String(user.id) : null;
+
+  // Find conversations from messages where current user is involved but conversation might be missing
+  // This helps discover conversations that might not be in the conversations table yet
+  const conversationIdsFromMessages = new Set();
+  if (currentUserId && allMessages.length > 0) {
+    allMessages.forEach(msg => {
+      // Check if message sender or if conversation involves current user
+      const msgSenderId = msg.senderId ? String(msg.senderId) : null;
+      if (msgSenderId === currentUserId || msg.conversationId) {
+        conversationIdsFromMessages.add(msg.conversationId);
+      }
+    });
+  }
 
   // Filter conversations where current user is a participant
   const conversations = allConversations.filter(conv => {
-    const matches = conv.participant1Id === user?.id || conv.participant2Id === user?.id;
-    if (!matches && allConversations.length > 0) {
-      console.log('Conversation filtered out:', conv.id, 'participant1:', conv.participant1Id, 'participant2:', conv.participant2Id, 'user:', user?.id);
+    const p1Id = conv.participant1Id ? String(conv.participant1Id) : null;
+    const p2Id = conv.participant2Id ? String(conv.participant2Id) : null;
+    const matches = (currentUserId && (p1Id === currentUserId || p2Id === currentUserId));
+    
+    if (!matches && allConversations.length > 0 && currentUserId) {
+      console.log('Conversation filtered out:', {
+        conversationId: conv.id,
+        participant1Id: p1Id,
+        participant2Id: p2Id,
+        currentUserId: currentUserId,
+        p1Match: p1Id === currentUserId,
+        p2Match: p2Id === currentUserId
+      });
     }
     return matches;
   });
 
+  // Also include conversations that have messages but might not be in conversations list
+  // This is a fallback to ensure we don't miss any conversations
+  const missingConversationIds = Array.from(conversationIdsFromMessages).filter(
+    convId => !conversations.find(c => c.id === convId)
+  );
+  
+  if (missingConversationIds.length > 0 && currentUserId) {
+    console.warn('Found messages for conversations not in conversations list:', missingConversationIds);
+  }
+
+  // Get conversation IDs where current user is a participant (for message filtering)
+  // Include both conversations from the conversations table and from messages
+  const userConversationIds = new Set([
+    ...conversations.map(conv => conv.id),
+    ...Array.from(conversationIdsFromMessages)
+  ]);
+
+  // Helper function to check if a conversation ID involves the current user
+  const isUserInConversation = (conversationId) => {
+    if (!currentUserId || !conversationId) return false;
+    
+    // Conversation ID format: conv_userId1_userId2 (sorted)
+    // Parse the conversation ID to extract participant IDs
+    const match = conversationId.match(/^conv_(.+?)_(.+)$/);
+    if (match) {
+      const [, id1, id2] = match;
+      return String(id1) === currentUserId || String(id2) === currentUserId;
+    }
+    
+    // Fallback: check if user is in the conversation IDs set
+    return userConversationIds.has(conversationId);
+  };
+
+  // Filter messages: only show messages from conversations where user is a participant
+  // and optionally filter by selected conversation
+  const filteredMessages = allMessages.filter(msg => {
+    // Check if current user is involved in this conversation
+    const userInConversation = isUserInConversation(msg.conversationId);
+    
+    // Also check if user is the sender (they should see their own messages)
+    const isSender = msg.senderId ? String(msg.senderId) === currentUserId : false;
+    
+    if (!userInConversation && !isSender) {
+      return false;
+    }
+    
+    // If a conversation is selected, only show messages from that conversation
+    if (selectedConversationId) {
+      return msg.conversationId === selectedConversationId;
+    }
+    return true;
+  });
+
+  // Debug: Log conversations, messages, and user ID
+  useEffect(() => {
+    if (allConversations.length > 0) {
+      console.log('=== MESSAGES DEBUG ===');
+      console.log('All conversations:', allConversations);
+      console.log('Current user ID:', user?.id, '(type:', typeof user?.id, ')');
+      console.log('Filtered conversations count:', conversations.length);
+      console.log('Conversations breakdown:', conversations.map(c => ({
+        id: c.id,
+        p1: c.participant1Id,
+        p2: c.participant2Id,
+        p1Name: c.participant1Name,
+        p2Name: c.participant2Name,
+        lastMessage: c.lastMessage,
+        lastMessageTime: c.lastMessageTime
+      })));
+    }
+    if (allMessages.length > 0) {
+      console.log('All messages count:', allMessages.length);
+      console.log('Filtered messages count:', filteredMessages.length);
+      console.log('Selected conversation ID:', selectedConversationId);
+      if (selectedConversationId) {
+        const convMessages = filteredMessages.filter(m => m.conversationId === selectedConversationId);
+        console.log('Messages for selected conversation:', convMessages.length);
+      }
+    }
+    console.log('=== END DEBUG ===');
+  }, [allConversations, allMessages, filteredMessages, selectedConversationId, user?.id, conversations]);
+
+  // Build a complete list of conversations by combining:
+  // 1. Conversations from the conversations table
+  // 2. Conversations inferred from messages (in case conversation record is missing)
+  const allUserConversations = [...conversations];
+  
+  // Add conversations inferred from messages that might not be in conversations table
+  const conversationMap = new Map();
+  conversations.forEach(conv => {
+    conversationMap.set(conv.id, conv);
+  });
+  
+  // For each message, ensure we have a conversation entry
+  allMessages.forEach(msg => {
+    if (isUserInConversation(msg.conversationId) && !conversationMap.has(msg.conversationId)) {
+      // Parse conversation ID to get participant IDs
+      const match = msg.conversationId.match(/^conv_(.+?)_(.+)$/);
+      if (match) {
+        const [, id1, id2] = match;
+        const otherParticipantId = String(id1) === currentUserId ? String(id2) : String(id1);
+        
+        // Create a virtual conversation from the message data
+        const virtualConv = {
+          id: msg.conversationId,
+          participant1Id: id1 < id2 ? id1 : id2,
+          participant2Id: id1 < id2 ? id2 : id1,
+          participant1Name: String(id1) === currentUserId ? user?.name || 'You' : msg.senderName || 'Unknown',
+          participant2Name: String(id2) === currentUserId ? user?.name || 'You' : msg.senderName || 'Unknown',
+          participant1Avatar: String(id1) === currentUserId ? user?.avatar : msg.senderAvatar,
+          participant2Avatar: String(id2) === currentUserId ? user?.avatar : msg.senderAvatar,
+          lastMessage: msg.text || (msg.images?.length > 0 ? '📷 Image' : ''),
+          lastMessageTime: msg.timestamp || Date.now(),
+          createdAt: msg.timestamp || Date.now(),
+        };
+        conversationMap.set(msg.conversationId, virtualConv);
+        allUserConversations.push(virtualConv);
+      }
+    }
+  });
+
   // Sort conversations by last message time
-  const sortedConversations = [...conversations].sort((a, b) => 
+  const sortedConversations = [...allUserConversations].sort((a, b) => 
     (b.lastMessageTime || 0) - (a.lastMessageTime || 0)
   );
 
   // Filter conversations by search query
   const filteredConversations = sortedConversations.filter(conv => {
     if (!searchQuery.trim()) return true;
-    const otherParticipantName = conv.participant1Id === user?.id 
+    const p1Id = conv.participant1Id ? String(conv.participant1Id) : null;
+    const p2Id = conv.participant2Id ? String(conv.participant2Id) : null;
+    const otherParticipantName = (currentUserId && p1Id === currentUserId)
       ? conv.participant2Name 
       : conv.participant1Name;
     return otherParticipantName?.toLowerCase().includes(searchQuery.toLowerCase());
   });
 
   // Sort messages by timestamp
-  const sortedMessages = [...messages].sort((a, b) => 
+  const sortedMessages = [...filteredMessages].sort((a, b) => 
     (a.timestamp || 0) - (b.timestamp || 0)
   );
 
   // Get other participant info for selected conversation
-  const selectedConversation = conversations.find(c => c.id === selectedConversationId);
-  const otherParticipant = selectedConversation ? {
-    id: selectedConversation.participant1Id === user?.id 
-      ? selectedConversation.participant2Id 
-      : selectedConversation.participant1Id,
-    name: selectedConversation.participant1Id === user?.id 
-      ? selectedConversation.participant2Name 
-      : selectedConversation.participant1Name,
-    avatar: selectedConversation.participant1Id === user?.id 
-      ? selectedConversation.participant2Avatar 
-      : selectedConversation.participant1Avatar,
-  } : null;
+  // Look in both the conversations list and the allUserConversations list
+  const selectedConversation = allUserConversations.find(c => c.id === selectedConversationId) || 
+                                conversations.find(c => c.id === selectedConversationId);
+  const otherParticipant = selectedConversation ? (() => {
+    const p1Id = selectedConversation.participant1Id ? String(selectedConversation.participant1Id) : null;
+    const isP1CurrentUser = currentUserId && p1Id === currentUserId;
+    return {
+      id: isP1CurrentUser ? selectedConversation.participant2Id : selectedConversation.participant1Id,
+      name: isP1CurrentUser ? selectedConversation.participant2Name : selectedConversation.participant1Name,
+      avatar: isP1CurrentUser ? selectedConversation.participant2Avatar : selectedConversation.participant1Avatar,
+    };
+  })() : null;
 
   // Auto-scroll to bottom when new messages arrive
   useEffect(() => {
@@ -209,12 +346,15 @@ export default function Messages() {
             ) : (
               <div className="divide-y divide-gray-100 dark:divide-gray-700">
                 {filteredConversations.map(conv => {
-                  const otherParticipantName = conv.participant1Id === user?.id 
+                  const p1Id = conv.participant1Id ? String(conv.participant1Id) : null;
+                  const isP1CurrentUser = currentUserId && p1Id === currentUserId;
+                  const otherParticipantName = isP1CurrentUser 
                     ? conv.participant2Name 
                     : conv.participant1Name;
-                  const otherParticipantAvatar = conv.participant1Id === user?.id 
+                  const otherParticipantAvatar = isP1CurrentUser 
                     ? conv.participant2Avatar 
                     : conv.participant1Avatar;
+                  const otherParticipantId = isP1CurrentUser ? conv.participant2Id : conv.participant1Id;
                   const isSelected = conv.id === selectedConversationId;
 
                   return (
@@ -227,7 +367,7 @@ export default function Messages() {
                     >
                       <div className={`flex items-center gap-3 ${isRTL ? 'flex-row-reverse' : ''}`}>
                         <img 
-                          src={otherParticipantAvatar || 'https://i.pravatar.cc/150?u=' + (conv.participant1Id === user?.id ? conv.participant2Id : conv.participant1Id)} 
+                          src={otherParticipantAvatar || 'https://i.pravatar.cc/150?u=' + otherParticipantId} 
                           alt={otherParticipantName} 
                           className="w-12 h-12 rounded-full ring-2 ring-gray-100 dark:ring-gray-700 flex-shrink-0" 
                         />

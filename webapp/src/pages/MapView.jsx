@@ -22,6 +22,46 @@ let DefaultIcon = L.icon({
 
 L.Marker.prototype.options.icon = DefaultIcon;
 
+// Cache helpers for geocoded coordinates (persist across sessions)
+const GEOCODE_CACHE_KEY = 'doto_geocode_cache';
+const CACHE_EXPIRY_DAYS = 30;
+const MAX_CACHE_SIZE = 1000;
+
+const getGeocodeCache = () => {
+  try {
+    const cached = localStorage.getItem(GEOCODE_CACHE_KEY);
+    if (!cached) return {};
+    const data = JSON.parse(cached);
+    // Clean expired entries
+    const now = Date.now();
+    const expiryMs = CACHE_EXPIRY_DAYS * 24 * 60 * 60 * 1000;
+    const cleaned = {};
+    Object.entries(data).forEach(([key, value]) => {
+      if (now - value.timestamp < expiryMs) {
+        cleaned[key] = value;
+      }
+    });
+    return cleaned;
+  } catch {
+    return {};
+  }
+};
+
+const setGeocodeCache = (cache) => {
+  try {
+    // Limit cache size to prevent localStorage bloat
+    const entries = Object.entries(cache);
+    if (entries.length > MAX_CACHE_SIZE) {
+      // Keep most recent entries
+      entries.sort((a, b) => b[1].timestamp - a[1].timestamp);
+      cache = Object.fromEntries(entries.slice(0, MAX_CACHE_SIZE));
+    }
+    localStorage.setItem(GEOCODE_CACHE_KEY, JSON.stringify(cache));
+  } catch {
+    // Ignore localStorage errors (quota exceeded, private browsing, etc.)
+  }
+};
+
 // Component to update map view when center changes and enforce Israel bounds
 function MapUpdater({ center, zoom }) {
   const map = useMap();
@@ -254,34 +294,96 @@ export default function MapView() {
   useEffect(() => {
     const geocodePosts = async () => {
       setIsLoadingMarkers(true);
+      
+      // Get cached results first
+      const geocodeCache = getGeocodeCache();
       const coords = {};
-      const addresses = {};
       
       // Filter posts that need geocoding
-      const postsToGeocode = posts.filter(post => post.location && !coords[post.id]);
+      const postsToGeocode = posts.filter(post => post.location);
+      
+      // Check cache first - instant results for previously geocoded locations!
+      postsToGeocode.forEach(post => {
+        const cacheKey = post.location.toLowerCase().trim();
+        if (geocodeCache[cacheKey]) {
+          coords[post.id] = geocodeCache[cacheKey].coords;
+        }
+      });
+      
+      // Update state immediately with cached results (progressive loading)
+      setPostCoordinates({ ...coords });
+      
+      // Filter posts that still need geocoding
+      const postsNeedingGeocode = postsToGeocode.filter(post => !coords[post.id]);
       const total = postsToGeocode.length;
-      setMarkerProgress({ current: 0, total });
+      const cachedCount = Object.keys(coords).length;
       
-      let processed = 0;
+      setMarkerProgress({ current: cachedCount, total });
       
-      for (const post of postsToGeocode) {
-        if (post.location && !coords[post.id]) {
-          const geocoded = await geocodeLocation(post.location);
-          if (geocoded) {
-            coords[post.id] = [geocoded.lat, geocoded.lon];
-            // Pre-fetch address for this marker
-            const address = await reverseGeocode(geocoded.lat, geocoded.lon);
-            if (address) {
-              addresses[post.id] = address;
+      if (postsNeedingGeocode.length === 0) {
+        setIsLoadingMarkers(false);
+        setMarkerProgress({ current: 0, total: 0 });
+        return;
+      }
+
+      // Optimized batch processing - larger batches, shorter delays
+      const BATCH_SIZE = 8; // Increased from 5 for better parallelization
+      const BATCH_DELAY = 600; // Reduced from 1000ms - still respects rate limits
+      
+      // Process batches with progressive updates
+      for (let i = 0; i < postsNeedingGeocode.length; i += BATCH_SIZE) {
+        const batch = postsNeedingGeocode.slice(i, i + BATCH_SIZE);
+        
+        // Process batch in parallel - NO address pre-fetching (loads on demand)
+        const batchPromises = batch.map(async (post) => {
+          if (post.location) {
+            try {
+              const geocoded = await geocodeLocation(post.location);
+              if (geocoded) {
+                const newCoords = [geocoded.lat, geocoded.lon];
+                coords[post.id] = newCoords;
+                
+                // Cache the result for future use
+                const cacheKey = post.location.toLowerCase().trim();
+                geocodeCache[cacheKey] = {
+                  coords: newCoords,
+                  timestamp: Date.now()
+                };
+                
+                // Progressive update - show markers as they're ready (better UX)
+                setPostCoordinates(prev => ({ ...prev, [post.id]: newCoords }));
+                
+                return true;
+              }
+            } catch (error) {
+              console.error(`Error geocoding post ${post.id}:`, error);
             }
           }
-          processed++;
-          setMarkerProgress({ current: processed, total });
+          return false;
+        });
+        
+        // Wait for batch to complete
+        await Promise.all(batchPromises);
+        
+        // Update progress
+        const currentCount = cachedCount + Math.min(i + BATCH_SIZE, postsNeedingGeocode.length);
+        setMarkerProgress({ current: currentCount, total });
+        
+        // Save cache periodically (every 3 batches) to avoid excessive writes
+        if (i % (BATCH_SIZE * 3) === 0) {
+          setGeocodeCache(geocodeCache);
+        }
+        
+        // Delay between batches to respect rate limits
+        if (i + BATCH_SIZE < postsNeedingGeocode.length) {
+          await new Promise(resolve => setTimeout(resolve, BATCH_DELAY));
         }
       }
       
-      setPostCoordinates(coords);
-      setMarkerAddresses(addresses);
+      // Final cache save
+      setGeocodeCache(geocodeCache);
+      // Don't pre-fetch addresses - MarkerPopupContent loads them on demand
+      setMarkerAddresses({});
       setIsLoadingMarkers(false);
       setMarkerProgress({ current: 0, total: 0 });
     };

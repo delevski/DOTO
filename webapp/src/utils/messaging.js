@@ -128,6 +128,16 @@ export function sendMessage(conversationId, senderId, senderData, text, images =
   // Update conversation's last message
   const lastMessagePreview = text || (images.length > 0 ? '📷 Image' : '');
   
+  console.log('Sending message:', {
+    messageId,
+    conversationId,
+    senderId,
+    text: text.substring(0, 50) + '...',
+    timestamp
+  });
+  
+  // Update both the message and conversation
+  // Ensure conversation exists and is updated with latest message info
   db.transact(
     db.tx.messages[messageId].update(message),
     db.tx.conversations[conversationId].update({
@@ -135,6 +145,8 @@ export function sendMessage(conversationId, senderId, senderData, text, images =
       lastMessageTime: timestamp,
     })
   );
+  
+  console.log('Message sent and conversation updated');
   
   return message;
 }
