@@ -1312,7 +1312,8 @@ export default function PostDetails() {
                       <button 
                         onClick={handleClaim}
                         disabled={approvedClaimerId !== null}
-                        className="w-full bg-white text-red-600 font-bold py-4 rounded-xl shadow-lg hover:bg-gray-50 transition-colors text-lg mb-6 disabled:opacity-50 disabled:cursor-not-allowed"
+                        className="w-full bg-white text-red-600 font-bold py-4 rounded-xl shadow-lg hover:bg-gray-50 transition-colors text-lg mb-6 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center text-center"
+                        style={{ textAlign: 'center' }}
                       >
                         Claim Now
                       </button>

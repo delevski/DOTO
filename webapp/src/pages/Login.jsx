@@ -668,7 +668,8 @@ export default function Login() {
                 <button 
                   type="submit" 
                   disabled={isAuthenticating}
-                  className="w-full bg-gradient-to-r from-red-600 to-rose-500 text-white font-semibold py-3.5 rounded-xl shadow-lg shadow-red-200 hover:shadow-xl hover:scale-[1.02] transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100"
+                  className="w-full bg-gradient-to-r from-red-600 to-rose-500 text-white font-semibold py-3.5 rounded-xl shadow-lg shadow-red-200 hover:shadow-xl hover:scale-[1.02] transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100 flex items-center justify-center text-center"
+                  style={{ textAlign: 'center' }}
                 >
                   {isAuthenticating ? (t('loading') || 'Loading...') : t('logIn')}
                 </button>
@@ -710,6 +711,7 @@ export default function Login() {
                           onChange={(e) => handleCodeChange(index, e.target.value)}
                           onKeyDown={(e) => handleCodeKeyDown(index, e)}
                           className="w-12 h-14 text-center text-2xl font-bold bg-gray-50 dark:bg-gray-700 border-2 border-gray-200 dark:border-gray-600 text-gray-900 dark:text-white rounded-xl focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-red-500 transition-all"
+                          style={{ textAlign: 'center' }}
                         />
                       ))}
                     </div>
@@ -735,7 +737,8 @@ export default function Login() {
                   <button 
                     type="submit" 
                     disabled={verificationCode.join('').length !== 6 || isVerifying}
-                    className="w-full bg-gradient-to-r from-red-600 to-rose-500 text-white font-semibold py-3.5 rounded-xl shadow-lg shadow-red-200 hover:shadow-xl hover:scale-[1.02] transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100"
+                    className="w-full bg-gradient-to-r from-red-600 to-rose-500 text-white font-semibold py-3.5 rounded-xl shadow-lg shadow-red-200 hover:shadow-xl hover:scale-[1.02] transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100 flex items-center justify-center text-center"
+                    style={{ textAlign: 'center' }}
                   >
                     {isVerifying ? (t('loading') || 'Loading...') : t('verifyCode')}
                   </button>

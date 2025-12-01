@@ -63,6 +63,30 @@
   text-align: center !important;
 }
 
+/* Force center alignment for buttons with flex centering */
+button.button-center-text,
+button.button-center-text * {
+  text-align: center !important;
+  justify-content: center !important;
+}
+
+[dir="rtl"] button.button-center-text,
+[dir="rtl"] button.button-center-text * {
+  text-align: center !important;
+  justify-content: center !important;
+}
+
+/* Force center alignment for verification code inputs */
+input[inputmode="numeric"],
+input[maxlength="1"] {
+  text-align: center !important;
+}
+
+[dir="rtl"] input[inputmode="numeric"],
+[dir="rtl"] input[maxlength="1"] {
+  text-align: center !important;
+}
+
 /* ============================================
    Directional Icon Flipping for RTL
    ============================================ */

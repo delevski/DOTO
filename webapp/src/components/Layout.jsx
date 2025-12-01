@@ -61,7 +61,7 @@ export default function Layout() {
         <div className="p-4 border-t border-gray-100 dark:border-gray-700">
           <Link 
             to="/new-post" 
-            className={`w-full bg-gradient-to-r from-red-600 to-rose-500 text-white font-semibold py-3 px-4 rounded-xl flex items-center justify-center gap-2 shadow-lg shadow-red-200 hover:shadow-xl hover:scale-[1.02] transition-all duration-200`}
+            className={`w-full bg-gradient-to-r from-red-600 to-rose-500 text-white font-semibold py-3 px-4 rounded-xl flex items-center justify-center gap-2 shadow-lg shadow-red-200 hover:shadow-xl hover:scale-[1.02] transition-all duration-200 text-center`}
           >
             <Plus size={20} />
             {isSidebarOpen && <span>{t('createPost')}</span>}

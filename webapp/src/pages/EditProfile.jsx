@@ -262,18 +262,19 @@ export default function EditProfile() {
           <button
             type="submit"
             disabled={isSaving}
-            className="flex-1 bg-gradient-to-r from-red-600 to-rose-500 text-white font-semibold py-3 rounded-xl shadow-lg shadow-red-200 hover:shadow-xl hover:scale-[1.02] transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+            className="flex-1 bg-gradient-to-r from-red-600 to-rose-500 text-white font-semibold py-3 rounded-xl shadow-lg shadow-red-200 hover:shadow-xl hover:scale-[1.02] transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 button-center-text"
+            style={{ textAlign: 'center', justifyContent: 'center', display: 'flex' }}
           >
             {isSaving ? (
-              <>
+              <span className="flex items-center justify-center gap-2">
                 <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-                {t('save')}...
-              </>
+                <span>{t('save')}...</span>
+              </span>
             ) : (
-              <>
+              <span className="flex items-center justify-center gap-2">
                 <Save size={20} />
-                {t('save')}
-              </>
+                <span>{t('save')}</span>
+              </span>
             )}
           </button>
         </div>
