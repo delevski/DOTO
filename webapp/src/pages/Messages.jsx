@@ -318,18 +318,18 @@ export default function Messages() {
     <div className={`min-h-[calc(100vh-4rem)] flex flex-col ${isRTL ? 'rtl' : ''}`}>
       <div className="flex-1 flex overflow-hidden min-h-[600px]">
         {/* Left Sidebar - Conversation List */}
-        <div className={`w-full md:w-96 border-r border-gray-200 dark:border-gray-700 flex flex-col ${isRTL ? 'border-l border-r-0' : ''}`}>
+        <div className="w-full md:w-96 border-e border-gray-200 dark:border-gray-700 flex flex-col">
           {/* Header */}
           <div className="p-4 border-b border-gray-200 dark:border-gray-700">
             <h1 className="text-2xl font-bold text-gray-900 dark:text-white mb-4">{t('messages')}</h1>
             <div className="relative">
-              <Search size={20} className={`absolute ${isRTL ? 'right' : 'left'}-3 top-1/2 transform -translate-y-1/2 text-gray-400 dark:text-gray-500`} />
+              <Search size={20} className="absolute start-3 top-1/2 transform -translate-y-1/2 text-gray-400 dark:text-gray-500" />
               <input 
                 type="text" 
                 placeholder={t('search') + '...'} 
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                className={`w-full ${isRTL ? 'pr-10 pl-4' : 'pl-10 pr-4'} py-2.5 bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-xl focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent text-sm text-gray-900 dark:text-white`}
+                className="w-full ps-10 pe-4 py-2.5 bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-xl focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent text-sm text-gray-900 dark:text-white"
               />
             </div>
           </div>
@@ -361,8 +361,8 @@ export default function Messages() {
                     <button
                       key={conv.id}
                       onClick={() => handleSelectConversation(conv.id)}
-                      className={`w-full p-4 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors text-left ${isRTL ? 'text-right' : ''} ${
-                        isSelected ? 'bg-red-50 dark:bg-red-900/20 border-l-4 border-red-600' : ''
+                      className={`w-full p-4 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors ${
+                        isSelected ? 'bg-red-50 dark:bg-red-900/20 border-s-4 border-red-600' : ''
                       }`}
                     >
                       <div className={`flex items-center gap-3 ${isRTL ? 'flex-row-reverse' : ''}`}>
@@ -374,7 +374,7 @@ export default function Messages() {
                         <div className="flex-1 min-w-0">
                           <div className={`flex items-center justify-between mb-1 ${isRTL ? 'flex-row-reverse' : ''}`}>
                             <h3 className="font-bold text-gray-900 dark:text-white truncate">{otherParticipantName}</h3>
-                            <span className="text-xs text-gray-400 dark:text-gray-500 flex-shrink-0 ml-2">
+                            <span className="text-xs text-gray-400 dark:text-gray-500 flex-shrink-0 ms-2">
                               {formatConversationTime(conv.lastMessageTime)}
                             </span>
                           </div>
@@ -495,7 +495,7 @@ export default function Messages() {
                         />
                         <button
                           onClick={() => removeImage(idx)}
-                          className="absolute -top-2 -right-2 bg-red-500 text-white rounded-full p-1 hover:bg-red-600"
+                          className="absolute -top-2 -end-2 bg-red-500 text-white rounded-full p-1 hover:bg-red-600"
                         >
                           <X size={14} />
                         </button>

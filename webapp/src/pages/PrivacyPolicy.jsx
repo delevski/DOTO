@@ -395,7 +395,7 @@ export default function PrivacyPolicy() {
           onClick={() => navigate(-1)} 
           className="p-2 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg transition-colors"
         >
-          <ArrowLeft size={24} className="dark:text-gray-300" />
+          <ArrowLeft size={24} className={`dark:text-gray-300 ${isRTL ? 'rtl-flip' : ''}`} />
         </button>
         <div className="flex items-center gap-3">
           <Shield size={32} className="text-red-600 dark:text-red-400" />

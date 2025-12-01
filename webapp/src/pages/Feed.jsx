@@ -406,7 +406,7 @@ export default function Feed() {
               </button>
               
               {showFilters && (
-                <div className={`absolute ${isRTL ? 'left-0' : 'right-0'} top-full mt-2 z-50 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl shadow-lg p-4 min-w-[240px]`}>
+                <div className="absolute end-0 top-full mt-2 z-50 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl shadow-lg p-4 min-w-[240px]">
                   <div className={`flex items-center justify-between mb-4 ${isRTL ? 'flex-row-reverse' : ''}`}>
                     <h3 className="font-semibold text-gray-900 dark:text-white">Filter Posts</h3>
                     {hasActiveFilters && (
@@ -761,20 +761,20 @@ export default function Feed() {
                             <MoreHorizontal size={20} />
                           </button>
                           {openMenuId === post.id && (
-                            <div className={`absolute ${isRTL ? 'left-0' : 'right-0'} top-8 z-50 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg py-1 min-w-[120px]`}>
+                            <div className="absolute end-0 top-8 z-50 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg py-1 min-w-[120px]">
                               <button
                                 onClick={() => {
                                   navigate(`/post/${post.id}?edit=true`);
                                   setOpenMenuId(null);
                                 }}
-                                className="w-full px-4 py-2 text-left text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 flex items-center gap-2"
+                                className={`w-full px-4 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 flex items-center gap-2 ${isRTL ? 'flex-row-reverse' : ''}`}
                               >
                                 <Edit size={16} />
                                 {t('edit')}
                               </button>
                               <button
                                 onClick={() => handleDeletePost(post.id)}
-                                className="w-full px-4 py-2 text-left text-sm text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 flex items-center gap-2"
+                                className={`w-full px-4 py-2 text-sm text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 flex items-center gap-2 ${isRTL ? 'flex-row-reverse' : ''}`}
                               >
                                 <Trash2 size={16} />
                                 {t('delete')}
@@ -837,7 +837,7 @@ export default function Feed() {
                                   key={claimer.userId}
                                   src={claimer.userAvatar || `https://i.pravatar.cc/150?u=${claimer.userId}`}
                                   alt={claimer.userName}
-                                  className={`w-6 h-6 rounded-full border-2 border-white dark:border-gray-800 object-cover ${isRTL ? 'mr-[-4px]' : 'ml-[-4px]'}`}
+                                  className="w-6 h-6 rounded-full border-2 border-white dark:border-gray-800 object-cover -ms-1 first:ms-0"
                                   style={{ zIndex: claimers.length - index }}
                                   title={claimer.userName}
                                   loading="lazy"
@@ -845,7 +845,7 @@ export default function Feed() {
                                 />
                               ))}
                               {claimers.length > 4 && (
-                                <div className={`w-6 h-6 rounded-full border-2 border-white dark:border-gray-800 bg-gray-200 dark:bg-gray-700 flex items-center justify-center text-[10px] font-semibold text-gray-600 dark:text-gray-300 ${isRTL ? 'mr-[-4px]' : 'ml-[-4px]'}`} style={{ zIndex: 0 }}>
+                                <div className="w-6 h-6 rounded-full border-2 border-white dark:border-gray-800 bg-gray-200 dark:bg-gray-700 flex items-center justify-center text-[10px] font-semibold text-gray-600 dark:text-gray-300 -ms-1" style={{ zIndex: 0 }}>
                                   +{claimers.length - 4}
                                 </div>
                               )}
@@ -861,7 +861,7 @@ export default function Feed() {
                                   e.stopPropagation();
                                   openClaimerModal(post);
                                 }}
-                                className="ml-auto px-2.5 py-1 bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 text-xs font-medium rounded-lg hover:bg-red-100 dark:hover:bg-red-900/30 transition-colors flex items-center gap-1"
+                                className="ms-auto px-2.5 py-1 bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 text-xs font-medium rounded-lg hover:bg-red-100 dark:hover:bg-red-900/30 transition-colors flex items-center gap-1"
                               >
                                 <Users size={12} />
                                 {t('choose') || 'Choose'}

@@ -25,9 +25,8 @@ export default function Layout() {
   return (
     <div className={`flex ${isRTL ? 'flex-row-reverse' : 'flex-row'} h-screen bg-gray-50 dark:bg-gray-900 overflow-hidden`}>
       {/* Sidebar Navigation */}
-      {/* For Hebrew (RTL): sidebar appears on right side with left border */}
-      {/* For English (LTR): sidebar appears on left side with right border */}
-      <aside className={`${isSidebarOpen ? 'w-64' : 'w-20'} bg-white dark:bg-gray-800 ${isRTL ? 'border-l' : 'border-r'} border-gray-200 dark:border-gray-700 flex flex-col transition-all duration-300 shadow-sm`}>
+      {/* Uses logical border properties: border-e (end) adapts automatically to RTL/LTR */}
+      <aside className={`${isSidebarOpen ? 'w-64' : 'w-20'} bg-white dark:bg-gray-800 border-e border-gray-200 dark:border-gray-700 flex flex-col transition-all duration-300 shadow-sm`}>
         {/* Logo */}
         <div className={`p-6 border-b border-gray-100 dark:border-gray-700 flex items-center ${isRTL ? 'flex-row-reverse' : 'justify-between'}`}>
           {isSidebarOpen ? (
@@ -62,7 +61,7 @@ export default function Layout() {
         <div className="p-4 border-t border-gray-100 dark:border-gray-700">
           <Link 
             to="/new-post" 
-            className={`w-full bg-gradient-to-r from-red-600 to-rose-500 text-white font-semibold py-3 px-4 rounded-xl flex items-center ${isRTL ? 'flex-row-reverse' : 'justify-center'} gap-2 shadow-lg shadow-red-200 hover:shadow-xl hover:scale-[1.02] transition-all duration-200`}
+            className={`w-full bg-gradient-to-r from-red-600 to-rose-500 text-white font-semibold py-3 px-4 rounded-xl flex items-center justify-center gap-2 shadow-lg shadow-red-200 hover:shadow-xl hover:scale-[1.02] transition-all duration-200`}
           >
             <Plus size={20} />
             {isSidebarOpen && <span>{t('createPost')}</span>}
@@ -71,22 +70,20 @@ export default function Layout() {
       </aside>
 
       {/* Main Content Area */}
-      {/* For Hebrew (RTL): content appears on left side */}
-      {/* For English (LTR): content appears on right side */}
       <div className="flex-1 flex flex-col overflow-hidden">
         {/* Top Header */}
         <header className={`bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 px-6 py-4 flex items-center ${isRTL ? 'flex-row-reverse' : 'justify-between'} shadow-sm z-10`}>
           <div className="flex-1 max-w-2xl">
             <div className="relative">
-              <Search size={20} className={`absolute ${isRTL ? 'right' : 'left'}-3 top-1/2 transform -translate-y-1/2 text-gray-400 dark:text-gray-500`} />
+              <Search size={20} className="absolute start-3 top-1/2 transform -translate-y-1/2 text-gray-400 dark:text-gray-500" />
               <input 
                 type="text" 
                 placeholder={t('search') + '...'} 
-                className={`w-full ${isRTL ? 'pr-10 pl-4' : 'pl-10 pr-4'} py-2.5 bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-xl focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent text-sm text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-400`}
+                className="w-full ps-10 pe-4 py-2.5 bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-xl focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent text-sm text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-400"
               />
             </div>
           </div>
-          <div className={`flex items-center gap-4 ${isRTL ? 'flex-row-reverse mr-6' : 'ml-6'}`}>
+          <div className={`flex items-center gap-4 ${isRTL ? 'flex-row-reverse' : ''} ms-6`}>
             <NotificationBadge />
             <div className="relative">
               <button 
@@ -98,18 +95,18 @@ export default function Layout() {
               </button>
               
               {showProfileMenu && (
-                <div className={`absolute ${isRTL ? 'left-0' : 'right-0'} top-full mt-2 w-48 bg-white dark:bg-gray-800 rounded-xl shadow-lg border border-gray-200 dark:border-gray-700 overflow-hidden z-50`}>
+                <div className="absolute end-0 top-full mt-2 w-48 bg-white dark:bg-gray-800 rounded-xl shadow-lg border border-gray-200 dark:border-gray-700 overflow-hidden z-50">
                   <Link 
                     to="/profile" 
                     onClick={() => setShowProfileMenu(false)}
-                    className={`block px-4 py-3 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors text-sm text-gray-700 dark:text-gray-300 ${isRTL ? 'text-right' : ''}`}
+                    className="block px-4 py-3 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors text-sm text-gray-700 dark:text-gray-300"
                   >
                     {t('profile')}
                   </Link>
                   <Link 
                     to="/settings" 
                     onClick={() => setShowProfileMenu(false)}
-                    className={`block px-4 py-3 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors text-sm text-gray-700 dark:text-gray-300 ${isRTL ? 'text-right' : ''}`}
+                    className="block px-4 py-3 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors text-sm text-gray-700 dark:text-gray-300"
                   >
                     {t('settings')}
                   </Link>
@@ -119,9 +116,9 @@ export default function Layout() {
                       handleLogout();
                       setShowProfileMenu(false);
                     }}
-                    className={`w-full text-left px-4 py-3 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors text-sm text-red-600 dark:text-red-400 flex items-center gap-2 ${isRTL ? 'flex-row-reverse text-right' : ''}`}
+                    className={`w-full px-4 py-3 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors text-sm text-red-600 dark:text-red-400 flex items-center gap-2 ${isRTL ? 'flex-row-reverse' : ''}`}
                   >
-                    <LogOut size={16} />
+                    <LogOut size={16} className={isRTL ? 'rtl-flip' : ''} />
                     {t('logOut')}
                   </button>
                 </div>

@@ -286,6 +286,31 @@ export const translations = {
     currentStreak: 'Current Streak',
     tasksPosted: 'Tasks Posted',
     
+    // Form placeholders
+    enterFullNamePlaceholder: 'Enter your full name',
+    enterAgePlaceholder: 'Enter your age',
+    cityStateOrAddress: 'City, State or Address',
+    descriptionPlaceholder: 'Describe what you need help with... Be specific about location, time, and any requirements.',
+    characters: 'characters',
+    
+    // Aria labels
+    showPassword: 'Show password',
+    hidePassword: 'Hide password',
+    showConfirmPassword: 'Show confirm password',
+    hideConfirmPassword: 'Hide confirm password',
+    
+    // Categories
+    categoryMoving: 'Moving',
+    categoryPetCare: 'Pet Care',
+    categoryBorrow: 'Borrow Item',
+    categoryAssembly: 'Assembly',
+    categoryOther: 'Other',
+    
+    // More placeholders
+    tellUsAboutYourselfPlaceholder: 'Tell us about yourself...',
+    writeAComment: 'Write a comment...',
+    removePhoto: 'Remove photo',
+    
     // Error messages
     pleaseEnterPhoneNumber: 'Please enter your phone number',
     pleaseEnterEmail: 'Please enter your email address',
@@ -595,6 +620,31 @@ export const translations = {
     // Profile Stats
     currentStreak: 'רצף נוכחי',
     tasksPosted: 'משימות שפורסמו',
+    
+    // Form placeholders
+    enterFullNamePlaceholder: 'הכנס את שמך המלא',
+    enterAgePlaceholder: 'הכנס את גילך',
+    cityStateOrAddress: 'עיר, מדינה או כתובת',
+    descriptionPlaceholder: 'תאר במה אתה צריך עזרה... היה ספציפי לגבי מיקום, זמן ודרישות.',
+    characters: 'תווים',
+    
+    // Aria labels
+    showPassword: 'הצג סיסמה',
+    hidePassword: 'הסתר סיסמה',
+    showConfirmPassword: 'הצג אישור סיסמה',
+    hideConfirmPassword: 'הסתר אישור סיסמה',
+    
+    // Categories
+    categoryMoving: 'הובלה',
+    categoryPetCare: 'טיפול בחיות',
+    categoryBorrow: 'השאלת פריט',
+    categoryAssembly: 'הרכבה',
+    categoryOther: 'אחר',
+    
+    // More placeholders
+    tellUsAboutYourselfPlaceholder: 'ספר לנו על עצמך...',
+    writeAComment: 'כתוב תגובה...',
+    removePhoto: 'הסר תמונה',
     
     // Error messages
     pleaseEnterPhoneNumber: 'אנא הכנס את מספר הטלפון שלך',

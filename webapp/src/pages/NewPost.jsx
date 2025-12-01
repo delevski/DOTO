@@ -409,7 +409,7 @@ export default function NewPost() {
           onClick={() => navigate(-1)} 
           className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"
         >
-          <ArrowLeft size={24} className="dark:text-gray-300" />
+          <ArrowLeft size={24} className={`dark:text-gray-300 ${isRTL ? 'rtl-flip' : ''}`} />
         </button>
         <h1 className="text-3xl font-bold text-gray-900 dark:text-white">{t('newPost')}</h1>
       </div>
@@ -448,30 +448,30 @@ export default function NewPost() {
           <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">{t('description')} *</label>
           <textarea
             className="w-full h-40 p-4 text-gray-900 dark:text-white dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-xl resize-none focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent transition-all"
-            placeholder="Describe what you need help with... Be specific about location, time, and any requirements."
+            placeholder={t('descriptionPlaceholder')}
             value={description}
             onChange={(e) => setDescription(e.target.value)}
             required
           />
-          <p className="text-xs text-gray-500 dark:text-gray-400 mt-2">{description.length}/500 characters</p>
+          <p className="text-xs text-gray-500 dark:text-gray-400 mt-2">{description.length}/500 {t('characters')}</p>
         </div>
 
         {/* Category */}
         <div>
           <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">{t('category')}</label>
           <div className="relative">
-            <Tag size={20} className={`absolute ${isRTL ? 'right' : 'left'}-3 top-1/2 transform -translate-y-1/2 text-gray-400`} />
+            <Tag size={20} className="absolute start-3 top-1/2 transform -translate-y-1/2 text-gray-400" />
             <select
-              className={`w-full ${isRTL ? 'pr-10 pl-4' : 'pl-10 pr-4'} py-3 border border-gray-200 dark:border-gray-600 rounded-xl focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent appearance-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white`}
+              className="w-full ps-10 pe-4 py-3 border border-gray-200 dark:border-gray-600 rounded-xl focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent appearance-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
               value={category}
               onChange={(e) => setCategory(e.target.value)}
             >
               <option value="">{t('selectCategory')}</option>
-              <option value="Moving">Moving</option>
-              <option value="Pet Care">Pet Care</option>
-              <option value="Borrow">Borrow Item</option>
-              <option value="Assembly">Assembly</option>
-              <option value="Other">Other</option>
+              <option value="Moving">{t('categoryMoving')}</option>
+              <option value="Pet Care">{t('categoryPetCare')}</option>
+              <option value="Borrow">{t('categoryBorrow')}</option>
+              <option value="Assembly">{t('categoryAssembly')}</option>
+              <option value="Other">{t('categoryOther')}</option>
             </select>
           </div>
         </div>
@@ -480,12 +480,12 @@ export default function NewPost() {
         <div>
           <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">{t('location')} *</label>
           <div className="relative">
-            <MapPin size={20} className={`absolute ${isRTL ? 'right' : 'left'}-3 top-1/2 transform -translate-y-1/2 text-gray-400 z-10`} />
+            <MapPin size={20} className="absolute start-3 top-1/2 transform -translate-y-1/2 text-gray-400 z-10" />
             <input
               ref={locationInputRef}
               type="text"
               placeholder={t('enterAddressOrSelect')}
-              className={`w-full ${isRTL ? 'pr-10 pl-4' : 'pl-10 pr-4'} py-3 border border-gray-200 dark:border-gray-600 rounded-xl focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent text-gray-900 dark:text-white dark:bg-gray-700`}
+              className="w-full ps-10 pe-4 py-3 border border-gray-200 dark:border-gray-600 rounded-xl focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent text-gray-900 dark:text-white dark:bg-gray-700"
               value={location}
               onChange={handleLocationChange}
               onFocus={() => {
@@ -500,20 +500,20 @@ export default function NewPost() {
             {showSuggestions && locationSuggestions.length > 0 && (
               <div
                 ref={suggestionsRef}
-                className={`absolute ${isRTL ? 'right-0' : 'left-0'} top-full mt-1 w-full bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl shadow-lg z-50 max-h-60 overflow-y-auto`}
+                className="absolute start-0 top-full mt-1 w-full bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl shadow-lg z-50 max-h-60 overflow-y-auto"
               >
                 {locationSuggestions.map((suggestion, index) => (
                   <button
                     key={index}
                     type="button"
                     onClick={() => handleLocationSuggestionSelect(suggestion)}
-                    className={`w-full px-4 py-3 text-left hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors ${isRTL ? 'text-right' : ''} ${
+                    className={`w-full px-4 py-3 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors ${
                       index === 0 ? 'rounded-t-xl' : ''
                     } ${
                       index === locationSuggestions.length - 1 ? 'rounded-b-xl' : 'border-b border-gray-100 dark:border-gray-700'
                     }`}
                   >
-                    <div className="flex items-start gap-2">
+                    <div className={`flex items-start gap-2 ${isRTL ? 'flex-row-reverse' : ''}`}>
                       <MapPin size={16} className="text-gray-400 mt-0.5 flex-shrink-0" />
                       <div className="flex-1 min-w-0">
                         <div className="text-sm font-medium text-gray-900 dark:text-white truncate">
@@ -527,7 +527,7 @@ export default function NewPost() {
             )}
             
             {isSearchingLocation && (
-              <div className={`absolute ${isRTL ? 'right-12' : 'left-12'} top-1/2 transform -translate-y-1/2`}>
+              <div className="absolute start-12 top-1/2 transform -translate-y-1/2">
                 <div className="w-4 h-4 border-2 border-gray-300 border-t-red-500 rounded-full animate-spin"></div>
               </div>
             )}
@@ -580,12 +580,13 @@ export default function NewPost() {
         <div>
           <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">{t('when')}</label>
           <div className="relative">
-            <Clock size={20} className={`absolute ${isRTL ? 'right' : 'left'}-3 top-1/2 transform -translate-y-1/2 text-gray-400 pointer-events-none z-10`} />
+            <Clock size={20} className="absolute start-3 top-1/2 transform -translate-y-1/2 text-gray-400 pointer-events-none z-10" />
             <input
               type="datetime-local"
               value={timeframe}
               onChange={(e) => setTimeframe(e.target.value)}
-              className={`w-full ${isRTL ? 'pr-10 pl-4' : 'pl-10 pr-4'} py-3 border border-gray-200 dark:border-gray-600 rounded-xl focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent text-gray-900 dark:text-white dark:bg-gray-700`}
+              dir="ltr"
+              className="w-full ps-10 pe-4 py-3 border border-gray-200 dark:border-gray-600 rounded-xl focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent text-gray-900 dark:text-white dark:bg-gray-700"
             />
           </div>
         </div>
@@ -624,7 +625,7 @@ export default function NewPost() {
                   <button
                     type="button"
                     onClick={() => removePhoto(index)}
-                    className="absolute top-2 right-2 p-1.5 bg-red-500 text-white rounded-full opacity-0 group-hover:opacity-100 transition-opacity hover:bg-red-600"
+                    className="absolute top-2 end-2 p-1.5 bg-red-500 text-white rounded-full opacity-0 group-hover:opacity-100 transition-opacity hover:bg-red-600"
                   >
                     <X size={16} />
                   </button>

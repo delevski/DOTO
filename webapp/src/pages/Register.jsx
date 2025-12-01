@@ -961,7 +961,7 @@ export default function Register() {
                 name="name"
                 value={formData.name}
                 onChange={handleChange}
-                placeholder="Enter your full name"
+                placeholder={t('enterFullNamePlaceholder')}
                 className="w-full bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 text-gray-900 dark:text-white p-3.5 rounded-xl focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent transition-all"
                 required
               />
@@ -973,14 +973,14 @@ export default function Register() {
                 {t('emailAddress')} *
               </label>
               <div className="relative">
-                <Mail size={20} className={`absolute ${isRTL ? 'right' : 'left'}-3 top-1/2 transform -translate-y-1/2 text-gray-400`} />
+                <Mail size={20} className="absolute start-3 top-1/2 transform -translate-y-1/2 text-gray-400" />
                 <input
                   type="email"
                   name="email"
                   value={formData.email}
                   onChange={handleChange}
                   placeholder="your.email@example.com"
-                  className={`w-full ${isRTL ? 'pr-10 pl-4' : 'pl-10 pr-4'} bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 text-gray-900 dark:text-white p-3.5 rounded-xl focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent transition-all`}
+                  className="w-full ps-10 pe-4 bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 text-gray-900 dark:text-white p-3.5 rounded-xl focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent transition-all"
                   required
                 />
               </div>
@@ -999,13 +999,13 @@ export default function Register() {
                   onChange={handleChange}
                   placeholder="********"
                   autoComplete="new-password"
-                  className={`w-full bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 text-gray-900 dark:text-white p-3.5 rounded-xl focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent transition-all ${isRTL ? 'pl-12' : 'pr-12'}`}
+                  className="w-full bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 text-gray-900 dark:text-white p-3.5 pe-12 rounded-xl focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent transition-all"
                 />
                 <button
                   type="button"
                   onClick={() => setShowPassword(!showPassword)}
-                  className={`absolute ${isRTL ? 'left-3' : 'right-3'} top-1/2 transform -translate-y-1/2 text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300 transition-colors`}
-                  aria-label={showPassword ? 'Hide password' : 'Show password'}
+                  className="absolute end-3 top-1/2 transform -translate-y-1/2 text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300 transition-colors"
+                  aria-label={showPassword ? t('hidePassword') : t('showPassword')}
                 >
                   {showPassword ? (
                     <EyeOff size={20} />
@@ -1032,13 +1032,13 @@ export default function Register() {
                   onChange={handleChange}
                   placeholder="********"
                   autoComplete="new-password"
-                  className={`w-full bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 text-gray-900 dark:text-white p-3.5 rounded-xl focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent transition-all ${isRTL ? 'pl-12' : 'pr-12'}`}
+                  className="w-full bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 text-gray-900 dark:text-white p-3.5 pe-12 rounded-xl focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent transition-all"
                 />
                 <button
                   type="button"
                   onClick={() => setShowConfirmPassword(!showConfirmPassword)}
-                  className={`absolute ${isRTL ? 'left-3' : 'right-3'} top-1/2 transform -translate-y-1/2 text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300 transition-colors`}
-                  aria-label={showConfirmPassword ? 'Hide confirm password' : 'Show confirm password'}
+                  className="absolute end-3 top-1/2 transform -translate-y-1/2 text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300 transition-colors"
+                  aria-label={showConfirmPassword ? t('hideConfirmPassword') : t('showConfirmPassword')}
                 >
                   {showConfirmPassword ? (
                     <EyeOff size={20} />
@@ -1062,7 +1062,7 @@ export default function Register() {
                 name="age"
                 value={formData.age}
                 onChange={handleChange}
-                placeholder="Enter your age"
+                placeholder={t('enterAgePlaceholder')}
                 min="13"
                 max="120"
                 className="w-full bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 text-gray-900 dark:text-white p-3.5 rounded-xl focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent transition-all"
@@ -1073,10 +1073,10 @@ export default function Register() {
             {/* Location */}
             <div>
               <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                Location *
+                {t('location')} *
               </label>
               <div className="relative">
-                <MapPin size={20} className={`absolute ${isRTL ? 'right' : 'left'}-3 top-1/2 transform -translate-y-1/2 text-gray-400 z-10`} />
+                <MapPin size={20} className="absolute start-3 top-1/2 transform -translate-y-1/2 text-gray-400 z-10" />
                 <input
                   ref={locationInputRef}
                   type="text"
@@ -1088,8 +1088,8 @@ export default function Register() {
                       setShowLocationSuggestions(true);
                     }
                   }}
-                  placeholder="City, State or Address"
-                  className={`w-full ${isRTL ? 'pr-10 pl-4' : 'pl-10 pr-4'} bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 text-gray-900 dark:text-white p-3.5 rounded-xl focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent transition-all`}
+                  placeholder={t('cityStateOrAddress')}
+                  className="w-full ps-10 pe-4 bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 text-gray-900 dark:text-white p-3.5 rounded-xl focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent transition-all"
                   required
                 />
                 
@@ -1097,20 +1097,20 @@ export default function Register() {
                 {showLocationSuggestions && locationSuggestions.length > 0 && (
                   <div
                     ref={locationSuggestionsRef}
-                    className={`absolute ${isRTL ? 'right-0' : 'left-0'} top-full mt-1 w-full bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl shadow-lg z-50 max-h-60 overflow-y-auto`}
+                    className="absolute start-0 top-full mt-1 w-full bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl shadow-lg z-50 max-h-60 overflow-y-auto"
                   >
                     {locationSuggestions.map((suggestion, index) => (
                       <button
                         key={index}
                         type="button"
                         onClick={() => handleLocationSuggestionSelect(suggestion)}
-                        className={`w-full px-4 py-3 text-left hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors ${isRTL ? 'text-right' : ''} ${
+                        className={`w-full px-4 py-3 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors ${
                           index === 0 ? 'rounded-t-xl' : ''
                         } ${
                           index === locationSuggestions.length - 1 ? 'rounded-b-xl' : 'border-b border-gray-100 dark:border-gray-700'
                         }`}
                       >
-                        <div className="flex items-start gap-2">
+                        <div className={`flex items-start gap-2 ${isRTL ? 'flex-row-reverse' : ''}`}>
                           <MapPin size={16} className="text-gray-400 mt-0.5 flex-shrink-0" />
                           <div className="flex-1 min-w-0">
                             <div className="text-sm font-medium text-gray-900 dark:text-white truncate">
@@ -1124,7 +1124,7 @@ export default function Register() {
                 )}
                 
                 {isSearchingLocation && (
-                  <div className={`absolute ${isRTL ? 'right-12' : 'left-12'} top-1/2 transform -translate-y-1/2`}>
+                  <div className="absolute start-12 top-1/2 transform -translate-y-1/2">
                     <div className="w-4 h-4 border-2 border-gray-300 border-t-red-500 rounded-full animate-spin"></div>
                   </div>
                 )}
@@ -1239,7 +1239,7 @@ export default function Register() {
                 }}
                 className={`mb-4 flex items-center gap-2 text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white transition-colors ${isRTL ? 'flex-row-reverse' : ''}`}
               >
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <svg className={`w-5 h-5 ${isRTL ? 'rtl-flip' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
                 </svg>
                 {t('back')}

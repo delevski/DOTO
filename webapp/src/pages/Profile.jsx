@@ -173,22 +173,22 @@ export default function Profile() {
           <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-sm border border-gray-100 dark:border-gray-700 p-6">
             <h3 className="font-bold text-gray-900 dark:text-white mb-4">{t('quickActions')}</h3>
             <div className="space-y-2">
-              <button className={`w-full text-left px-4 py-3 hover:bg-gray-50 dark:hover:bg-gray-700 rounded-xl transition-colors flex items-center gap-3 text-gray-700 dark:text-gray-300 ${isRTL ? 'flex-row-reverse text-right' : ''}`}>
+              <button className={`w-full px-4 py-3 hover:bg-gray-50 dark:hover:bg-gray-700 rounded-xl transition-colors flex items-center gap-3 text-gray-700 dark:text-gray-300 ${isRTL ? 'flex-row-reverse' : ''}`}>
                 <HelpCircle size={20} className="text-blue-500" />
                 <span className="font-medium">{t('helpSupport')}</span>
               </button>
               <Link 
                 to="/settings"
-                className={`w-full text-left px-4 py-3 hover:bg-gray-50 dark:hover:bg-gray-700 rounded-xl transition-colors flex items-center gap-3 text-gray-700 dark:text-gray-300 ${isRTL ? 'flex-row-reverse text-right' : ''}`}
+                className={`w-full px-4 py-3 hover:bg-gray-50 dark:hover:bg-gray-700 rounded-xl transition-colors flex items-center gap-3 text-gray-700 dark:text-gray-300 ${isRTL ? 'flex-row-reverse' : ''}`}
               >
                 <SettingsIcon size={20} className="text-gray-500" />
                 <span className="font-medium">{t('settings')}</span>
               </Link>
               <button 
                 onClick={handleLogout}
-                className={`w-full text-left px-4 py-3 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-xl transition-colors flex items-center gap-3 text-red-600 dark:text-red-400 ${isRTL ? 'flex-row-reverse text-right' : ''}`}
+                className={`w-full px-4 py-3 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-xl transition-colors flex items-center gap-3 text-red-600 dark:text-red-400 ${isRTL ? 'flex-row-reverse' : ''}`}
               >
-                <LogOut size={20} />
+                <LogOut size={20} className={isRTL ? 'rtl-flip' : ''} />
                 <span className="font-medium">{t('logOut')}</span>
               </button>
             </div>

@@ -490,7 +490,7 @@ export default function MapView() {
       <div className={`bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 p-4 flex items-center justify-between z-10 flex-shrink-0 ${isRTL ? 'flex-row-reverse' : ''}`}>
         <div className={`flex items-center gap-4 flex-1 max-w-2xl ${isRTL ? 'flex-row-reverse' : ''}`}>
           <div className="relative flex-1">
-            <Search size={20} className={`absolute ${isRTL ? 'right' : 'left'}-3 top-1/2 transform -translate-y-1/2 text-gray-400 dark:text-gray-500 pointer-events-none z-10`} />
+            <Search size={20} className="absolute start-3 top-1/2 transform -translate-y-1/2 text-gray-400 dark:text-gray-500 pointer-events-none z-10" />
             <input 
               ref={searchInputRef}
               type="text" 
@@ -498,19 +498,19 @@ export default function MapView() {
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               onKeyDown={handleSearchKeyDown}
-              className={`w-full ${isRTL ? 'pr-10 pl-4' : 'pl-10 pr-4'} py-2.5 bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-xl focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent text-sm text-gray-900 dark:text-white relative z-10`}
+              className="w-full ps-10 pe-4 py-2.5 bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-xl focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent text-sm text-gray-900 dark:text-white relative z-10"
             />
             {/* Autocomplete Dropdown */}
             {autocompleteSuggestions.length > 0 && (
               <div 
                 ref={autocompleteRef}
-                className={`absolute ${isRTL ? 'right' : 'left'}-0 top-full mt-1 w-full bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl shadow-lg max-h-64 overflow-y-auto z-50`}
+                className="absolute start-0 top-full mt-1 w-full bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl shadow-lg max-h-64 overflow-y-auto z-50"
               >
                 {autocompleteSuggestions.map((suggestion, index) => (
                   <button
                     key={index}
                     onClick={() => handleLocationSelect(suggestion)}
-                    className={`w-full px-4 py-3 text-left hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors border-b border-gray-100 dark:border-gray-700 last:border-b-0 ${isRTL ? 'text-right' : ''}`}
+                    className="w-full px-4 py-3 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors border-b border-gray-100 dark:border-gray-700 last:border-b-0"
                   >
                     <div className="flex items-start gap-3">
                       <MapPin size={16} className="text-red-500 mt-0.5 flex-shrink-0" />
@@ -531,7 +531,7 @@ export default function MapView() {
               </div>
             )}
             {isSearching && searchQuery.trim().length >= 2 && (
-              <div className={`absolute ${isRTL ? 'right' : 'left'}-0 top-full mt-1 w-full bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl shadow-lg p-4 z-50`}>
+              <div className="absolute start-0 top-full mt-1 w-full bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl shadow-lg p-4 z-50">
                 <p className="text-sm text-gray-500 dark:text-gray-400 text-center">{t('searching')}</p>
               </div>
             )}
@@ -541,7 +541,7 @@ export default function MapView() {
             {t('filters')}
           </button>
         </div>
-        <div className={`${isRTL ? 'mr-4' : 'ml-4'} flex items-center gap-3`}>
+        <div className="ms-4 flex items-center gap-3">
           <div className="bg-gray-50 dark:bg-gray-700 px-4 py-2 rounded-xl text-sm font-medium text-gray-700 dark:text-gray-300">
             {filteredPosts.length} {filteredPosts.length === 1 ? t('post') : t('posts')}
           </div>
@@ -552,7 +552,7 @@ export default function MapView() {
       <div className="flex-1 relative" style={{ minHeight: 0 }}>
         {/* Loading Indicator for Markers - Non-blocking, positioned in corner */}
         {isLoadingMarkers && (
-          <div className="absolute top-4 right-4 z-[1000] pointer-events-none animate-fade-in">
+          <div className="absolute top-4 end-4 z-[1000] pointer-events-none animate-fade-in">
             <div className="bg-white dark:bg-gray-800 rounded-xl shadow-xl border border-gray-200 dark:border-gray-700 p-4 min-w-[280px] backdrop-blur-sm bg-opacity-95 dark:bg-opacity-95">
               <div className="flex items-start gap-3">
                 <div className="relative flex-shrink-0 mt-0.5">

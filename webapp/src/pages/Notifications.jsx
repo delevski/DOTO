@@ -188,7 +188,7 @@ export default function Notifications() {
                   </div>
                   <ArrowRight
                     size={20}
-                    className={`flex-shrink-0 text-gray-400 dark:text-gray-500 ${isRTL ? 'rotate-180' : ''}`}
+                    className={`flex-shrink-0 text-gray-400 dark:text-gray-500 ${isRTL ? 'rtl-flip' : ''}`}
                   />
                 </div>
               </div>

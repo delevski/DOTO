@@ -690,7 +690,7 @@ export default function PostDetails() {
         onClick={() => navigate(-1)} 
         className={`flex items-center gap-2 text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200 mb-6 transition-colors group ${isRTL ? 'flex-row-reverse' : ''}`}
       >
-        <ArrowLeft size={20} className={isRTL ? 'group-hover:translate-x-1 transition-transform' : 'group-hover:-translate-x-1 transition-transform'} />
+        <ArrowLeft size={20} className={`${isRTL ? 'rtl-flip group-hover:translate-x-1' : 'group-hover:-translate-x-1'} transition-transform`} />
         <span className="font-medium">{t('back')} to {t('feed')}</span>
       </button>
 
@@ -762,17 +762,17 @@ export default function PostDetails() {
                         <MoreHorizontal size={20} />
                       </button>
                       {showMenu && (
-                        <div className={`absolute ${isRTL ? 'left-0' : 'right-0'} top-8 z-50 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg py-1 min-w-[120px]`}>
+                        <div className="absolute end-0 top-8 z-50 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg py-1 min-w-[120px]">
                           <button
                             onClick={handleEdit}
-                            className="w-full px-4 py-2 text-left text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 flex items-center gap-2"
+                            className={`w-full px-4 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 flex items-center gap-2 ${isRTL ? 'flex-row-reverse' : ''}`}
                           >
                             <Edit size={16} />
                             Edit
                           </button>
                           <button
                             onClick={handleDeletePost}
-                            className="w-full px-4 py-2 text-left text-sm text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 flex items-center gap-2"
+                            className={`w-full px-4 py-2 text-sm text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 flex items-center gap-2 ${isRTL ? 'flex-row-reverse' : ''}`}
                           >
                             <Trash2 size={16} />
                             Delete
@@ -852,7 +852,7 @@ export default function PostDetails() {
                             <button
                               type="button"
                               onClick={() => removePhoto(index)}
-                              className="absolute top-2 right-2 p-1.5 bg-red-500 text-white rounded-full opacity-0 group-hover:opacity-100 transition-opacity hover:bg-red-600"
+                              className="absolute top-2 end-2 p-1.5 bg-red-500 text-white rounded-full opacity-0 group-hover:opacity-100 transition-opacity hover:bg-red-600"
                             >
                               <X size={16} />
                             </button>
@@ -893,13 +893,13 @@ export default function PostDetails() {
                             key={claimer.userId}
                             src={claimer.userAvatar || `https://i.pravatar.cc/150?u=${claimer.userId}`}
                             alt={claimer.userName}
-                            className={`w-10 h-10 rounded-full border-2 border-white dark:border-gray-800 object-cover ${isRTL ? 'mr-[-8px]' : 'ml-[-8px]'}`}
+                            className="w-10 h-10 rounded-full border-2 border-white dark:border-gray-800 object-cover -ms-2 first:ms-0"
                             style={{ zIndex: claimers.length - index }}
                             title={claimer.userName}
                           />
                         ))}
                         {claimers.length > 5 && (
-                          <div className={`w-10 h-10 rounded-full border-2 border-white dark:border-gray-800 bg-gray-200 dark:bg-gray-700 flex items-center justify-center text-xs font-semibold text-gray-600 dark:text-gray-300 ${isRTL ? 'mr-[-8px]' : 'ml-[-8px]'}`} style={{ zIndex: 0 }}>
+                          <div className="w-10 h-10 rounded-full border-2 border-white dark:border-gray-800 bg-gray-200 dark:bg-gray-700 flex items-center justify-center text-xs font-semibold text-gray-600 dark:text-gray-300 -ms-2" style={{ zIndex: 0 }}>
                             +{claimers.length - 5}
                           </div>
                         )}
@@ -1003,11 +1003,11 @@ export default function PostDetails() {
                       <span className="font-medium">Share</span>
                     </button>
                     {showShareMenu && (
-                      <div className={`absolute ${isRTL ? 'left-0' : 'right-0'} top-10 z-50 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg py-1 min-w-[160px]`}>
+                      <div className="absolute end-0 top-10 z-50 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg py-1 min-w-[160px]">
                         {navigator.share && (
                           <button
                             onClick={() => handleShare('native')}
-                            className="w-full px-4 py-2 text-left text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 flex items-center gap-2"
+                            className={`w-full px-4 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 flex items-center gap-2 ${isRTL ? 'flex-row-reverse' : ''}`}
                           >
                             <Share2 size={16} />
                             Share via...
@@ -1015,7 +1015,7 @@ export default function PostDetails() {
                         )}
                         <button
                           onClick={() => handleShare('copy')}
-                          className="w-full px-4 py-2 text-left text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 flex items-center gap-2"
+                          className={`w-full px-4 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 flex items-center gap-2 ${isRTL ? 'flex-row-reverse' : ''}`}
                         >
                           <Copy size={16} />
                           Copy Link
@@ -1049,7 +1049,7 @@ export default function PostDetails() {
                           handleAddComment();
                         }
                       }}
-                      placeholder="Write a comment..."
+                      placeholder={t('writeAComment')}
                       className="flex-1 px-4 py-2 text-gray-900 dark:text-white dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
                     />
                     <button
@@ -1089,7 +1089,7 @@ export default function PostDetails() {
                             {canDelete && (
                               <button
                                 onClick={() => handleDeleteComment(comment.id)}
-                                className="ml-auto opacity-0 group-hover:opacity-100 transition-opacity text-red-500 hover:text-red-700 dark:text-red-400 dark:hover:text-red-300"
+                                className="ms-auto opacity-0 group-hover:opacity-100 transition-opacity text-red-500 hover:text-red-700 dark:text-red-400 dark:hover:text-red-300"
                               >
                                 <X size={16} />
                               </button>

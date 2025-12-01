@@ -131,7 +131,7 @@ export default function EditProfile() {
           onClick={() => navigate(-1)} 
           className="p-2 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg transition-colors"
         >
-          <ArrowLeft size={24} className="dark:text-gray-300" />
+          <ArrowLeft size={24} className={`dark:text-gray-300 ${isRTL ? 'rtl-flip' : ''}`} />
         </button>
         <h1 className="text-3xl font-bold text-gray-900 dark:text-white">{t('editProfile')}</h1>
       </div>
@@ -151,7 +151,7 @@ export default function EditProfile() {
               alt="Profile" 
               className="w-32 h-32 rounded-2xl object-cover ring-4 ring-gray-100 dark:ring-gray-700" 
             />
-            <label className={`absolute bottom-0 ${isRTL ? 'left-0' : 'right-0'} bg-red-600 text-white p-3 rounded-full cursor-pointer hover:bg-red-700 transition-colors shadow-lg`}>
+            <label className="absolute bottom-0 end-0 bg-red-600 text-white p-3 rounded-full cursor-pointer hover:bg-red-700 transition-colors shadow-lg">
               <Upload size={20} />
               <input
                 type="file"
@@ -167,7 +167,7 @@ export default function EditProfile() {
               onClick={() => setAvatar('')}
               className="mt-2 text-sm text-red-600 dark:text-red-400 hover:text-red-700"
             >
-              Remove photo
+              {t('removePhoto')}
             </button>
           )}
         </div>
@@ -246,7 +246,7 @@ export default function EditProfile() {
             onChange={handleChange}
             rows={4}
             className="w-full p-4 text-gray-900 dark:text-white dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-xl resize-none focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent transition-all"
-            placeholder="Tell us about yourself..."
+            placeholder={t('tellUsAboutYourselfPlaceholder')}
           />
         </div>
 
