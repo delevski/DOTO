@@ -5,140 +5,264 @@ import {
   TextInput,
   TouchableOpacity,
   StyleSheet,
-  ImageBackground,
   KeyboardAvoidingView,
   Platform,
+  Alert,
+  ActivityIndicator,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
-import SocialLogin from '../components/SocialLogin';
-import { colors, spacing, typography } from '../styles/theme';
+import { Ionicons } from '@expo/vector-icons';
+import { colors, spacing, borderRadius, typography, shadows } from '../styles/theme';
+import { db } from '../lib/instant';
+import { generateVerificationCode } from '../utils/password';
+import { t } from '../utils/translations';
 
 export default function ForgotPasswordScreen({ navigation }) {
   const [email, setEmail] = useState('');
+  const [isLoading, setIsLoading] = useState(false);
+  const [codeSent, setCodeSent] = useState(false);
+  const [generatedCode, setGeneratedCode] = useState('');
+
+  // Query all users
+  const { data: usersData } = db.useQuery({ users: {} });
+  const allUsers = usersData?.users || [];
+
+  const handleSendCode = async () => {
+    if (!email.trim()) {
+      Alert.alert(t('error'), t('pleaseEnterEmail'));
+      return;
+    }
+
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(email.trim())) {
+      Alert.alert(t('error'), t('pleaseEnterValidEmail'));
+      return;
+    }
+
+    setIsLoading(true);
+
+    try {
+      const normalizedEmail = email.trim().toLowerCase();
+      const userRecord = allUsers.find(u => 
+        (u.emailLower && u.emailLower === normalizedEmail) || 
+        (u.email && u.email.toLowerCase() === normalizedEmail)
+      );
+
+      if (!userRecord) {
+        Alert.alert(t('error'), t('accountNotFound'));
+        setIsLoading(false);
+        return;
+      }
+
+      const code = generateVerificationCode();
+      setGeneratedCode(code);
+      setCodeSent(true);
+
+      // In production, send email with code
+      Alert.alert(
+        'Reset Code Sent',
+        `Your password reset code is: ${code}\n\n(In production, this would be sent to your email)`,
+        [{ text: 'OK' }]
+      );
+
+    } catch (err) {
+      console.error('Error:', err);
+      Alert.alert(t('error'), 'Failed to send reset code. Please try again.');
+    } finally {
+      setIsLoading(false);
+    }
+  };
 
   return (
-    <ImageBackground
-      source={{ uri: 'https://images.unsplash.com/photo-1514565131-fce0801e5785?w=800' }}
-      style={styles.container}
-      blurRadius={10}
-    >
+    <View style={styles.container}>
       <LinearGradient
-        colors={['rgba(0,0,0,0.7)', 'rgba(0,0,0,0.9)']}
-        style={styles.overlay}
+        colors={[colors.gradientStart, colors.gradientEnd]}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 1 }}
+        style={styles.headerGradient}
       >
-        <KeyboardAvoidingView
-          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-          style={styles.content}
+        <TouchableOpacity 
+          style={styles.backButton}
+          onPress={() => navigation.goBack()}
         >
-          <View style={styles.header}>
-            <Text style={styles.logo}>DUTO</Text>
-          </View>
+          <Ionicons name="arrow-back" size={24} color={colors.white} />
+        </TouchableOpacity>
+        <Text style={styles.headerTitle}>{t('forgotPassword')}</Text>
+        <Text style={styles.headerSubtitle}>
+          Enter your email and we'll send you a reset code
+        </Text>
+      </LinearGradient>
 
-          <Text style={styles.title}>Forgot Password</Text>
-
-          <Text style={styles.description}>
-            Simply provide the email address you initially signed in with and you will receive an email with instructions how to reset and create a new one.
-          </Text>
-
-          <View style={styles.form}>
-            <View style={styles.inputContainer}>
+      <KeyboardAvoidingView
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        style={styles.formContainer}
+      >
+        <View style={styles.card}>
+          <View style={styles.inputGroup}>
+            <Text style={styles.label}>{t('emailAddress')}</Text>
+            <View style={styles.inputWrapper}>
+              <Ionicons name="mail-outline" size={20} color={colors.textSecondary} style={styles.inputIcon} />
               <TextInput
                 style={styles.input}
-                placeholder="Email"
-                placeholderTextColor={colors.textSecondary}
+                placeholder="your.email@example.com"
+                placeholderTextColor={colors.textMuted}
                 value={email}
                 onChangeText={setEmail}
                 keyboardType="email-address"
                 autoCapitalize="none"
+                autoCorrect={false}
               />
             </View>
-
-            <TouchableOpacity style={styles.resetButton}>
-              <Text style={styles.resetButtonText}>Reset Password</Text>
-            </TouchableOpacity>
-
-            <SocialLogin />
-
-            <TouchableOpacity
-              onPress={() => navigation.goBack()}
-              style={styles.backLink}
-            >
-              <Text style={styles.link}>Back to Login</Text>
-            </TouchableOpacity>
           </View>
-        </KeyboardAvoidingView>
-      </LinearGradient>
-    </ImageBackground>
+
+          {codeSent && (
+            <View style={styles.demoCodeBox}>
+              <Text style={styles.demoCodeLabel}>📧 Demo Mode - Your Reset Code:</Text>
+              <Text style={styles.demoCodeText}>{generatedCode}</Text>
+            </View>
+          )}
+
+          <TouchableOpacity
+            onPress={handleSendCode}
+            disabled={isLoading}
+            style={styles.buttonWrapper}
+          >
+            <LinearGradient
+              colors={[colors.gradientStart, colors.gradientEnd]}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 0 }}
+              style={styles.gradientButton}
+            >
+              {isLoading ? (
+                <ActivityIndicator color={colors.white} />
+              ) : (
+                <Text style={styles.buttonText}>
+                  {codeSent ? 'Resend Code' : 'Send Reset Code'}
+                </Text>
+              )}
+            </LinearGradient>
+          </TouchableOpacity>
+
+          <TouchableOpacity 
+            style={styles.backToLogin}
+            onPress={() => navigation.navigate('Login')}
+          >
+            <Text style={styles.backToLoginText}>Back to Login</Text>
+          </TouchableOpacity>
+        </View>
+      </KeyboardAvoidingView>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
+    backgroundColor: colors.background,
   },
-  overlay: {
-    flex: 1,
-  },
-  content: {
-    flex: 1,
-    paddingHorizontal: spacing.lg,
+  headerGradient: {
     paddingTop: 60,
+    paddingBottom: 40,
+    paddingHorizontal: spacing.lg,
   },
-  header: {
-    alignItems: 'center',
-    marginBottom: spacing.xl,
+  backButton: {
+    position: 'absolute',
+    top: 50,
+    left: spacing.md,
+    padding: spacing.sm,
+    zIndex: 10,
   },
-  logo: {
-    fontSize: 36,
-    fontWeight: 'bold',
-    color: colors.white,
-  },
-  title: {
-    ...typography.h1,
+  headerTitle: {
+    ...typography.h2,
     color: colors.white,
     textAlign: 'center',
-    marginBottom: spacing.md,
+    marginTop: spacing.lg,
   },
-  description: {
-    color: colors.textSecondary,
+  headerSubtitle: {
+    ...typography.body,
+    color: 'rgba(255,255,255,0.8)',
     textAlign: 'center',
-    marginBottom: spacing.xl,
-    lineHeight: 22,
+    marginTop: spacing.sm,
   },
-  form: {
+  formContainer: {
     flex: 1,
+    marginTop: -spacing.lg,
+    paddingHorizontal: spacing.lg,
   },
-  inputContainer: {
-    marginBottom: spacing.md,
+  card: {
+    backgroundColor: colors.card,
+    borderRadius: borderRadius.xl,
+    padding: spacing.lg,
+    ...shadows.lg,
   },
-  input: {
-    backgroundColor: colors.inputBg,
-    borderRadius: 8,
-    padding: spacing.md,
-    color: colors.white,
-    fontSize: 16,
-  },
-  resetButton: {
-    backgroundColor: colors.primary,
-    borderRadius: 8,
-    padding: spacing.md,
-    alignItems: 'center',
-    marginTop: spacing.md,
+  inputGroup: {
     marginBottom: spacing.lg,
   },
-  resetButtonText: {
-    color: colors.white,
-    fontSize: 18,
-    fontWeight: 'bold',
+  label: {
+    ...typography.smallMedium,
+    color: colors.text,
+    marginBottom: spacing.sm,
   },
-  backLink: {
+  inputWrapper: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: colors.inputBg,
+    borderRadius: borderRadius.md,
+    borderWidth: 1,
+    borderColor: colors.inputBorder,
+  },
+  inputIcon: {
+    marginLeft: spacing.md,
+  },
+  input: {
+    flex: 1,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.md,
+    ...typography.body,
+    color: colors.text,
+  },
+  demoCodeBox: {
+    backgroundColor: '#EFF6FF',
+    borderRadius: borderRadius.md,
+    borderWidth: 1,
+    borderColor: '#BFDBFE',
+    padding: spacing.md,
+    marginBottom: spacing.lg,
+    alignItems: 'center',
+  },
+  demoCodeLabel: {
+    ...typography.small,
+    color: '#1E40AF',
+    fontWeight: '600',
+    marginBottom: spacing.xs,
+  },
+  demoCodeText: {
+    fontSize: 28,
+    fontWeight: '800',
+    color: '#1E40AF',
+    letterSpacing: 4,
+  },
+  buttonWrapper: {
+    borderRadius: borderRadius.md,
+    overflow: 'hidden',
+    ...shadows.button,
+  },
+  gradientButton: {
+    paddingVertical: spacing.md,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: borderRadius.md,
+  },
+  buttonText: {
+    ...typography.button,
+    color: colors.white,
+  },
+  backToLogin: {
     marginTop: spacing.lg,
     alignItems: 'center',
   },
-  link: {
-    color: '#4A90E2',
-    fontSize: 14,
+  backToLoginText: {
+    ...typography.bodyMedium,
+    color: colors.primary,
   },
 });
-
-

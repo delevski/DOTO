@@ -408,13 +408,13 @@ export default function Feed() {
               {showFilters && (
                 <div className="absolute end-0 top-full mt-2 z-50 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl shadow-lg p-4 min-w-[240px]">
                   <div className={`flex items-center justify-between mb-4 ${isRTL ? 'flex-row-reverse' : ''}`}>
-                    <h3 className="font-semibold text-gray-900 dark:text-white">Filter Posts</h3>
+                    <h3 className="font-semibold text-gray-900 dark:text-white">{t('filterPosts')}</h3>
                     {hasActiveFilters && (
                       <button
                         onClick={clearFilters}
                         className="text-xs text-red-600 dark:text-red-400 hover:text-red-700 dark:hover:text-red-500 font-medium"
                       >
-                        Clear All
+                        {t('clearAll')}
                       </button>
                     )}
                   </div>
@@ -427,12 +427,12 @@ export default function Feed() {
                         onChange={() => toggleFilter('withComments')}
                         className="w-5 h-5 text-red-600 border-gray-300 rounded focus:ring-red-500 focus:ring-2 cursor-pointer"
                       />
-                      <div className="flex-1">
-                        <div className="flex items-center gap-2">
+                      <div className={`flex-1 ${isRTL ? 'text-right' : ''}`}>
+                        <div className={`flex items-center gap-2 ${isRTL ? 'flex-row-reverse justify-end' : ''}`}>
                           <MessageCircle size={18} className="text-blue-500" />
-                          <span className="font-medium text-gray-900 dark:text-white">With Comments</span>
+                          <span className="font-medium text-gray-900 dark:text-white">{t('withComments')}</span>
                         </div>
-                        <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">Posts that have comments</p>
+                        <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">{t('postsWithComments')}</p>
                       </div>
                     </label>
                     
@@ -443,12 +443,12 @@ export default function Feed() {
                         onChange={() => toggleFilter('withLikes')}
                         className="w-5 h-5 text-red-600 border-gray-300 rounded focus:ring-red-500 focus:ring-2 cursor-pointer"
                       />
-                      <div className="flex-1">
-                        <div className="flex items-center gap-2">
+                      <div className={`flex-1 ${isRTL ? 'text-right' : ''}`}>
+                        <div className={`flex items-center gap-2 ${isRTL ? 'flex-row-reverse justify-end' : ''}`}>
                           <Heart size={18} className="text-red-500" />
-                          <span className="font-medium text-gray-900 dark:text-white">With Likes</span>
+                          <span className="font-medium text-gray-900 dark:text-white">{t('withLikes')}</span>
                         </div>
-                        <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">Posts that have likes</p>
+                        <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">{t('postsWithLikes')}</p>
                       </div>
                     </label>
                     
@@ -459,12 +459,12 @@ export default function Feed() {
                         onChange={() => toggleFilter('withClaims')}
                         className="w-5 h-5 text-red-600 border-gray-300 rounded focus:ring-red-500 focus:ring-2 cursor-pointer"
                       />
-                      <div className="flex-1">
-                        <div className="flex items-center gap-2">
+                      <div className={`flex-1 ${isRTL ? 'text-right' : ''}`}>
+                        <div className={`flex items-center gap-2 ${isRTL ? 'flex-row-reverse justify-end' : ''}`}>
                           <CheckCircle size={18} className="text-green-500" />
-                          <span className="font-medium text-gray-900 dark:text-white">With Claims</span>
+                          <span className="font-medium text-gray-900 dark:text-white">{t('withClaims')}</span>
                         </div>
-                        <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">Posts that have claimers</p>
+                        <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">{t('postsWithClaims')}</p>
                       </div>
                     </label>
                     
@@ -476,16 +476,16 @@ export default function Feed() {
                         disabled={isGettingLocation}
                         className="w-5 h-5 text-red-600 border-gray-300 rounded focus:ring-red-500 focus:ring-2 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
                       />
-                      <div className="flex-1">
-                        <div className="flex items-center gap-2">
+                      <div className={`flex-1 ${isRTL ? 'text-right' : ''}`}>
+                        <div className={`flex items-center gap-2 ${isRTL ? 'flex-row-reverse justify-end' : ''}`}>
                           <MapPin size={18} className="text-red-500" />
-                          <span className="font-medium text-gray-900 dark:text-white">Nearby Me</span>
+                          <span className="font-medium text-gray-900 dark:text-white">{t('nearbyMe')}</span>
                           {isGettingLocation && (
-                            <span className="text-xs text-gray-500 dark:text-gray-400">(Getting location...)</span>
+                            <span className="text-xs text-gray-500 dark:text-gray-400">({t('gettingLocation')})</span>
                           )}
                         </div>
                         <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
-                          {userLocation ? 'Posts within 20km of your location' : 'Posts near your current location'}
+                          {userLocation ? t('postsWithin20km') : t('postsNearLocation')}
                         </p>
                       </div>
                     </label>
@@ -493,29 +493,29 @@ export default function Feed() {
                   
                   {hasActiveFilters && (
                     <div className="mt-4 pt-4 border-t border-gray-200 dark:border-gray-700">
-                      <div className="flex flex-wrap gap-2">
+                      <div className={`flex flex-wrap gap-2 ${isRTL ? 'flex-row-reverse justify-end' : ''}`}>
                         {filters.withComments && (
-                          <span className="px-2 py-1 bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 text-xs rounded-full flex items-center gap-1">
+                          <span className={`px-2 py-1 bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 text-xs rounded-full flex items-center gap-1 ${isRTL ? 'flex-row-reverse' : ''}`}>
                             <MessageCircle size={12} />
-                            Comments
+                            {t('commentsTag')}
                           </span>
                         )}
                         {filters.withLikes && (
-                          <span className="px-2 py-1 bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400 text-xs rounded-full flex items-center gap-1">
+                          <span className={`px-2 py-1 bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400 text-xs rounded-full flex items-center gap-1 ${isRTL ? 'flex-row-reverse' : ''}`}>
                             <Heart size={12} />
-                            Likes
+                            {t('likesTag')}
                           </span>
                         )}
                         {filters.withClaims && (
-                          <span className="px-2 py-1 bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400 text-xs rounded-full flex items-center gap-1">
+                          <span className={`px-2 py-1 bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400 text-xs rounded-full flex items-center gap-1 ${isRTL ? 'flex-row-reverse' : ''}`}>
                             <CheckCircle size={12} />
-                            Claims
+                            {t('claimsTag')}
                           </span>
                         )}
                         {filters.nearbyMe && (
-                          <span className="px-2 py-1 bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400 text-xs rounded-full flex items-center gap-1">
+                          <span className={`px-2 py-1 bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400 text-xs rounded-full flex items-center gap-1 ${isRTL ? 'flex-row-reverse' : ''}`}>
                             <MapPin size={12} />
-                            Nearby
+                            {t('nearbyTag')}
                           </span>
                         )}
                       </div>

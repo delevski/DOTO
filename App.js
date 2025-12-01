@@ -1,9 +1,17 @@
 import React from 'react';
-import { Platform, UIManager } from 'react-native';
+import { Platform, UIManager, StatusBar } from 'react-native';
 import { NavigationContainer } from '@react-navigation/native';
-import { StatusBar } from 'expo-status-bar';
+import { AuthProvider } from './src/context/AuthContext';
 import AppNavigator from './src/navigation/AppNavigator';
 
+// Enable LayoutAnimation for Android
+if (Platform.OS === 'android') {
+  if (UIManager.setLayoutAnimationEnabledExperimental) {
+    UIManager.setLayoutAnimationEnabledExperimental(true);
+  }
+}
+
+// Platform-specific web fix
 if (Platform.OS === 'web') {
   if (UIManager) {
     UIManager.getViewManagerConfig = UIManager.getViewManagerConfig || ((name) => {
@@ -14,11 +22,11 @@ if (Platform.OS === 'web') {
 
 export default function App() {
   return (
-    <NavigationContainer>
-      <StatusBar style="light" />
-      <AppNavigator />
-    </NavigationContainer>
+    <AuthProvider>
+      <NavigationContainer>
+        <StatusBar barStyle="dark-content" backgroundColor="transparent" translucent />
+        <AppNavigator />
+      </NavigationContainer>
+    </AuthProvider>
   );
 }
-
-
