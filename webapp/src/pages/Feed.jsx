@@ -383,20 +383,20 @@ export default function Feed() {
     <div className={`max-w-7xl mx-auto px-6 py-8 ${isRTL ? 'rtl' : ''}`}>
       {/* Header Section */}
       <div className="mb-8">
-        <div className={`flex items-center justify-between mb-4 ${isRTL ? 'flex-row-reverse' : ''}`}>
-          <div>
+        <div className="flex items-center justify-between mb-4">
+          <div className={`${isRTL ? 'order-1 text-right' : 'order-1'}`}>
             <h1 className="text-3xl font-bold text-gray-900 dark:text-white mb-2">{t('feed')}</h1>
-            <p className="text-gray-500 dark:text-gray-400">Discover tasks and help others in your neighborhood</p>
+            <p className="text-gray-500 dark:text-gray-400">{t('discoverTasks') || 'Discover tasks and help others in your neighborhood'}</p>
           </div>
-          <div className={`flex gap-3 ${isRTL ? 'flex-row-reverse' : ''}`}>
-            <button className="px-4 py-2 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl text-sm font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors flex items-center gap-2">
+          <div className={`flex gap-3 ${isRTL ? 'order-2 flex-row-reverse' : 'order-2'}`}>
+            <button className={`px-4 py-2 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl text-sm font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors flex items-center gap-2 ${isRTL ? 'flex-row-reverse' : ''}`}>
               <TrendingUp size={16} />
               {t('topWeekly')}
             </button>
             <div className="relative" ref={filterMenuRef}>
               <button 
                 onClick={() => setShowFilters(!showFilters)}
-                className={`px-4 py-2 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl text-sm font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors flex items-center gap-2 ${hasActiveFilters ? 'border-red-500 bg-red-50 dark:bg-red-900/20' : ''}`}
+                className={`px-4 py-2 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl text-sm font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors flex items-center gap-2 ${isRTL ? 'flex-row-reverse' : ''} ${hasActiveFilters ? 'border-red-500 bg-red-50 dark:bg-red-900/20' : ''}`}
               >
                 <Filter size={16} />
                 {t('filters')}
@@ -528,7 +528,7 @@ export default function Feed() {
         </div>
 
         {/* Tabs */}
-        <div className={`flex gap-6 border-b border-gray-200 dark:border-gray-700 ${isRTL ? 'flex-row-reverse' : ''}`}>
+        <div className={`flex gap-6 border-b border-gray-200 dark:border-gray-700 ${isRTL ? 'flex-row-reverse justify-end' : ''}`}>
           <button 
             onClick={() => setActiveTab('nearby')}
             className={`pb-3 text-sm px-1 transition-colors ${

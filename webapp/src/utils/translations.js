@@ -5,6 +5,7 @@ export const translations = {
   en: {
     // Navigation
     feed: 'Feed',
+    discoverTasks: 'Discover tasks and help others in your neighborhood',
     map: 'Map',
     messages: 'Messages',
     profile: 'Profile',
@@ -340,6 +341,7 @@ export const translations = {
   he: {
     // Navigation
     feed: 'פיד',
+    discoverTasks: 'גלה משימות ועזור לאחרים בשכונה שלך',
     map: 'מפה',
     messages: 'הודעות',
     profile: 'פרופיל',
