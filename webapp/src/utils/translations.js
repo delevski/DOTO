@@ -60,6 +60,13 @@ export const translations = {
     readMore: 'Read more',
     showLess: 'Show less',
     noMyClaims: 'You haven\'t been approved for any tasks yet',
+    chooseClaimer: 'Choose a Claimer',
+    clickToChooseClaimer: 'Click to choose a claimer',
+    choose: 'Choose',
+    approveClaimer: 'Approve This Claimer',
+    approve: 'Approve',
+    failedToApproveClaimer: 'Failed to approve claimer. Please try again.',
+    noClaimersYet: 'No claimers yet',
     approved: 'Approved',
     
     // Post
@@ -364,6 +371,13 @@ export const translations = {
     yourPost: 'הפוסט שלך',
     noMyClaims: 'עדיין לא אושרת למשימות',
     approved: 'אושר',
+    chooseClaimer: 'בחר תובע',
+    clickToChooseClaimer: 'לחץ כדי לבחור תובע',
+    choose: 'בחר',
+    approveClaimer: 'אשר תובע זה',
+    approve: 'אשר',
+    failedToApproveClaimer: 'אישור התובע נכשל. אנא נסה שוב.',
+    noClaimersYet: 'אין תובעים עדיין',
     
     // Post
     newPost: 'פוסט חדש',

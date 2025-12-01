@@ -1,11 +1,12 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { MapPin, MessageCircle, Share2, Heart, MoreHorizontal, Clock, TrendingUp, CheckCircle, Lock, Edit, Trash2, Filter, X } from 'lucide-react';
+import { MapPin, MessageCircle, Share2, Heart, MoreHorizontal, Clock, TrendingUp, CheckCircle, Lock, Edit, Trash2, Filter, X, Users } from 'lucide-react';
 import { useAuthStore } from '../store/useStore';
 import { useSettingsStore } from '../store/settingsStore';
 import { useTranslation } from '../utils/translations';
 import { db } from '../lib/instant';
 import { getConversationId, createOrUpdateConversation } from '../utils/messaging';
+import ClaimerSelectionModal from '../components/ClaimerSelectionModal';
 
 export default function Feed() {
   const { user } = useAuthStore();
@@ -31,6 +32,8 @@ export default function Feed() {
   const [postCoordinates, setPostCoordinates] = useState({});
   const [expandedDescriptions, setExpandedDescriptions] = useState({});
   const [truncatedPosts, setTruncatedPosts] = useState({});
+  const [showClaimerModal, setShowClaimerModal] = useState(false);
+  const [selectedPostForClaimer, setSelectedPostForClaimer] = useState(null);
   const menuRefs = useRef({});
   const filterMenuRef = useRef(null);
   const descriptionRefs = useRef({});
@@ -331,6 +334,37 @@ export default function Feed() {
         db.tx.posts[postId].delete()
       );
       setOpenMenuId(null);
+    }
+  };
+
+  const openClaimerModal = (post) => {
+    setSelectedPostForClaimer(post);
+    setShowClaimerModal(true);
+  };
+
+  const handleApproveClaimer = async (postId, claimerUserId) => {
+    try {
+      const post = posts.find(p => p.id === postId);
+      if (!post) return;
+
+      const claimer = post.claimers?.find(c => c.userId === claimerUserId);
+      if (!claimer) return;
+
+      // Update the post with the approved claimer
+      db.transact(
+        db.tx.posts[postId].update({
+          approvedClaimerId: claimerUserId,
+          approvedClaimerName: claimer.userName,
+          approvedClaimerAvatar: claimer.userAvatar,
+          approvedAt: Date.now()
+        })
+      );
+
+      setShowClaimerModal(false);
+      setSelectedPostForClaimer(null);
+    } catch (err) {
+      console.error('Failed to approve claimer:', err);
+      alert(t('failedToApproveClaimer') || 'Failed to approve claimer. Please try again.');
     }
   };
 
@@ -782,31 +816,64 @@ export default function Feed() {
                       </div>
                     </div>
                     
-                    {/* Claimers Avatars */}
-                    {claimers.length > 0 && (
+                    {/* Claimers Avatars - Show for posts with claimers OR for post owner */}
+                    {!approvedClaimerId && (claimers.length > 0 || isMyPost) && (
                       <div className={`mb-2 flex items-center gap-2 ${isRTL ? 'flex-row-reverse' : ''}`}>
-                        <div className={`flex items-center ${isRTL ? 'flex-row-reverse' : ''}`}>
-                          {claimers.slice(0, 4).map((claimer, index) => (
-                            <img
-                              key={claimer.userId}
-                              src={claimer.userAvatar || `https://i.pravatar.cc/150?u=${claimer.userId}`}
-                              alt={claimer.userName}
-                              className={`w-6 h-6 rounded-full border-2 border-white dark:border-gray-800 object-cover ${isRTL ? 'mr-[-4px]' : 'ml-[-4px]'}`}
-                              style={{ zIndex: claimers.length - index }}
-                              title={claimer.userName}
-                              loading="lazy"
-                              decoding="async"
-                            />
-                          ))}
-                          {claimers.length > 4 && (
-                            <div className={`w-6 h-6 rounded-full border-2 border-white dark:border-gray-800 bg-gray-200 dark:bg-gray-700 flex items-center justify-center text-[10px] font-semibold text-gray-600 dark:text-gray-300 ${isRTL ? 'mr-[-4px]' : 'ml-[-4px]'}`} style={{ zIndex: 0 }}>
-                              +{claimers.length - 4}
+                        {claimers.length > 0 ? (
+                          <>
+                            <div 
+                              className={`flex items-center ${isRTL ? 'flex-row-reverse' : ''} ${isMyPost ? 'cursor-pointer hover:opacity-80 transition-opacity' : ''}`}
+                              onClick={(e) => {
+                                if (isMyPost) {
+                                  e.preventDefault();
+                                  e.stopPropagation();
+                                  openClaimerModal(post);
+                                }
+                              }}
+                              title={isMyPost ? t('clickToChooseClaimer') || 'Click to choose a claimer' : ''}
+                            >
+                              {claimers.slice(0, 4).map((claimer, index) => (
+                                <img
+                                  key={claimer.userId}
+                                  src={claimer.userAvatar || `https://i.pravatar.cc/150?u=${claimer.userId}`}
+                                  alt={claimer.userName}
+                                  className={`w-6 h-6 rounded-full border-2 border-white dark:border-gray-800 object-cover ${isRTL ? 'mr-[-4px]' : 'ml-[-4px]'}`}
+                                  style={{ zIndex: claimers.length - index }}
+                                  title={claimer.userName}
+                                  loading="lazy"
+                                  decoding="async"
+                                />
+                              ))}
+                              {claimers.length > 4 && (
+                                <div className={`w-6 h-6 rounded-full border-2 border-white dark:border-gray-800 bg-gray-200 dark:bg-gray-700 flex items-center justify-center text-[10px] font-semibold text-gray-600 dark:text-gray-300 ${isRTL ? 'mr-[-4px]' : 'ml-[-4px]'}`} style={{ zIndex: 0 }}>
+                                  +{claimers.length - 4}
+                                </div>
+                              )}
                             </div>
-                          )}
-                        </div>
-                        <span className="text-xs text-gray-500 dark:text-gray-400">
-                          {claimers.length} {claimers.length === 1 ? 'claimer' : 'claimers'}
-                        </span>
+                            <span className="text-xs text-gray-500 dark:text-gray-400">
+                              {claimers.length} {claimers.length === 1 ? 'claimer' : 'claimers'}
+                            </span>
+                            {/* Choose Claimer button for post owner */}
+                            {isMyPost && (
+                              <button
+                                onClick={(e) => {
+                                  e.preventDefault();
+                                  e.stopPropagation();
+                                  openClaimerModal(post);
+                                }}
+                                className="ml-auto px-2.5 py-1 bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 text-xs font-medium rounded-lg hover:bg-red-100 dark:hover:bg-red-900/30 transition-colors flex items-center gap-1"
+                              >
+                                <Users size={12} />
+                                {t('choose') || 'Choose'}
+                              </button>
+                            )}
+                          </>
+                        ) : isMyPost ? (
+                          <span className="text-xs text-gray-400 dark:text-gray-500 italic flex items-center gap-1">
+                            <Users size={12} />
+                            {t('noClaimersYet') || 'No claimers yet'}
+                          </span>
+                        ) : null}
                       </div>
                     )}
                     
@@ -1032,6 +1099,17 @@ export default function Feed() {
           </div>
         </div>
       </div>
+
+      {/* Claimer Selection Modal */}
+      <ClaimerSelectionModal
+        isOpen={showClaimerModal}
+        onClose={() => {
+          setShowClaimerModal(false);
+          setSelectedPostForClaimer(null);
+        }}
+        post={selectedPostForClaimer}
+        onApproveClaimer={handleApproveClaimer}
+      />
     </div>
   );
 }
