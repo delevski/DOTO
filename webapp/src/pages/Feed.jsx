@@ -528,7 +528,7 @@ export default function Feed() {
         </div>
 
         {/* Tabs */}
-        <div className={`flex gap-6 border-b border-gray-200 dark:border-gray-700 ${isRTL ? 'flex-row-reverse justify-end' : ''}`}>
+        <div className={`flex gap-6 border-b border-gray-200 dark:border-gray-700`}>
           <button 
             onClick={() => setActiveTab('nearby')}
             className={`pb-3 text-sm px-1 transition-colors ${
