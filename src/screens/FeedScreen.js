@@ -1,25 +1,28 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useMemo } from 'react';
 import {
   View,
   Text,
   StyleSheet,
-  FlatList,
+  ScrollView,
   TouchableOpacity,
   Image,
   RefreshControl,
   ActivityIndicator,
+  Share,
+  Alert,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { LinearGradient } from 'expo-linear-gradient';
-import { colors, spacing, borderRadius, typography, shadows } from '../styles/theme';
+import { useAuthStore } from '../store/authStore';
+import { useSettingsStore } from '../store/settingsStore';
+import { useTranslation } from '../utils/translations';
 import { db } from '../lib/instant';
-import { useAuth } from '../context/AuthContext';
-import { t } from '../utils/translations';
-
-const TABS = ['nearby', 'myPosts', 'myClaim'];
+import { colors, spacing, borderRadius, typography, shadows } from '../styles/theme';
 
 export default function FeedScreen({ navigation }) {
-  const { user } = useAuth();
+  const user = useAuthStore((state) => state.user);
+  const darkMode = useSettingsStore((state) => state.darkMode);
+  const t = useTranslation();
+  
   const [activeTab, setActiveTab] = useState('nearby');
   const [refreshing, setRefreshing] = useState(false);
 
@@ -32,14 +35,25 @@ export default function FeedScreen({ navigation }) {
   const allPosts = data?.posts || [];
   const allComments = data?.comments || [];
 
-  // Create comment count map
-  const commentCounts = allComments.reduce((acc, comment) => {
-    acc[comment.postId] = (acc[comment.postId] || 0) + 1;
-    return acc;
-  }, {});
+  const themeColors = {
+    background: darkMode ? colors.backgroundDark : colors.background,
+    surface: darkMode ? colors.surfaceDark : colors.surface,
+    text: darkMode ? colors.textDark : colors.text,
+    textSecondary: darkMode ? colors.textSecondaryDark : colors.textSecondary,
+    border: darkMode ? colors.borderDark : colors.border,
+  };
 
-  // Filter posts based on active tab
-  const getFilteredPosts = () => {
+  // Create comment counts map
+  const postCommentCounts = useMemo(() => {
+    const counts = {};
+    allComments.forEach(comment => {
+      counts[comment.postId] = (counts[comment.postId] || 0) + 1;
+    });
+    return counts;
+  }, [allComments]);
+
+  // Filter and sort posts based on active tab
+  const posts = useMemo(() => {
     let filtered = [...allPosts];
 
     switch (activeTab) {
@@ -51,22 +65,15 @@ export default function FeedScreen({ navigation }) {
         break;
       case 'nearby':
       default:
-        // Show all posts except completed (approved) ones
         filtered = filtered.filter(post => !post.approvedClaimerId);
         break;
     }
 
-    // Sort by newest first
-    return filtered.sort((a, b) => (b.timestamp || b.createdAt || 0) - (a.timestamp || a.createdAt || 0));
-  };
-
-  const posts = getFilteredPosts();
-
-  const onRefresh = useCallback(() => {
-    setRefreshing(true);
-    // InstantDB auto-refreshes, just simulate delay
-    setTimeout(() => setRefreshing(false), 1000);
-  }, []);
+    // Sort by timestamp (newest first)
+    filtered.sort((a, b) => (b.timestamp || b.createdAt || 0) - (a.timestamp || a.createdAt || 0));
+    
+    return filtered;
+  }, [allPosts, activeTab, user?.id]);
 
   const formatTime = (timestamp) => {
     if (!timestamp) return '';
@@ -75,26 +82,29 @@ export default function FeedScreen({ navigation }) {
     const hours = Math.floor(diff / (1000 * 60 * 60));
     const days = Math.floor(hours / 24);
     
-    if (days > 0) return `${days}d ago`;
-    if (hours > 0) return `${hours}h ago`;
-    return 'Just now';
+    if (days > 0) return `${days}${t('day')} ${t('ago')}`;
+    if (hours > 0) return `${hours}${t('hr')} ${t('ago')}`;
+    return t('justNow');
   };
 
-  const handleLike = (post) => {
-    if (!user) return;
+  const handleLike = async (post) => {
+    if (!user) {
+      Alert.alert('Login Required', t('mustBeLoggedInToLike'));
+      return;
+    }
 
     const currentLikedBy = post.likedBy || [];
     const isLiked = currentLikedBy.includes(user.id);
-
+    
     if (isLiked) {
-      db.transact(
+      await db.transact(
         db.tx.posts[post.id].update({
           likedBy: currentLikedBy.filter(id => id !== user.id),
           likes: Math.max(0, (post.likes || 0) - 1)
         })
       );
     } else {
-      db.transact(
+      await db.transact(
         db.tx.posts[post.id].update({
           likedBy: [...currentLikedBy, user.id],
           likes: (post.likes || 0) + 1
@@ -103,69 +113,111 @@ export default function FeedScreen({ navigation }) {
     }
   };
 
-  const renderPostCard = ({ item: post }) => {
+  const handleShare = async (post) => {
+    try {
+      await Share.share({
+        message: `Check out this task on DOTO: ${post.title || 'Help Needed'}\n\n${post.description}`,
+      });
+    } catch (error) {
+      console.error('Share error:', error);
+    }
+  };
+
+  const onRefresh = async () => {
+    setRefreshing(true);
+    // Data refreshes automatically with InstantDB
+    setTimeout(() => setRefreshing(false), 1000);
+  };
+
+  const tabs = [
+    { key: 'nearby', label: t('nearby') },
+    { key: 'friends', label: t('friends') },
+    { key: 'myPosts', label: t('myPosts') },
+    { key: 'myClaim', label: t('myClaim') },
+  ];
+
+  const renderPostCard = (post) => {
+    const isMyPost = post.authorId === user?.id;
     const likedBy = post.likedBy || [];
     const isLiked = user && likedBy.includes(user.id);
     const likeCount = likedBy.length || post.likes || 0;
-    const commentsCount = commentCounts[post.id] || post.comments || 0;
-    const claimersCount = (post.claimers || []).length;
-    const isMyPost = post.authorId === user?.id;
+    const commentCount = postCommentCounts[post.id] || post.comments || 0;
+    const claimers = post.claimers || [];
+    const isApproved = post.approvedClaimerId;
+    const isClaimedByMe = post.approvedClaimerId === user?.id;
 
     return (
-      <TouchableOpacity
-        style={styles.postCard}
+      <TouchableOpacity 
+        key={post.id}
+        style={[
+          styles.postCard, 
+          { 
+            backgroundColor: themeColors.surface,
+            borderColor: isApproved ? colors.success : themeColors.border,
+          }
+        ]}
         onPress={() => navigation.navigate('PostDetails', { postId: post.id })}
         activeOpacity={0.7}
       >
-        {/* Author Header */}
+        {/* Header */}
         <View style={styles.postHeader}>
           <Image 
-            source={{ uri: post.avatar || 'https://i.pravatar.cc/150' }} 
-            style={styles.authorAvatar} 
+            source={{ uri: post.avatar || `https://i.pravatar.cc/150?u=${post.authorId}` }}
+            style={styles.avatar}
           />
-          <View style={styles.authorInfo}>
-            <Text style={styles.authorName}>{post.author}</Text>
-            <View style={styles.postMeta}>
-              <Ionicons name="time-outline" size={12} color={colors.textSecondary} />
-              <Text style={styles.postTime}>{formatTime(post.timestamp)}</Text>
-              {post.tag && (
-                <>
-                  <Text style={styles.metaDot}>•</Text>
-                  <View style={styles.tagBadge}>
-                    <Text style={styles.tagText}>{post.tag}</Text>
-                  </View>
-                </>
-              )}
+          <View style={styles.headerInfo}>
+            <Text style={[styles.authorName, { color: themeColors.text }]}>
+              {isMyPost ? (user?.name || post.author) : post.author}
+            </Text>
+            <View style={styles.metaRow}>
+              <Ionicons name="time-outline" size={12} color={themeColors.textSecondary} />
+              <Text style={[styles.metaText, { color: themeColors.textSecondary }]}>
+                {formatTime(post.timestamp || post.createdAt)}
+              </Text>
+              <View style={styles.tagBadge}>
+                <Text style={styles.tagText}>{post.tag || post.category || 'Other'}</Text>
+              </View>
             </View>
           </View>
-          {isMyPost && (
-            <View style={styles.myPostBadge}>
-              <Text style={styles.myPostBadgeText}>Your Post</Text>
+          {isApproved && (
+            <View style={[styles.statusBadge, { backgroundColor: isClaimedByMe ? colors.successLight : '#F3F4F6' }]}>
+              <Ionicons 
+                name="checkmark-circle" 
+                size={14} 
+                color={isClaimedByMe ? colors.success : themeColors.textSecondary} 
+              />
+              <Text style={[styles.statusText, { color: isClaimedByMe ? colors.success : themeColors.textSecondary }]}>
+                {isClaimedByMe ? t('claimedByYou') : t('approved')}
+              </Text>
             </View>
           )}
         </View>
 
-        {/* Post Content */}
-        <View style={styles.postContent}>
-          {post.title && (
-            <Text style={styles.postTitle} numberOfLines={2}>{post.title}</Text>
-          )}
-          <Text style={styles.postDescription} numberOfLines={3}>
-            {post.description}
-          </Text>
-        </View>
+        {/* Content */}
+        <Text style={[styles.postTitle, { color: themeColors.text }]} numberOfLines={2}>
+          {post.title || t('helpNeeded')}
+        </Text>
+        <Text style={[styles.postDescription, { color: themeColors.textSecondary }]} numberOfLines={3}>
+          {post.description}
+        </Text>
 
-        {/* Post Image */}
+        {/* Photos */}
         {post.photos && post.photos.length > 0 && (
-          <View style={styles.imageContainer}>
-            <Image 
-              source={{ uri: post.photos[0] }} 
-              style={styles.postImage}
-              resizeMode="cover"
-            />
-            {post.photos.length > 1 && (
-              <View style={styles.moreImagesOverlay}>
-                <Text style={styles.moreImagesText}>+{post.photos.length - 1}</Text>
+          <View style={styles.photosContainer}>
+            {post.photos.slice(0, 3).map((photo, index) => (
+              <Image 
+                key={index}
+                source={{ uri: typeof photo === 'string' ? photo : photo.preview }}
+                style={[
+                  styles.postPhoto,
+                  post.photos.length === 1 && styles.singlePhoto,
+                  post.photos.length === 2 && styles.doublePhoto,
+                ]}
+              />
+            ))}
+            {post.photos.length > 3 && (
+              <View style={styles.morePhotos}>
+                <Text style={styles.morePhotosText}>+{post.photos.length - 3}</Text>
               </View>
             )}
           </View>
@@ -175,59 +227,69 @@ export default function FeedScreen({ navigation }) {
         {post.location && (
           <View style={styles.locationRow}>
             <Ionicons name="location-outline" size={14} color={colors.primary} />
-            <Text style={styles.locationText} numberOfLines={1}>{post.location}</Text>
-          </View>
-        )}
-
-        {/* Claimers */}
-        {claimersCount > 0 && !post.approvedClaimerId && (
-          <View style={styles.claimersRow}>
-            <View style={styles.claimersAvatars}>
-              {post.claimers.slice(0, 3).map((claimer, index) => (
-                <Image
-                  key={claimer.userId}
-                  source={{ uri: claimer.userAvatar || 'https://i.pravatar.cc/150' }}
-                  style={[styles.claimerAvatar, { marginLeft: index > 0 ? -8 : 0 }]}
-                />
-              ))}
-            </View>
-            <Text style={styles.claimersText}>
-              {claimersCount} {claimersCount === 1 ? 'claimer' : 'claimers'}
+            <Text style={[styles.locationText, { color: themeColors.textSecondary }]} numberOfLines={1}>
+              {post.location}
             </Text>
           </View>
         )}
 
-        {/* Actions Footer */}
-        <View style={styles.postFooter}>
-          <View style={styles.actionsLeft}>
-            <TouchableOpacity 
-              style={styles.actionButton}
-              onPress={() => handleLike(post)}
-            >
-              <Ionicons 
-                name={isLiked ? "heart" : "heart-outline"} 
-                size={20} 
-                color={isLiked ? colors.primary : colors.textSecondary} 
-              />
-              <Text style={[styles.actionText, isLiked && styles.actionTextActive]}>
-                {likeCount}
-              </Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity 
-              style={styles.actionButton}
-              onPress={() => navigation.navigate('PostDetails', { postId: post.id })}
-            >
-              <Ionicons name="chatbubble-outline" size={20} color={colors.textSecondary} />
-              <Text style={styles.actionText}>{commentsCount}</Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity style={styles.actionButton}>
-              <Ionicons name="share-social-outline" size={20} color={colors.textSecondary} />
-            </TouchableOpacity>
+        {/* Claimers */}
+        {claimers.length > 0 && !isApproved && (
+          <View style={styles.claimersRow}>
+            <View style={styles.claimerAvatars}>
+              {claimers.slice(0, 4).map((claimer, index) => (
+                <Image
+                  key={claimer.userId}
+                  source={{ uri: claimer.userAvatar || `https://i.pravatar.cc/150?u=${claimer.userId}` }}
+                  style={[styles.claimerAvatar, { marginLeft: index > 0 ? -8 : 0 }]}
+                />
+              ))}
+              {claimers.length > 4 && (
+                <View style={[styles.claimerAvatar, styles.moreClaimers, { marginLeft: -8 }]}>
+                  <Text style={styles.moreClaimersText}>+{claimers.length - 4}</Text>
+                </View>
+              )}
+            </View>
+            <Text style={[styles.claimersText, { color: themeColors.textSecondary }]}>
+              {claimers.length} {claimers.length === 1 ? 'claimer' : 'claimers'}
+            </Text>
           </View>
+        )}
 
-          {!isMyPost && !post.approvedClaimerId && (
+        {/* Actions */}
+        <View style={[styles.actionsRow, { borderTopColor: themeColors.border }]}>
+          <TouchableOpacity 
+            style={styles.actionButton}
+            onPress={() => handleLike(post)}
+          >
+            <Ionicons 
+              name={isLiked ? 'heart' : 'heart-outline'} 
+              size={20} 
+              color={isLiked ? colors.primary : themeColors.textSecondary} 
+            />
+            <Text style={[styles.actionText, { color: isLiked ? colors.primary : themeColors.textSecondary }]}>
+              {likeCount}
+            </Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity 
+            style={styles.actionButton}
+            onPress={() => navigation.navigate('PostDetails', { postId: post.id })}
+          >
+            <Ionicons name="chatbubble-outline" size={20} color={themeColors.textSecondary} />
+            <Text style={[styles.actionText, { color: themeColors.textSecondary }]}>
+              {commentCount}
+            </Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity 
+            style={styles.actionButton}
+            onPress={() => handleShare(post)}
+          >
+            <Ionicons name="share-outline" size={20} color={themeColors.textSecondary} />
+          </TouchableOpacity>
+
+          {!isApproved && !isMyPost && (
             <TouchableOpacity 
               style={styles.claimButton}
               onPress={() => navigation.navigate('PostDetails', { postId: post.id })}
@@ -235,127 +297,94 @@ export default function FeedScreen({ navigation }) {
               <Text style={styles.claimButtonText}>{t('claimTask')}</Text>
             </TouchableOpacity>
           )}
-
-          {post.approvedClaimerId && (
-            <View style={styles.approvedBadge}>
-              <Ionicons name="checkmark-circle" size={16} color={colors.success} />
-              <Text style={styles.approvedText}>
-                {post.approvedClaimerId === user?.id ? t('claimedByYou') : 'Claimed'}
-              </Text>
-            </View>
-          )}
         </View>
       </TouchableOpacity>
     );
   };
 
-  const renderHeader = () => (
-    <View style={styles.headerContainer}>
-      {/* Tab Bar */}
-      <View style={styles.tabBar}>
-        {TABS.map((tab) => (
-          <TouchableOpacity
-            key={tab}
-            style={[styles.tab, activeTab === tab && styles.tabActive]}
-            onPress={() => setActiveTab(tab)}
-          >
-            <Text style={[styles.tabText, activeTab === tab && styles.tabTextActive]}>
-              {t(tab)}
-            </Text>
-          </TouchableOpacity>
-        ))}
-      </View>
-    </View>
-  );
-
-  const renderEmpty = () => (
-    <View style={styles.emptyContainer}>
-      <Ionicons name="document-text-outline" size={64} color={colors.border} />
-      <Text style={styles.emptyTitle}>{t('noPostsYet')}</Text>
-      <Text style={styles.emptySubtitle}>
-        {activeTab === 'myPosts' 
-          ? 'Create your first post to help your community!'
-          : activeTab === 'myClaim'
-          ? "You haven't been approved for any tasks yet."
-          : 'Be the first to post a task!'}
-      </Text>
-      {activeTab === 'myPosts' && (
-        <TouchableOpacity 
-          style={styles.createPostButton}
-          onPress={() => navigation.navigate('PostCreate')}
-        >
-          <LinearGradient
-            colors={[colors.gradientStart, colors.gradientEnd]}
-            start={{ x: 0, y: 0 }}
-            end={{ x: 1, y: 0 }}
-            style={styles.createPostGradient}
-          >
-            <Ionicons name="add" size={20} color={colors.white} />
-            <Text style={styles.createPostText}>Create Post</Text>
-          </LinearGradient>
-        </TouchableOpacity>
-      )}
-    </View>
-  );
-
-  if (error) {
-    return (
-      <View style={styles.centerContainer}>
-        <Text style={styles.errorText}>Error loading posts</Text>
-        <TouchableOpacity style={styles.retryButton} onPress={onRefresh}>
-          <Text style={styles.retryText}>{t('retry')}</Text>
-        </TouchableOpacity>
-      </View>
-    );
-  }
-
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, { backgroundColor: themeColors.background }]}>
       {/* Header */}
-      <View style={styles.screenHeader}>
-        <Text style={styles.screenTitle}>{t('feed')}</Text>
-        <TouchableOpacity 
-          style={styles.filterButton}
-          onPress={() => {/* TODO: Open filters */}}
-        >
-          <Ionicons name="filter-outline" size={24} color={colors.text} />
+      <View style={[styles.header, { backgroundColor: themeColors.surface, borderBottomColor: themeColors.border }]}>
+        <View>
+          <Text style={[styles.headerTitle, { color: themeColors.text }]}>{t('feed')}</Text>
+          <Text style={[styles.headerSubtitle, { color: themeColors.textSecondary }]}>
+            {t('discoverTasks')}
+          </Text>
+        </View>
+        <TouchableOpacity style={styles.filterButton}>
+          <Ionicons name="filter-outline" size={20} color={themeColors.text} />
         </TouchableOpacity>
       </View>
 
-      <FlatList
-        data={posts}
-        renderItem={renderPostCard}
-        keyExtractor={(item) => item.id}
-        ListHeaderComponent={renderHeader}
-        ListEmptyComponent={!isLoading && renderEmpty}
-        contentContainerStyle={styles.listContent}
-        showsVerticalScrollIndicator={false}
-        refreshControl={
-          <RefreshControl
-            refreshing={refreshing}
-            onRefresh={onRefresh}
-            tintColor={colors.primary}
-          />
-        }
-        ListFooterComponent={
-          isLoading ? (
-            <ActivityIndicator style={styles.loader} color={colors.primary} />
-          ) : null
-        }
-      />
+      {/* Tabs */}
+      <View style={[styles.tabsContainer, { backgroundColor: themeColors.surface, borderBottomColor: themeColors.border }]}>
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.tabs}>
+          {tabs.map((tab) => (
+            <TouchableOpacity
+              key={tab.key}
+              style={[
+                styles.tab,
+                activeTab === tab.key && styles.activeTab,
+              ]}
+              onPress={() => setActiveTab(tab.key)}
+            >
+              <Text style={[
+                styles.tabText,
+                { color: activeTab === tab.key ? colors.primary : themeColors.textSecondary },
+                activeTab === tab.key && styles.activeTabText,
+              ]}>
+                {tab.label}
+              </Text>
+            </TouchableOpacity>
+          ))}
+        </ScrollView>
+      </View>
 
-      {/* FAB - Create Post */}
-      <TouchableOpacity
-        style={styles.fab}
-        onPress={() => navigation.navigate('PostCreate')}
+      {/* Posts List */}
+      <ScrollView
+        style={styles.postsContainer}
+        contentContainerStyle={styles.postsContent}
+        refreshControl={
+          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={[colors.primary]} />
+        }
+        showsVerticalScrollIndicator={false}
       >
-        <LinearGradient
-          colors={[colors.gradientStart, colors.gradientEnd]}
-          style={styles.fabGradient}
-        >
-          <Ionicons name="add" size={28} color={colors.white} />
-        </LinearGradient>
-      </TouchableOpacity>
+        {isLoading ? (
+          <View style={styles.centerContent}>
+            <ActivityIndicator size="large" color={colors.primary} />
+            <Text style={[styles.loadingText, { color: themeColors.textSecondary }]}>
+              {t('loadingPosts')}
+            </Text>
+          </View>
+        ) : error ? (
+          <View style={styles.centerContent}>
+            <Ionicons name="alert-circle-outline" size={48} color={colors.error} />
+            <Text style={[styles.errorText, { color: colors.error }]}>
+              {t('errorLoadingPosts')}
+            </Text>
+          </View>
+        ) : posts.length === 0 ? (
+          <View style={styles.centerContent}>
+            <Ionicons name="document-text-outline" size={64} color={themeColors.textSecondary} />
+            <Text style={[styles.emptyText, { color: themeColors.textSecondary }]}>
+              {activeTab === 'myPosts' ? t('noMyPosts') : 
+               activeTab === 'myClaim' ? t('noMyClaims') : 
+               t('noPostsYet')}
+            </Text>
+            {activeTab === 'myPosts' && (
+              <TouchableOpacity 
+                style={styles.createButton}
+                onPress={() => navigation.navigate('CreatePost')}
+              >
+                <Text style={styles.createButtonText}>{t('createYourFirstPost')}</Text>
+              </TouchableOpacity>
+            )}
+          </View>
+        ) : (
+          posts.map(renderPostCard)
+        )}
+      </ScrollView>
     </View>
   );
 }
@@ -363,306 +392,260 @@ export default function FeedScreen({ navigation }) {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: colors.background,
   },
-  screenHeader: {
+  header: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
+    paddingHorizontal: spacing.xl,
     paddingTop: 50,
-    paddingBottom: spacing.md,
-    paddingHorizontal: spacing.lg,
-    backgroundColor: colors.background,
+    paddingBottom: spacing.lg,
+    borderBottomWidth: 1,
   },
-  screenTitle: {
-    ...typography.h1,
-    color: colors.text,
+  headerTitle: {
+    fontSize: typography.xxl,
+    fontWeight: '700',
+  },
+  headerSubtitle: {
+    fontSize: typography.sm,
+    marginTop: spacing.xs,
   },
   filterButton: {
     padding: spacing.sm,
+    borderRadius: borderRadius.lg,
+    backgroundColor: colors.background,
   },
-  headerContainer: {
-    paddingHorizontal: spacing.lg,
-    paddingBottom: spacing.md,
-  },
-  tabBar: {
-    flexDirection: 'row',
+  tabsContainer: {
     borderBottomWidth: 1,
-    borderBottomColor: colors.border,
+  },
+  tabs: {
+    paddingHorizontal: spacing.lg,
+    gap: spacing.lg,
   },
   tab: {
-    paddingVertical: spacing.sm,
-    paddingHorizontal: spacing.md,
-    marginRight: spacing.md,
+    paddingVertical: spacing.md,
+    paddingHorizontal: spacing.sm,
   },
-  tabActive: {
+  activeTab: {
     borderBottomWidth: 2,
     borderBottomColor: colors.primary,
   },
   tabText: {
-    ...typography.bodyMedium,
-    color: colors.textSecondary,
+    fontSize: typography.base,
+    fontWeight: '500',
   },
-  tabTextActive: {
-    color: colors.text,
+  activeTabText: {
     fontWeight: '600',
   },
-  listContent: {
-    paddingBottom: 100,
+  postsContainer: {
+    flex: 1,
+  },
+  postsContent: {
+    padding: spacing.lg,
+    gap: spacing.md,
+  },
+  centerContent: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingVertical: 100,
+  },
+  loadingText: {
+    marginTop: spacing.lg,
+    fontSize: typography.md,
+  },
+  errorText: {
+    marginTop: spacing.lg,
+    fontSize: typography.md,
+  },
+  emptyText: {
+    marginTop: spacing.lg,
+    fontSize: typography.md,
+    textAlign: 'center',
+  },
+  createButton: {
+    marginTop: spacing.lg,
+    backgroundColor: colors.primary,
+    paddingHorizontal: spacing.xl,
+    paddingVertical: spacing.md,
+    borderRadius: borderRadius.lg,
+  },
+  createButtonText: {
+    color: '#fff',
+    fontWeight: '600',
   },
   postCard: {
-    backgroundColor: colors.card,
-    marginHorizontal: spacing.lg,
+    borderRadius: borderRadius.xl,
+    padding: spacing.lg,
     marginBottom: spacing.md,
-    borderRadius: borderRadius.lg,
     borderWidth: 1,
-    borderColor: colors.border,
-    overflow: 'hidden',
     ...shadows.sm,
   },
   postHeader: {
     flexDirection: 'row',
-    alignItems: 'center',
-    padding: spacing.md,
+    alignItems: 'flex-start',
+    marginBottom: spacing.md,
   },
-  authorAvatar: {
+  avatar: {
     width: 44,
     height: 44,
     borderRadius: 22,
-    marginRight: spacing.sm,
+    marginRight: spacing.md,
   },
-  authorInfo: {
+  headerInfo: {
     flex: 1,
   },
   authorName: {
-    ...typography.bodySemibold,
-    color: colors.text,
+    fontSize: typography.md,
+    fontWeight: '600',
   },
-  postMeta: {
+  metaRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginTop: 2,
+    marginTop: spacing.xs,
+    gap: spacing.xs,
   },
-  postTime: {
-    ...typography.caption,
-    color: colors.textSecondary,
-    marginLeft: 4,
-  },
-  metaDot: {
-    color: colors.textSecondary,
-    marginHorizontal: 6,
+  metaText: {
+    fontSize: typography.xs,
   },
   tagBadge: {
-    backgroundColor: colors.tagBg,
-    paddingHorizontal: 8,
+    backgroundColor: colors.errorLight,
+    paddingHorizontal: spacing.sm,
     paddingVertical: 2,
     borderRadius: borderRadius.full,
+    marginLeft: spacing.sm,
   },
   tagText: {
-    ...typography.caption,
-    color: colors.tagText,
+    color: colors.primary,
+    fontSize: typography.xs,
     fontWeight: '600',
   },
-  myPostBadge: {
-    backgroundColor: colors.inputBg,
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: borderRadius.sm,
+  statusBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: spacing.sm,
+    paddingVertical: spacing.xs,
+    borderRadius: borderRadius.full,
+    gap: spacing.xs,
   },
-  myPostBadgeText: {
-    ...typography.caption,
-    color: colors.textSecondary,
-    fontWeight: '500',
-  },
-  postContent: {
-    paddingHorizontal: spacing.md,
-    paddingBottom: spacing.sm,
+  statusText: {
+    fontSize: typography.xs,
+    fontWeight: '600',
   },
   postTitle: {
-    ...typography.h3,
-    color: colors.text,
-    marginBottom: 4,
+    fontSize: typography.lg,
+    fontWeight: '700',
+    marginBottom: spacing.sm,
   },
   postDescription: {
-    ...typography.body,
-    color: colors.textSecondary,
+    fontSize: typography.base,
     lineHeight: 22,
+    marginBottom: spacing.md,
   },
-  imageContainer: {
-    position: 'relative',
-    marginHorizontal: spacing.md,
-    marginBottom: spacing.sm,
-    borderRadius: borderRadius.md,
+  photosContainer: {
+    flexDirection: 'row',
+    gap: spacing.sm,
+    marginBottom: spacing.md,
+    borderRadius: borderRadius.lg,
     overflow: 'hidden',
   },
-  postImage: {
-    width: '100%',
+  postPhoto: {
+    flex: 1,
+    height: 120,
+    borderRadius: borderRadius.md,
+  },
+  singlePhoto: {
     height: 180,
-    backgroundColor: colors.inputBg,
   },
-  moreImagesOverlay: {
+  doublePhoto: {
+    height: 140,
+  },
+  morePhotos: {
     position: 'absolute',
-    bottom: 8,
-    right: 8,
-    backgroundColor: 'rgba(0,0,0,0.7)',
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: borderRadius.sm,
+    right: 0,
+    bottom: 0,
+    width: '33%',
+    height: 120,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderRadius: borderRadius.md,
   },
-  moreImagesText: {
-    color: colors.white,
-    fontWeight: '600',
-    fontSize: 12,
+  morePhotosText: {
+    color: '#fff',
+    fontWeight: '700',
+    fontSize: typography.lg,
   },
   locationRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: spacing.md,
-    paddingBottom: spacing.sm,
+    gap: spacing.xs,
+    marginBottom: spacing.md,
+    backgroundColor: '#FEF2F2',
+    paddingHorizontal: spacing.sm,
+    paddingVertical: spacing.xs,
+    borderRadius: borderRadius.md,
+    alignSelf: 'flex-start',
   },
   locationText: {
-    ...typography.small,
-    color: colors.textSecondary,
-    marginLeft: 4,
-    flex: 1,
+    fontSize: typography.sm,
+    maxWidth: 200,
   },
   claimersRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: spacing.md,
-    paddingBottom: spacing.sm,
+    gap: spacing.sm,
+    marginBottom: spacing.md,
   },
-  claimersAvatars: {
+  claimerAvatars: {
     flexDirection: 'row',
-    marginRight: spacing.sm,
   },
   claimerAvatar: {
-    width: 24,
-    height: 24,
-    borderRadius: 12,
+    width: 28,
+    height: 28,
+    borderRadius: 14,
     borderWidth: 2,
-    borderColor: colors.card,
+    borderColor: '#fff',
+  },
+  moreClaimers: {
+    backgroundColor: colors.textMuted,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  moreClaimersText: {
+    color: '#fff',
+    fontSize: 10,
+    fontWeight: '600',
   },
   claimersText: {
-    ...typography.caption,
-    color: colors.textSecondary,
+    fontSize: typography.sm,
   },
-  postFooter: {
+  actionsRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm,
+    paddingTop: spacing.md,
     borderTopWidth: 1,
-    borderTopColor: colors.border,
-  },
-  actionsLeft: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.md,
+    gap: spacing.lg,
   },
   actionButton: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 4,
-  },
-  actionText: {
-    ...typography.small,
-    color: colors.textSecondary,
-  },
-  actionTextActive: {
-    color: colors.primary,
-  },
-  claimButton: {
-    backgroundColor: colors.text,
-    paddingHorizontal: spacing.md,
-    paddingVertical: 8,
-    borderRadius: borderRadius.sm,
-  },
-  claimButtonText: {
-    ...typography.smallMedium,
-    color: colors.white,
-  },
-  approvedBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-  },
-  approvedText: {
-    ...typography.small,
-    color: colors.success,
-    fontWeight: '500',
-  },
-  emptyContainer: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: spacing.xxl,
-    paddingHorizontal: spacing.lg,
-  },
-  emptyTitle: {
-    ...typography.h3,
-    color: colors.text,
-    marginTop: spacing.md,
-    textAlign: 'center',
-  },
-  emptySubtitle: {
-    ...typography.body,
-    color: colors.textSecondary,
-    marginTop: spacing.sm,
-    textAlign: 'center',
-  },
-  createPostButton: {
-    marginTop: spacing.lg,
-    borderRadius: borderRadius.md,
-    overflow: 'hidden',
-  },
-  createPostGradient: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: spacing.sm,
-    paddingHorizontal: spacing.lg,
     gap: spacing.xs,
   },
-  createPostText: {
-    ...typography.bodySemibold,
-    color: colors.white,
+  actionText: {
+    fontSize: typography.sm,
+    fontWeight: '500',
   },
-  centerContainer: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  errorText: {
-    ...typography.body,
-    color: colors.error,
-    marginBottom: spacing.md,
-  },
-  retryButton: {
-    paddingVertical: spacing.sm,
+  claimButton: {
+    marginLeft: 'auto',
+    backgroundColor: colors.text,
     paddingHorizontal: spacing.lg,
-    backgroundColor: colors.primary,
+    paddingVertical: spacing.sm,
     borderRadius: borderRadius.md,
   },
-  retryText: {
-    ...typography.bodySemibold,
-    color: colors.white,
-  },
-  loader: {
-    paddingVertical: spacing.lg,
-  },
-  fab: {
-    position: 'absolute',
-    bottom: 24,
-    right: 24,
-    borderRadius: 28,
-    overflow: 'hidden',
-    ...shadows.lg,
-  },
-  fabGradient: {
-    width: 56,
-    height: 56,
-    alignItems: 'center',
-    justifyContent: 'center',
+  claimButtonText: {
+    color: '#fff',
+    fontSize: typography.sm,
+    fontWeight: '600',
   },
 });
-

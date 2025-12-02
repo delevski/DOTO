@@ -16,19 +16,50 @@
     ],
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.doto.app"
+      "bundleIdentifier": "com.doto.app",
+      "infoPlist": {
+        "NSLocationWhenInUseUsageDescription": "DOTO needs your location to show nearby tasks and help you find opportunities to help others in your community.",
+        "NSPhotoLibraryUsageDescription": "DOTO needs access to your photos to let you upload images for posts and profile pictures.",
+        "NSCameraUsageDescription": "DOTO needs camera access to let you take photos for posts."
+      }
     },
     "android": {
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#DC2626"
       },
-      "package": "com.doto.app"
+      "package": "com.doto.app",
+      "versionCode": 3,
+      "compileSdkVersion": 34,
+      "targetSdkVersion": 34,
+      "permissions": [
+        "ACCESS_FINE_LOCATION",
+        "ACCESS_COARSE_LOCATION",
+        "CAMERA",
+        "READ_EXTERNAL_STORAGE",
+        "WRITE_EXTERNAL_STORAGE",
+        "INTERNET"
+      ],
+      "config": {
+        "googleMaps": {
+          "apiKey": ""
+        }
+      }
     },
     "web": {
       "favicon": "./assets/favicon.png",
       "bundler": "metro"
     },
+    "plugins": [
+      "expo-location",
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "DOTO needs access to your photos to let you upload images for posts and profile pictures.",
+          "cameraPermission": "DOTO needs camera access to let you take photos for posts."
+        }
+      ]
+    ],
     "extra": {
       "eas": {
         "projectId": "5519a148-f81d-466e-8fe0-a3557958c204"

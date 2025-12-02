@@ -1,97 +1,100 @@
-import React, { useState, useRef } from 'react';
+import React, { useState } from 'react';
 import {
   View,
   Text,
+  TextInput,
+  TouchableOpacity,
   StyleSheet,
   ScrollView,
-  TouchableOpacity,
-  TextInput,
   Image,
-  Alert,
   ActivityIndicator,
+  Alert,
   KeyboardAvoidingView,
   Platform,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { LinearGradient } from 'expo-linear-gradient';
 import * as ImagePicker from 'expo-image-picker';
 import * as Location from 'expo-location';
-import { colors, spacing, borderRadius, typography, shadows } from '../styles/theme';
+import { useAuthStore } from '../store/authStore';
+import { useSettingsStore } from '../store/settingsStore';
+import { useTranslation } from '../utils/translations';
 import { db, id } from '../lib/instant';
-import { useAuth } from '../context/AuthContext';
-import { t } from '../utils/translations';
+import { colors, spacing, borderRadius, typography } from '../styles/theme';
 
 const CATEGORIES = [
-  { id: 'Moving', label: 'Moving', icon: 'cube-outline' },
-  { id: 'Pet Care', label: 'Pet Care', icon: 'paw-outline' },
-  { id: 'Borrow', label: 'Borrow', icon: 'swap-horizontal-outline' },
-  { id: 'Assembly', label: 'Assembly', icon: 'construct-outline' },
-  { id: 'Other', label: 'Other', icon: 'ellipsis-horizontal-outline' },
+  { key: 'Moving', icon: 'car-outline' },
+  { key: 'Pet Care', icon: 'paw-outline' },
+  { key: 'Borrow', icon: 'hand-left-outline' },
+  { key: 'Assembly', icon: 'construct-outline' },
+  { key: 'Other', icon: 'ellipsis-horizontal-outline' },
 ];
 
 export default function CreatePostScreen({ navigation }) {
-  const { user } = useAuth();
+  const user = useAuthStore((state) => state.user);
+  const darkMode = useSettingsStore((state) => state.darkMode);
+  const t = useTranslation();
+
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
-  const [location, setLocation] = useState('');
   const [category, setCategory] = useState('');
+  const [location, setLocation] = useState('');
   const [photos, setPhotos] = useState([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isGettingLocation, setIsGettingLocation] = useState(false);
-  const descriptionRef = useRef(null);
+  const [error, setError] = useState('');
+
+  const themeColors = {
+    background: darkMode ? colors.backgroundDark : colors.background,
+    surface: darkMode ? colors.surfaceDark : colors.surface,
+    text: darkMode ? colors.textDark : colors.text,
+    textSecondary: darkMode ? colors.textSecondaryDark : colors.textSecondary,
+    border: darkMode ? colors.borderDark : colors.border,
+  };
 
   const pickImage = async () => {
-    if (photos.length >= 5) {
-      Alert.alert('Limit Reached', 'You can only add up to 5 photos.');
-      return;
-    }
-
     const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    
     if (status !== 'granted') {
-      Alert.alert('Permission needed', 'Please grant camera roll permissions.');
+      Alert.alert('Permission needed', 'Please grant camera roll permissions to upload photos.');
       return;
     }
 
     const result = await ImagePicker.launchImageLibraryAsync({
       mediaTypes: ImagePicker.MediaTypeOptions.Images,
       allowsMultipleSelection: true,
-      quality: 0.8,
+      quality: 0.7,
       base64: true,
-      selectionLimit: 5 - photos.length,
     });
 
     if (!result.canceled && result.assets) {
       const newPhotos = result.assets.map(asset => ({
         uri: asset.uri,
-        base64: `data:image/jpeg;base64,${asset.base64}`,
+        base64: asset.base64 ? `data:image/jpeg;base64,${asset.base64}` : asset.uri,
       }));
-      setPhotos([...photos, ...newPhotos].slice(0, 5));
+      setPhotos([...photos, ...newPhotos].slice(0, 5)); // Max 5 photos
     }
   };
 
   const takePhoto = async () => {
-    if (photos.length >= 5) {
-      Alert.alert('Limit Reached', 'You can only add up to 5 photos.');
-      return;
-    }
-
     const { status } = await ImagePicker.requestCameraPermissionsAsync();
+    
     if (status !== 'granted') {
-      Alert.alert('Permission needed', 'Please grant camera permissions.');
+      Alert.alert('Permission needed', 'Please grant camera permissions to take photos.');
       return;
     }
 
     const result = await ImagePicker.launchCameraAsync({
-      quality: 0.8,
+      quality: 0.7,
       base64: true,
     });
 
     if (!result.canceled && result.assets[0]) {
+      const asset = result.assets[0];
       const newPhoto = {
-        uri: result.assets[0].uri,
-        base64: `data:image/jpeg;base64,${result.assets[0].base64}`,
+        uri: asset.uri,
+        base64: asset.base64 ? `data:image/jpeg;base64,${asset.base64}` : asset.uri,
       };
-      setPhotos([...photos, newPhoto]);
+      setPhotos([...photos, newPhoto].slice(0, 5));
     }
   };
 
@@ -101,63 +104,67 @@ export default function CreatePostScreen({ navigation }) {
 
   const getCurrentLocation = async () => {
     setIsGettingLocation(true);
+    
     try {
       const { status } = await Location.requestForegroundPermissionsAsync();
+      
       if (status !== 'granted') {
-        Alert.alert('Permission needed', 'Please enable location permissions.');
+        Alert.alert('Permission needed', 'Please grant location permissions.');
         return;
       }
 
       const locationResult = await Location.getCurrentPositionAsync({});
       const { latitude, longitude } = locationResult.coords;
 
-      // Reverse geocode to get address
+      // Reverse geocode
       const [address] = await Location.reverseGeocodeAsync({ latitude, longitude });
+      
       if (address) {
-        const addressString = [
-          address.streetNumber,
-          address.street,
-          address.city,
-          address.region,
-        ].filter(Boolean).join(', ');
-        setLocation(addressString || `${latitude.toFixed(4)}, ${longitude.toFixed(4)}`);
+        const parts = [];
+        if (address.streetNumber) parts.push(address.streetNumber);
+        if (address.street) parts.push(address.street);
+        if (address.city) parts.push(address.city);
+        
+        setLocation(parts.join(' ') || `${latitude.toFixed(4)}, ${longitude.toFixed(4)}`);
       }
     } catch (error) {
       console.error('Location error:', error);
-      Alert.alert('Error', 'Could not get your location. Please enter it manually.');
+      Alert.alert('Error', t('unableToGetLocation'));
     } finally {
       setIsGettingLocation(false);
     }
   };
 
   const handleSubmit = async () => {
+    setError('');
+
     if (!user) {
-      Alert.alert('Error', 'You must be logged in to create a post.');
+      setError(t('mustBeLoggedInToCreatePost'));
       return;
     }
 
     if (!description.trim()) {
-      Alert.alert('Error', 'Please enter a description.');
+      setError(t('pleaseEnterDescription'));
       return;
     }
 
     if (!location.trim()) {
-      Alert.alert('Error', 'Please enter a location.');
+      setError(t('pleaseEnterLocation'));
       return;
     }
 
     setIsSubmitting(true);
 
     try {
-      const postId = id();
-      const photoUrls = photos.map(p => p.base64);
+      const newPostId = id();
+      const photoUrls = photos.map(p => p.base64 || p.uri);
 
       const newPost = {
-        id: postId,
+        id: newPostId,
         author: user.name,
         authorId: user.id,
         avatar: user.avatar,
-        title: title.trim() || 'Help Needed',
+        title: title.trim() || t('helpNeeded'),
         description: description.trim(),
         location: location.trim(),
         category: category || 'Other',
@@ -166,7 +173,6 @@ export default function CreatePostScreen({ navigation }) {
         timestamp: Date.now(),
         photos: photoUrls,
         likes: 0,
-        likedBy: [],
         comments: 0,
         claimers: [],
         approvedClaimerId: null,
@@ -174,157 +180,169 @@ export default function CreatePostScreen({ navigation }) {
       };
 
       await db.transact(
-        db.tx.posts[postId].update(newPost)
+        db.tx.posts[newPostId].update(newPost)
       );
 
-      Alert.alert(
-        'Success',
-        'Your post has been published!',
-        [{ text: 'OK', onPress: () => navigation.goBack() }]
-      );
-    } catch (error) {
-      console.error('Error creating post:', error);
-      Alert.alert('Error', 'Failed to create post. Please try again.');
+      Alert.alert('Success', 'Your post has been published!', [
+        { text: 'OK', onPress: () => navigation.navigate('Feed') }
+      ]);
+    } catch (err) {
+      console.error('Failed to create post:', err);
+      setError(t('failedToCreatePost'));
     } finally {
       setIsSubmitting(false);
     }
   };
 
   return (
-    <KeyboardAvoidingView
+    <KeyboardAvoidingView 
+      style={[styles.container, { backgroundColor: themeColors.background }]}
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-      style={styles.container}
     >
       {/* Header */}
-      <View style={styles.header}>
-        <TouchableOpacity onPress={() => navigation.goBack()} style={styles.headerButton}>
-          <Ionicons name="close" size={24} color={colors.text} />
+      <View style={[styles.header, { backgroundColor: themeColors.surface, borderBottomColor: themeColors.border }]}>
+        <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backButton}>
+          <Ionicons name="close" size={24} color={themeColors.text} />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>{t('newPost')}</Text>
+        <Text style={[styles.headerTitle, { color: themeColors.text }]}>{t('newPost')}</Text>
         <TouchableOpacity 
-          style={[styles.publishButton, isSubmitting && styles.buttonDisabled]}
+          style={[styles.publishButton, isSubmitting && styles.publishButtonDisabled]}
           onPress={handleSubmit}
           disabled={isSubmitting}
         >
           {isSubmitting ? (
-            <ActivityIndicator size="small" color={colors.white} />
+            <ActivityIndicator size="small" color="#fff" />
           ) : (
-            <Text style={styles.publishText}>{t('publishPost')}</Text>
+            <Text style={styles.publishButtonText}>{t('publishPost')}</Text>
           )}
         </TouchableOpacity>
       </View>
 
       <ScrollView 
         style={styles.content}
+        contentContainerStyle={styles.contentContainer}
         showsVerticalScrollIndicator={false}
         keyboardShouldPersistTaps="handled"
       >
-        {/* Author Preview */}
-        <View style={styles.authorPreview}>
-          <Image source={{ uri: user?.avatar || 'https://i.pravatar.cc/150' }} style={styles.authorAvatar} />
+        {/* Author Info */}
+        <View style={styles.authorRow}>
+          <Image 
+            source={{ uri: user?.avatar || 'https://i.pravatar.cc/150?u=user' }}
+            style={styles.authorAvatar}
+          />
           <View>
-            <Text style={styles.authorName}>{user?.name || 'You'}</Text>
-            <Text style={styles.authorHint}>What do you need help with?</Text>
+            <Text style={[styles.authorName, { color: themeColors.text }]}>
+              {user?.name || 'You'}
+            </Text>
+            <Text style={[styles.authorHint, { color: themeColors.textSecondary }]}>
+              {t('whatDoYouNeedHelpWith')}
+            </Text>
           </View>
         </View>
 
-        {/* Title Input */}
+        {error ? (
+          <View style={styles.errorBox}>
+            <Text style={styles.errorText}>{error}</Text>
+          </View>
+        ) : null}
+
+        {/* Title */}
         <View style={styles.inputGroup}>
-          <Text style={styles.label}>{t('title')} (Optional)</Text>
+          <Text style={[styles.label, { color: themeColors.text }]}>{t('titleOptional')}</Text>
           <TextInput
-            style={styles.input}
-            placeholder="Brief title for your post"
-            placeholderTextColor={colors.textMuted}
+            style={[styles.input, { backgroundColor: themeColors.surface, borderColor: themeColors.border, color: themeColors.text }]}
+            placeholder={t('briefTitleForPost')}
+            placeholderTextColor={themeColors.textSecondary}
             value={title}
             onChangeText={setTitle}
-            maxLength={100}
-            returnKeyType="next"
-            onSubmitEditing={() => descriptionRef.current?.focus()}
           />
         </View>
 
-        {/* Description Input */}
+        {/* Description */}
         <View style={styles.inputGroup}>
-          <Text style={styles.label}>{t('description')} *</Text>
+          <Text style={[styles.label, { color: themeColors.text }]}>{t('description')} *</Text>
           <TextInput
-            ref={descriptionRef}
-            style={[styles.input, styles.textArea]}
-            placeholder="Describe what you need help with..."
-            placeholderTextColor={colors.textMuted}
+            style={[styles.input, styles.textArea, { backgroundColor: themeColors.surface, borderColor: themeColors.border, color: themeColors.text }]}
+            placeholder={t('descriptionPlaceholder')}
+            placeholderTextColor={themeColors.textSecondary}
             value={description}
             onChangeText={setDescription}
             multiline
             numberOfLines={5}
             textAlignVertical="top"
-            maxLength={500}
           />
-          <Text style={styles.charCount}>{description.length}/500</Text>
+          <Text style={[styles.charCount, { color: themeColors.textSecondary }]}>
+            {description.length}/500 {t('characters')}
+          </Text>
         </View>
 
-        {/* Category Selection */}
+        {/* Category */}
         <View style={styles.inputGroup}>
-          <Text style={styles.label}>{t('category')}</Text>
-          <View style={styles.categoryGrid}>
+          <Text style={[styles.label, { color: themeColors.text }]}>{t('category')}</Text>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.categoryScroll}>
             {CATEGORIES.map((cat) => (
               <TouchableOpacity
-                key={cat.id}
+                key={cat.key}
                 style={[
-                  styles.categoryButton,
-                  category === cat.id && styles.categoryButtonActive
+                  styles.categoryChip,
+                  { borderColor: category === cat.key ? colors.primary : themeColors.border },
+                  category === cat.key && styles.categoryChipActive,
                 ]}
-                onPress={() => setCategory(cat.id)}
+                onPress={() => setCategory(cat.key)}
               >
                 <Ionicons 
                   name={cat.icon} 
-                  size={20} 
-                  color={category === cat.id ? colors.primary : colors.textSecondary} 
+                  size={18} 
+                  color={category === cat.key ? colors.primary : themeColors.textSecondary} 
                 />
                 <Text style={[
                   styles.categoryText,
-                  category === cat.id && styles.categoryTextActive
+                  { color: category === cat.key ? colors.primary : themeColors.textSecondary }
                 ]}>
-                  {cat.label}
+                  {t(`category${cat.key.replace(' ', '')}`) || cat.key}
                 </Text>
               </TouchableOpacity>
             ))}
-          </View>
+          </ScrollView>
         </View>
 
-        {/* Location Input */}
+        {/* Location */}
         <View style={styles.inputGroup}>
-          <Text style={styles.label}>{t('location')} *</Text>
-          <View style={styles.locationInputContainer}>
-            <Ionicons name="location-outline" size={20} color={colors.textSecondary} />
+          <Text style={[styles.label, { color: themeColors.text }]}>{t('location')} *</Text>
+          <View style={[styles.locationInputWrapper, { backgroundColor: themeColors.surface, borderColor: themeColors.border }]}>
+            <Ionicons name="location-outline" size={20} color={themeColors.textSecondary} />
             <TextInput
-              style={styles.locationInput}
-              placeholder="Enter address or location"
-              placeholderTextColor={colors.textMuted}
+              style={[styles.locationInput, { color: themeColors.text }]}
+              placeholder={t('enterAddressOrSelect')}
+              placeholderTextColor={themeColors.textSecondary}
               value={location}
               onChangeText={setLocation}
             />
-            <TouchableOpacity 
-              onPress={getCurrentLocation}
-              disabled={isGettingLocation}
-              style={styles.locationButton}
-            >
-              {isGettingLocation ? (
-                <ActivityIndicator size="small" color={colors.primary} />
-              ) : (
-                <Ionicons name="locate" size={20} color={colors.primary} />
-              )}
-            </TouchableOpacity>
           </View>
+          <TouchableOpacity 
+            style={styles.locationButton}
+            onPress={getCurrentLocation}
+            disabled={isGettingLocation}
+          >
+            {isGettingLocation ? (
+              <ActivityIndicator size="small" color={colors.primary} />
+            ) : (
+              <>
+                <Ionicons name="navigate-outline" size={16} color={colors.primary} />
+                <Text style={styles.locationButtonText}>{t('useMyCurrentLocation')}</Text>
+              </>
+            )}
+          </TouchableOpacity>
         </View>
 
-        {/* Photo Upload */}
+        {/* Photos */}
         <View style={styles.inputGroup}>
-          <Text style={styles.label}>{t('addPhotos')} ({photos.length}/5)</Text>
-          
-          <View style={styles.photoGrid}>
+          <Text style={[styles.label, { color: themeColors.text }]}>{t('addPhotos')}</Text>
+          <View style={styles.photosGrid}>
             {photos.map((photo, index) => (
-              <View key={index} style={styles.photoPreview}>
+              <View key={index} style={styles.photoItem}>
                 <Image source={{ uri: photo.uri }} style={styles.photoImage} />
-                <TouchableOpacity
+                <TouchableOpacity 
                   style={styles.removePhotoButton}
                   onPress={() => removePhoto(index)}
                 >
@@ -332,49 +350,30 @@ export default function CreatePostScreen({ navigation }) {
                 </TouchableOpacity>
               </View>
             ))}
-            
             {photos.length < 5 && (
-              <View style={styles.addPhotoButtons}>
-                <TouchableOpacity style={styles.addPhotoButton} onPress={pickImage}>
-                  <Ionicons name="images-outline" size={28} color={colors.textSecondary} />
-                  <Text style={styles.addPhotoText}>Gallery</Text>
+              <View style={styles.photoActions}>
+                <TouchableOpacity 
+                  style={[styles.addPhotoButton, { borderColor: themeColors.border }]}
+                  onPress={pickImage}
+                >
+                  <Ionicons name="images-outline" size={28} color={themeColors.textSecondary} />
+                  <Text style={[styles.addPhotoText, { color: themeColors.textSecondary }]}>Gallery</Text>
                 </TouchableOpacity>
-                <TouchableOpacity style={styles.addPhotoButton} onPress={takePhoto}>
-                  <Ionicons name="camera-outline" size={28} color={colors.textSecondary} />
-                  <Text style={styles.addPhotoText}>Camera</Text>
+                <TouchableOpacity 
+                  style={[styles.addPhotoButton, { borderColor: themeColors.border }]}
+                  onPress={takePhoto}
+                >
+                  <Ionicons name="camera-outline" size={28} color={themeColors.textSecondary} />
+                  <Text style={[styles.addPhotoText, { color: themeColors.textSecondary }]}>Camera</Text>
                 </TouchableOpacity>
               </View>
             )}
           </View>
+          <Text style={[styles.photoHint, { color: themeColors.textSecondary }]}>
+            {t('pngJpgUpTo10MB')} ({photos.length}/5)
+          </Text>
         </View>
-
-        <View style={{ height: 100 }} />
       </ScrollView>
-
-      {/* Bottom Submit Button */}
-      <View style={styles.bottomBar}>
-        <TouchableOpacity
-          style={styles.submitButton}
-          onPress={handleSubmit}
-          disabled={isSubmitting}
-        >
-          <LinearGradient
-            colors={[colors.gradientStart, colors.gradientEnd]}
-            start={{ x: 0, y: 0 }}
-            end={{ x: 1, y: 0 }}
-            style={styles.submitGradient}
-          >
-            {isSubmitting ? (
-              <ActivityIndicator color={colors.white} />
-            ) : (
-              <>
-                <Ionicons name="checkmark-circle" size={20} color={colors.white} />
-                <Text style={styles.submitText}>{t('publishPost')}</Text>
-              </>
-            )}
-          </LinearGradient>
-        </TouchableOpacity>
-      </View>
     </KeyboardAvoidingView>
   );
 }
@@ -382,148 +381,154 @@ export default function CreatePostScreen({ navigation }) {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: colors.background,
   },
   header: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
+    paddingHorizontal: spacing.lg,
     paddingTop: 50,
     paddingBottom: spacing.md,
-    paddingHorizontal: spacing.md,
-    backgroundColor: colors.card,
     borderBottomWidth: 1,
-    borderBottomColor: colors.border,
   },
-  headerButton: {
+  backButton: {
     padding: spacing.sm,
   },
   headerTitle: {
-    ...typography.h3,
-    color: colors.text,
+    fontSize: typography.lg,
+    fontWeight: '600',
   },
   publishButton: {
     backgroundColor: colors.primary,
-    paddingHorizontal: spacing.md,
+    paddingHorizontal: spacing.lg,
     paddingVertical: spacing.sm,
-    borderRadius: borderRadius.md,
+    borderRadius: borderRadius.lg,
+    minWidth: 80,
+    alignItems: 'center',
   },
-  buttonDisabled: {
-    opacity: 0.5,
+  publishButtonDisabled: {
+    opacity: 0.6,
   },
-  publishText: {
-    ...typography.smallMedium,
-    color: colors.white,
+  publishButtonText: {
+    color: '#fff',
+    fontWeight: '600',
+    fontSize: typography.sm,
   },
   content: {
     flex: 1,
-    padding: spacing.lg,
   },
-  authorPreview: {
+  contentContainer: {
+    padding: spacing.xl,
+  },
+  authorRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: spacing.lg,
-    paddingBottom: spacing.lg,
-    borderBottomWidth: 1,
-    borderBottomColor: colors.border,
+    marginBottom: spacing.xl,
+    gap: spacing.md,
   },
   authorAvatar: {
     width: 48,
     height: 48,
     borderRadius: 24,
-    marginRight: spacing.md,
   },
   authorName: {
-    ...typography.bodySemibold,
-    color: colors.text,
+    fontSize: typography.md,
+    fontWeight: '600',
   },
   authorHint: {
-    ...typography.small,
-    color: colors.textSecondary,
+    fontSize: typography.sm,
+    marginTop: 2,
   },
-  inputGroup: {
+  errorBox: {
+    backgroundColor: colors.errorLight,
+    borderWidth: 1,
+    borderColor: '#FCA5A5',
+    borderRadius: borderRadius.lg,
+    padding: spacing.md,
     marginBottom: spacing.lg,
   },
+  errorText: {
+    color: colors.error,
+    fontSize: typography.sm,
+  },
+  inputGroup: {
+    marginBottom: spacing.xl,
+  },
   label: {
-    ...typography.smallMedium,
-    color: colors.text,
+    fontSize: typography.sm,
+    fontWeight: '600',
     marginBottom: spacing.sm,
   },
   input: {
-    backgroundColor: colors.card,
-    borderRadius: borderRadius.md,
     borderWidth: 1,
-    borderColor: colors.border,
-    padding: spacing.md,
-    ...typography.body,
-    color: colors.text,
+    borderRadius: borderRadius.lg,
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.md,
+    fontSize: typography.md,
   },
   textArea: {
     minHeight: 120,
-    textAlignVertical: 'top',
+    paddingTop: spacing.md,
   },
   charCount: {
-    ...typography.caption,
-    color: colors.textSecondary,
+    fontSize: typography.xs,
     textAlign: 'right',
     marginTop: spacing.xs,
   },
-  categoryGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: spacing.sm,
+  categoryScroll: {
+    marginHorizontal: -spacing.xl,
+    paddingHorizontal: spacing.xl,
   },
-  categoryButton: {
+  categoryChip: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: spacing.md,
+    paddingHorizontal: spacing.lg,
     paddingVertical: spacing.sm,
-    backgroundColor: colors.card,
-    borderRadius: borderRadius.md,
+    borderRadius: borderRadius.full,
     borderWidth: 1,
-    borderColor: colors.border,
+    marginRight: spacing.sm,
     gap: spacing.xs,
   },
-  categoryButtonActive: {
-    borderColor: colors.primary,
-    backgroundColor: colors.tagBg,
+  categoryChipActive: {
+    backgroundColor: colors.errorLight,
   },
   categoryText: {
-    ...typography.small,
-    color: colors.textSecondary,
+    fontSize: typography.sm,
+    fontWeight: '500',
   },
-  categoryTextActive: {
-    color: colors.primary,
-    fontWeight: '600',
-  },
-  locationInputContainer: {
+  locationInputWrapper: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: colors.card,
-    borderRadius: borderRadius.md,
     borderWidth: 1,
-    borderColor: colors.border,
-    paddingHorizontal: spacing.md,
+    borderRadius: borderRadius.lg,
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.md,
+    gap: spacing.sm,
   },
   locationInput: {
     flex: 1,
-    padding: spacing.md,
-    ...typography.body,
-    color: colors.text,
+    fontSize: typography.md,
   },
   locationButton: {
-    padding: spacing.sm,
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: spacing.sm,
+    gap: spacing.xs,
   },
-  photoGrid: {
+  locationButtonText: {
+    color: colors.primary,
+    fontSize: typography.sm,
+    fontWeight: '500',
+  },
+  photosGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: spacing.sm,
   },
-  photoPreview: {
-    position: 'relative',
+  photoItem: {
     width: 100,
     height: 100,
-    borderRadius: borderRadius.md,
+    borderRadius: borderRadius.lg,
     overflow: 'hidden',
   },
   photoImage: {
@@ -534,51 +539,29 @@ const styles = StyleSheet.create({
     position: 'absolute',
     top: 4,
     right: 4,
-    backgroundColor: colors.white,
+    backgroundColor: '#fff',
     borderRadius: 12,
   },
-  addPhotoButtons: {
+  photoActions: {
     flexDirection: 'row',
     gap: spacing.sm,
   },
   addPhotoButton: {
     width: 100,
     height: 100,
-    backgroundColor: colors.card,
-    borderRadius: borderRadius.md,
+    borderRadius: borderRadius.lg,
     borderWidth: 2,
-    borderColor: colors.border,
     borderStyle: 'dashed',
-    alignItems: 'center',
     justifyContent: 'center',
+    alignItems: 'center',
+    gap: spacing.xs,
   },
   addPhotoText: {
-    ...typography.caption,
-    color: colors.textSecondary,
-    marginTop: spacing.xs,
+    fontSize: typography.xs,
+    fontWeight: '500',
   },
-  bottomBar: {
-    padding: spacing.md,
-    backgroundColor: colors.card,
-    borderTopWidth: 1,
-    borderTopColor: colors.border,
-    paddingBottom: Platform.OS === 'ios' ? 34 : spacing.md,
-  },
-  submitButton: {
-    borderRadius: borderRadius.md,
-    overflow: 'hidden',
-    ...shadows.button,
-  },
-  submitGradient: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: spacing.md,
-    gap: spacing.sm,
-  },
-  submitText: {
-    ...typography.button,
-    color: colors.white,
+  photoHint: {
+    fontSize: typography.xs,
+    marginTop: spacing.sm,
   },
 });
-

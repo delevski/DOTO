@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useMemo } from 'react';
 import {
   View,
   Text,
@@ -6,93 +6,151 @@ import {
   FlatList,
   TouchableOpacity,
   Image,
+  TextInput,
+  ActivityIndicator,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { colors, spacing, borderRadius, typography, shadows } from '../styles/theme';
+import { useAuthStore } from '../store/authStore';
+import { useSettingsStore } from '../store/settingsStore';
+import { useTranslation } from '../utils/translations';
 import { db } from '../lib/instant';
-import { useAuth } from '../context/AuthContext';
-import { t } from '../utils/translations';
-import { formatMessageTime } from '../utils/messaging';
+import { formatConversationTime } from '../utils/messaging';
+import { colors, spacing, borderRadius, typography, shadows } from '../styles/theme';
 
 export default function MessagesScreen({ navigation }) {
-  const { user } = useAuth();
+  const user = useAuthStore((state) => state.user);
+  const darkMode = useSettingsStore((state) => state.darkMode);
+  const t = useTranslation();
 
-  // Fetch conversations where user is a participant
+  const [searchQuery, setSearchQuery] = useState('');
+
+  // Fetch conversations from InstantDB
   const { isLoading, data } = db.useQuery({ conversations: {} });
-  
-  const conversations = (data?.conversations || [])
-    .filter(conv => conv.participant1Id === user?.id || conv.participant2Id === user?.id)
-    .sort((a, b) => (b.lastMessageTime || 0) - (a.lastMessageTime || 0));
+  const allConversations = data?.conversations || [];
 
-  const getOtherParticipant = (conversation) => {
-    if (conversation.participant1Id === user?.id) {
-      return {
-        id: conversation.participant2Id,
-        name: conversation.participant2Name,
-        avatar: conversation.participant2Avatar,
-      };
-    }
-    return {
-      id: conversation.participant1Id,
-      name: conversation.participant1Name,
-      avatar: conversation.participant1Avatar,
-    };
+  const themeColors = {
+    background: darkMode ? colors.backgroundDark : colors.background,
+    surface: darkMode ? colors.surfaceDark : colors.surface,
+    text: darkMode ? colors.textDark : colors.text,
+    textSecondary: darkMode ? colors.textSecondaryDark : colors.textSecondary,
+    border: darkMode ? colors.borderDark : colors.border,
   };
 
-  const renderConversation = ({ item: conversation }) => {
-    const otherUser = getOtherParticipant(conversation);
+  // Filter conversations for current user
+  const myConversations = useMemo(() => {
+    if (!user) return [];
+    
+    return allConversations
+      .filter(conv => 
+        conv.participant1Id === user.id || conv.participant2Id === user.id
+      )
+      .map(conv => {
+        const isParticipant1 = conv.participant1Id === user.id;
+        return {
+          ...conv,
+          otherUserId: isParticipant1 ? conv.participant2Id : conv.participant1Id,
+          otherUserName: isParticipant1 ? conv.participant2Name : conv.participant1Name,
+          otherUserAvatar: isParticipant1 ? conv.participant2Avatar : conv.participant1Avatar,
+        };
+      })
+      .filter(conv => {
+        if (!searchQuery.trim()) return true;
+        return conv.otherUserName?.toLowerCase().includes(searchQuery.toLowerCase());
+      })
+      .sort((a, b) => (b.lastMessageTime || b.updatedAt || 0) - (a.lastMessageTime || a.updatedAt || 0));
+  }, [allConversations, user, searchQuery]);
 
-    return (
-      <TouchableOpacity
-        style={styles.conversationCard}
-        onPress={() => navigation.navigate('Chat', { conversationId: conversation.id })}
-        activeOpacity={0.7}
-      >
-        <Image
-          source={{ uri: otherUser.avatar || 'https://i.pravatar.cc/150' }}
-          style={styles.avatar}
-        />
-        <View style={styles.conversationInfo}>
-          <View style={styles.conversationHeader}>
-            <Text style={styles.userName}>{otherUser.name}</Text>
-            <Text style={styles.timeText}>
-              {formatMessageTime(conversation.lastMessageTime)}
-            </Text>
-          </View>
-          <Text style={styles.lastMessage} numberOfLines={1}>
-            {conversation.lastMessage || 'No messages yet'}
+  const renderConversation = ({ item }) => (
+    <TouchableOpacity
+      style={[styles.conversationItem, { backgroundColor: themeColors.surface }]}
+      onPress={() => navigation.navigate('Chat', {
+        conversationId: item.id,
+        userName: item.otherUserName,
+        userAvatar: item.otherUserAvatar,
+        userId: item.otherUserId,
+      })}
+      activeOpacity={0.7}
+    >
+      <Image
+        source={{ uri: item.otherUserAvatar || `https://i.pravatar.cc/150?u=${item.otherUserId}` }}
+        style={styles.avatar}
+      />
+      <View style={styles.conversationContent}>
+        <View style={styles.conversationHeader}>
+          <Text style={[styles.userName, { color: themeColors.text }]} numberOfLines={1}>
+            {item.otherUserName || 'User'}
+          </Text>
+          <Text style={[styles.timestamp, { color: themeColors.textSecondary }]}>
+            {formatConversationTime(item.lastMessageTime || item.updatedAt)}
           </Text>
         </View>
-        <Ionicons name="chevron-forward" size={20} color={colors.textSecondary} />
-      </TouchableOpacity>
-    );
-  };
+        <Text 
+          style={[styles.lastMessage, { color: themeColors.textSecondary }]} 
+          numberOfLines={1}
+        >
+          {item.lastMessage || 'Start a conversation...'}
+        </Text>
+      </View>
+      <Ionicons name="chevron-forward" size={20} color={themeColors.textSecondary} />
+    </TouchableOpacity>
+  );
 
-  const renderEmpty = () => (
+  const renderEmptyState = () => (
     <View style={styles.emptyContainer}>
-      <Ionicons name="chatbubbles-outline" size={64} color={colors.border} />
-      <Text style={styles.emptyTitle}>{t('noMessages')}</Text>
-      <Text style={styles.emptySubtitle}>
-        Start a conversation by messaging a post author
+      <Ionicons name="chatbubbles-outline" size={80} color={themeColors.textSecondary} />
+      <Text style={[styles.emptyTitle, { color: themeColors.text }]}>
+        {t('noConversations')}
+      </Text>
+      <Text style={[styles.emptySubtitle, { color: themeColors.textSecondary }]}>
+        Start messaging by viewing a post and clicking "Send Message"
       </Text>
     </View>
   );
 
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, { backgroundColor: themeColors.background }]}>
       {/* Header */}
-      <View style={styles.header}>
-        <Text style={styles.headerTitle}>{t('messages')}</Text>
+      <View style={[styles.header, { backgroundColor: themeColors.surface, borderBottomColor: themeColors.border }]}>
+        <Text style={[styles.headerTitle, { color: themeColors.text }]}>{t('messages')}</Text>
       </View>
 
-      <FlatList
-        data={conversations}
-        renderItem={renderConversation}
-        keyExtractor={(item) => item.id}
-        ListEmptyComponent={!isLoading && renderEmpty}
-        contentContainerStyle={styles.listContent}
-        showsVerticalScrollIndicator={false}
-      />
+      {/* Search Bar */}
+      <View style={[styles.searchContainer, { backgroundColor: themeColors.surface }]}>
+        <View style={[styles.searchBar, { borderColor: themeColors.border }]}>
+          <Ionicons name="search-outline" size={20} color={themeColors.textSecondary} />
+          <TextInput
+            style={[styles.searchInput, { color: themeColors.text }]}
+            placeholder={t('search')}
+            placeholderTextColor={themeColors.textSecondary}
+            value={searchQuery}
+            onChangeText={setSearchQuery}
+          />
+          {searchQuery.length > 0 && (
+            <TouchableOpacity onPress={() => setSearchQuery('')}>
+              <Ionicons name="close-circle" size={20} color={themeColors.textSecondary} />
+            </TouchableOpacity>
+          )}
+        </View>
+      </View>
+
+      {/* Conversations List */}
+      {isLoading ? (
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color={colors.primary} />
+        </View>
+      ) : (
+        <FlatList
+          data={myConversations}
+          renderItem={renderConversation}
+          keyExtractor={(item) => item.id}
+          contentContainerStyle={[
+            styles.listContent,
+            myConversations.length === 0 && styles.emptyListContent
+          ]}
+          ListEmptyComponent={renderEmptyState}
+          showsVerticalScrollIndicator={false}
+        />
+      )}
     </View>
   );
 }
@@ -100,29 +158,54 @@ export default function MessagesScreen({ navigation }) {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: colors.background,
   },
   header: {
+    paddingHorizontal: spacing.xl,
     paddingTop: 50,
-    paddingBottom: spacing.md,
-    paddingHorizontal: spacing.lg,
-    backgroundColor: colors.background,
+    paddingBottom: spacing.lg,
+    borderBottomWidth: 1,
   },
   headerTitle: {
-    ...typography.h1,
-    color: colors.text,
+    fontSize: typography.xxl,
+    fontWeight: '700',
+  },
+  searchContainer: {
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.md,
+  },
+  searchBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderRadius: borderRadius.lg,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    gap: spacing.sm,
+  },
+  searchInput: {
+    flex: 1,
+    fontSize: typography.md,
+    paddingVertical: spacing.xs,
+  },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   listContent: {
     paddingHorizontal: spacing.lg,
-    paddingBottom: 100,
-    flexGrow: 1,
+    paddingVertical: spacing.sm,
   },
-  conversationCard: {
+  emptyListContent: {
+    flex: 1,
+  },
+  conversationItem: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingVertical: spacing.md,
-    borderBottomWidth: 1,
-    borderBottomColor: colors.border,
+    padding: spacing.md,
+    borderRadius: borderRadius.lg,
+    marginBottom: spacing.sm,
+    ...shadows.sm,
   },
   avatar: {
     width: 56,
@@ -130,44 +213,42 @@ const styles = StyleSheet.create({
     borderRadius: 28,
     marginRight: spacing.md,
   },
-  conversationInfo: {
+  conversationContent: {
     flex: 1,
   },
   conversationHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 4,
+    marginBottom: spacing.xs,
   },
   userName: {
-    ...typography.bodySemibold,
-    color: colors.text,
+    fontSize: typography.md,
+    fontWeight: '600',
+    flex: 1,
+    marginRight: spacing.sm,
   },
-  timeText: {
-    ...typography.caption,
-    color: colors.textSecondary,
+  timestamp: {
+    fontSize: typography.xs,
   },
   lastMessage: {
-    ...typography.body,
-    color: colors.textSecondary,
+    fontSize: typography.sm,
   },
   emptyContainer: {
     flex: 1,
-    alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: spacing.xxl,
+    alignItems: 'center',
+    paddingHorizontal: spacing.xxxl,
   },
   emptyTitle: {
-    ...typography.h3,
-    color: colors.text,
-    marginTop: spacing.md,
+    fontSize: typography.xl,
+    fontWeight: '700',
+    marginTop: spacing.xl,
+    marginBottom: spacing.sm,
   },
   emptySubtitle: {
-    ...typography.body,
-    color: colors.textSecondary,
+    fontSize: typography.base,
     textAlign: 'center',
-    marginTop: spacing.sm,
-    paddingHorizontal: spacing.lg,
+    lineHeight: 22,
   },
 });
-

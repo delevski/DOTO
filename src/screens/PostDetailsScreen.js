@@ -1,38 +1,38 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef } from 'react';
 import {
   View,
   Text,
   StyleSheet,
   ScrollView,
-  TouchableOpacity,
   Image,
+  TouchableOpacity,
   TextInput,
-  KeyboardAvoidingView,
-  Platform,
   Alert,
-  Dimensions,
-  FlatList,
+  Share,
+  ActivityIndicator,
+  Modal,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { LinearGradient } from 'expo-linear-gradient';
-import { colors, spacing, borderRadius, typography, shadows } from '../styles/theme';
+import { useAuthStore } from '../store/authStore';
+import { useSettingsStore } from '../store/settingsStore';
+import { useTranslation } from '../utils/translations';
 import { db, id } from '../lib/instant';
-import { useAuth } from '../context/AuthContext';
-import { t } from '../utils/translations';
 import { getConversationId, createOrUpdateConversation } from '../utils/messaging';
-
-const { width: SCREEN_WIDTH } = Dimensions.get('window');
+import { colors, spacing, borderRadius, typography, shadows } from '../styles/theme';
 
 export default function PostDetailsScreen({ route, navigation }) {
   const { postId } = route.params;
-  const { user } = useAuth();
+  const user = useAuthStore((state) => state.user);
+  const darkMode = useSettingsStore((state) => state.darkMode);
+  const t = useTranslation();
+
   const [newComment, setNewComment] = useState('');
-  const [currentImageIndex, setCurrentImageIndex] = useState(0);
-  const scrollViewRef = useRef(null);
-  const imageListRef = useRef(null);
+  const [showRatingModal, setShowRatingModal] = useState(false);
+  const [selectedRating, setSelectedRating] = useState(0);
+  const [isSubmittingRating, setIsSubmittingRating] = useState(false);
 
   // Fetch post and comments
-  const { isLoading, error, data } = db.useQuery({
+  const { isLoading, error, data } = db.useQuery({ 
     posts: { $: { where: { id: postId } } },
     comments: { $: { where: { postId: postId } } }
   });
@@ -40,15 +40,41 @@ export default function PostDetailsScreen({ route, navigation }) {
   const post = data?.posts?.[0];
   const comments = data?.comments || [];
 
-  // Sort comments by newest first
-  const sortedComments = [...comments].sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
+  const themeColors = {
+    background: darkMode ? colors.backgroundDark : colors.background,
+    surface: darkMode ? colors.surfaceDark : colors.surface,
+    text: darkMode ? colors.textDark : colors.text,
+    textSecondary: darkMode ? colors.textSecondaryDark : colors.textSecondary,
+    border: darkMode ? colors.borderDark : colors.border,
+  };
 
-  useEffect(() => {
-    if (!isLoading && !post) {
-      Alert.alert('Error', 'Post not found');
-      navigation.goBack();
-    }
-  }, [isLoading, post]);
+  if (isLoading) {
+    return (
+      <View style={[styles.centerContent, { backgroundColor: themeColors.background }]}>
+        <ActivityIndicator size="large" color={colors.primary} />
+      </View>
+    );
+  }
+
+  if (!post) {
+    return (
+      <View style={[styles.centerContent, { backgroundColor: themeColors.background }]}>
+        <Text style={{ color: themeColors.text }}>Post not found</Text>
+      </View>
+    );
+  }
+
+  const isMyPost = post.authorId === user?.id;
+  const claimers = post.claimers || [];
+  const approvedClaimerId = post.approvedClaimerId;
+  const isClaimedByMe = approvedClaimerId === user?.id;
+  const hasClaimed = user && claimers.some(c => c.userId === user.id);
+  const likedBy = post.likedBy || [];
+  const isLiked = user && likedBy.includes(user.id);
+  const likeCount = likedBy.length || post.likes || 0;
+  const completedByClaimer = post.completedByClaimer || false;
+  const completedByAuthor = post.completedByAuthor || false;
+  const isCompleted = post.isCompleted || false;
 
   const formatTime = (timestamp) => {
     if (!timestamp) return '';
@@ -57,27 +83,30 @@ export default function PostDetailsScreen({ route, navigation }) {
     const hours = Math.floor(diff / (1000 * 60 * 60));
     const days = Math.floor(hours / 24);
     
-    if (days > 0) return `${days}d ago`;
-    if (hours > 0) return `${hours}h ago`;
+    if (days > 0) return `${days} day${days > 1 ? 's' : ''} ago`;
+    if (hours > 0) return `${hours} hr${hours > 1 ? 's' : ''} ago`;
     return 'Just now';
   };
 
-  const handleLike = () => {
-    if (!user || !post) return;
+  const handleLike = async () => {
+    if (!user) {
+      Alert.alert('Login Required', t('mustBeLoggedInToLike'));
+      return;
+    }
 
     const currentLikedBy = post.likedBy || [];
-    const isLiked = currentLikedBy.includes(user.id);
-
-    if (isLiked) {
-      db.transact(
-        db.tx.posts[post.id].update({
+    const isCurrentlyLiked = currentLikedBy.includes(user.id);
+    
+    if (isCurrentlyLiked) {
+      await db.transact(
+        db.tx.posts[postId].update({
           likedBy: currentLikedBy.filter(id => id !== user.id),
           likes: Math.max(0, (post.likes || 0) - 1)
         })
       );
     } else {
-      db.transact(
-        db.tx.posts[post.id].update({
+      await db.transact(
+        db.tx.posts[postId].update({
           likedBy: [...currentLikedBy, user.id],
           likes: (post.likes || 0) + 1
         })
@@ -85,701 +114,761 @@ export default function PostDetailsScreen({ route, navigation }) {
     }
   };
 
-  const handleClaim = () => {
-    if (!user || !post) return;
-
-    const claimers = post.claimers || [];
-    const alreadyClaimed = claimers.some(c => c.userId === user.id);
-
-    if (alreadyClaimed) {
-      Alert.alert('Already Claimed', 'You have already submitted a claim for this task.');
+  const handleClaim = async () => {
+    if (!user) {
+      Alert.alert('Login Required', 'You must be logged in to claim a task');
       return;
     }
 
-    if (post.authorId === user.id) {
-      Alert.alert('Cannot Claim', 'You cannot claim your own post.');
+    if (isMyPost) {
+      Alert.alert('Error', 'You cannot claim your own post');
       return;
     }
 
-    const newClaimer = {
-      userId: user.id,
-      userName: user.name,
-      userAvatar: user.avatar,
-      claimedAt: Date.now(),
-    };
+    if (hasClaimed) {
+      Alert.alert('Already Claimed', 'You have already claimed this task');
+      return;
+    }
 
-    db.transact(
-      db.tx.posts[post.id].update({
-        claimers: [...claimers, newClaimer]
-      })
-    );
+    try {
+      const newClaimer = {
+        userId: user.id,
+        userName: user.name,
+        userAvatar: user.avatar || `https://i.pravatar.cc/150?u=${user.id}`,
+        claimedAt: Date.now()
+      };
 
-    Alert.alert('Success', 'Your claim has been submitted! The post owner will review it.');
+      await db.transact(
+        db.tx.posts[postId].update({
+          claimers: [...claimers, newClaimer]
+        })
+      );
+
+      Alert.alert('Success', 'You have claimed this task! Waiting for approval.');
+    } catch (err) {
+      console.error('Claim error:', err);
+      Alert.alert('Error', 'Failed to claim task');
+    }
   };
 
-  const handleApproveClaimer = (claimerUserId) => {
-    if (!user || !post || post.authorId !== user.id) return;
+  const handleApproveClaimer = async (claimerUserId) => {
+    try {
+      const claimer = claimers.find(c => c.userId === claimerUserId);
+      
+      await db.transact(
+        db.tx.posts[postId].update({
+          approvedClaimerId: claimerUserId,
+          claimedBy: claimerUserId,
+          claimedByName: claimer?.userName || 'Someone'
+        })
+      );
 
-    const claimer = post.claimers?.find(c => c.userId === claimerUserId);
-    if (!claimer) return;
-
-    Alert.alert(
-      'Approve Claimer',
-      `Are you sure you want to approve ${claimer.userName} for this task?`,
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Approve',
-          onPress: () => {
-            db.transact(
-              db.tx.posts[post.id].update({
-                approvedClaimerId: claimerUserId,
-                approvedClaimerName: claimer.userName,
-                approvedClaimerAvatar: claimer.userAvatar,
-                approvedAt: Date.now()
-              })
-            );
-          }
-        }
-      ]
-    );
+      Alert.alert('Success', 'Claimer approved!');
+    } catch (err) {
+      console.error('Approve error:', err);
+      Alert.alert('Error', 'Failed to approve claimer');
+    }
   };
 
-  const handleSubmitComment = () => {
-    if (!user || !newComment.trim()) return;
-
-    const commentId = id();
-    const commentData = {
-      id: commentId,
-      postId: postId,
-      author: user.name,
-      authorId: user.id,
-      avatar: user.avatar,
-      text: newComment.trim(),
-      timestamp: Date.now(),
-    };
-
-    db.transact(
-      db.tx.comments[commentId].update(commentData),
-      db.tx.posts[postId].update({
-        comments: (post.comments || 0) + 1
-      })
-    );
-
-    setNewComment('');
+  const handleMarkComplete = async () => {
+    try {
+      await db.transact(
+        db.tx.posts[postId].update({
+          completedByClaimer: true
+        })
+      );
+      Alert.alert('Success', 'Marked as complete! Waiting for poster confirmation.');
+    } catch (err) {
+      console.error('Complete error:', err);
+    }
   };
 
-  const handleMessageAuthor = () => {
-    if (!user || !post || post.authorId === user.id) return;
+  const handleConfirmComplete = () => {
+    setShowRatingModal(true);
+  };
 
+  const handleSubmitRating = async () => {
+    if (selectedRating === 0) {
+      Alert.alert('Error', 'Please select a rating');
+      return;
+    }
+
+    setIsSubmittingRating(true);
+
+    try {
+      await db.transact(
+        db.tx.posts[postId].update({
+          completedByAuthor: true,
+          isCompleted: true,
+          completedAt: Date.now(),
+          helperRating: selectedRating
+        })
+      );
+
+      setShowRatingModal(false);
+      Alert.alert('Success', 'Task completed and helper rated!');
+    } catch (err) {
+      console.error('Rating error:', err);
+    } finally {
+      setIsSubmittingRating(false);
+    }
+  };
+
+  const handleAddComment = async () => {
+    if (!user) {
+      Alert.alert('Login Required', t('mustBeLoggedInToComment'));
+      return;
+    }
+
+    if (!newComment.trim()) return;
+
+    try {
+      const commentId = id();
+      await db.transact(
+        db.tx.comments[commentId].update({
+          id: commentId,
+          postId: postId,
+          authorId: user.id,
+          author: user.name,
+          avatar: user.avatar,
+          text: newComment.trim(),
+          timestamp: Date.now(),
+        }),
+        db.tx.posts[postId].update({
+          comments: (post.comments || 0) + 1
+        })
+      );
+
+      setNewComment('');
+    } catch (err) {
+      console.error('Comment error:', err);
+    }
+  };
+
+  const handleShare = async () => {
+    try {
+      await Share.share({
+        message: `Check out this task on DOTO: ${post.title || 'Help Needed'}\n\n${post.description}`,
+      });
+    } catch (error) {
+      console.error('Share error:', error);
+    }
+  };
+
+  const handleMessage = async () => {
+    if (!user) return;
+    
     const conversationId = getConversationId(user.id, post.authorId);
     const participant1Id = user.id < post.authorId ? user.id : post.authorId;
     const participant2Id = user.id < post.authorId ? post.authorId : user.id;
-
-    createOrUpdateConversation(
+    
+    await createOrUpdateConversation(
       conversationId,
       participant1Id,
       participant2Id,
       { name: user.name, avatar: user.avatar },
       { name: post.author, avatar: post.avatar }
     );
-
-    navigation.navigate('Chat', { conversationId });
+    
+    navigation.navigate('Chat', { 
+      conversationId,
+      userName: post.author,
+      userAvatar: post.avatar,
+    });
   };
 
-  if (isLoading || !post) {
-    return (
-      <View style={styles.loadingContainer}>
-        <Text style={styles.loadingText}>{t('loading')}</Text>
-      </View>
-    );
-  }
-
-  const likedBy = post.likedBy || [];
-  const isLiked = user && likedBy.includes(user.id);
-  const likeCount = likedBy.length || post.likes || 0;
-  const isMyPost = post.authorId === user?.id;
-  const claimers = post.claimers || [];
-  const hasClaimed = claimers.some(c => c.userId === user?.id);
-  const isApproved = !!post.approvedClaimerId;
-
   return (
-    <KeyboardAvoidingView
-      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-      style={styles.container}
-    >
-      {/* Header */}
-      <View style={styles.header}>
-        <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backButton}>
-          <Ionicons name="arrow-back" size={24} color={colors.text} />
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>Post Details</Text>
-        <TouchableOpacity style={styles.moreButton}>
-          <Ionicons name="ellipsis-horizontal" size={24} color={colors.text} />
-        </TouchableOpacity>
-      </View>
-
+    <View style={[styles.container, { backgroundColor: themeColors.background }]}>
       <ScrollView 
-        ref={scrollViewRef}
         style={styles.scrollView}
+        contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
       >
-        {/* Author Card */}
-        <View style={styles.authorCard}>
-          <Image source={{ uri: post.avatar }} style={styles.authorAvatar} />
-          <View style={styles.authorInfo}>
-            <Text style={styles.authorName}>{post.author}</Text>
-            <Text style={styles.postTime}>{formatTime(post.timestamp)}</Text>
-          </View>
-          {!isMyPost && (
-            <TouchableOpacity style={styles.messageButton} onPress={handleMessageAuthor}>
-              <Ionicons name="chatbubble-outline" size={20} color={colors.primary} />
-            </TouchableOpacity>
-          )}
-        </View>
-
         {/* Post Content */}
-        <View style={styles.postContent}>
-          {post.title && <Text style={styles.postTitle}>{post.title}</Text>}
-          <Text style={styles.postDescription}>{post.description}</Text>
-          
-          {post.tag && (
-            <View style={styles.tagContainer}>
-              <View style={styles.tagBadge}>
-                <Text style={styles.tagText}>{post.tag}</Text>
-              </View>
-            </View>
-          )}
-        </View>
-
-        {/* Images Carousel */}
-        {post.photos && post.photos.length > 0 && (
-          <View style={styles.imageCarousel}>
-            <FlatList
-              ref={imageListRef}
-              data={post.photos}
-              horizontal
-              pagingEnabled
-              showsHorizontalScrollIndicator={false}
-              onMomentumScrollEnd={(e) => {
-                const index = Math.round(e.nativeEvent.contentOffset.x / (SCREEN_WIDTH - 48));
-                setCurrentImageIndex(index);
-              }}
-              renderItem={({ item }) => (
-                <Image 
-                  source={{ uri: item }} 
-                  style={styles.carouselImage}
-                  resizeMode="cover"
-                />
-              )}
-              keyExtractor={(item, index) => index.toString()}
+        <View style={[styles.postCard, { backgroundColor: themeColors.surface }]}>
+          {/* Author Header */}
+          <View style={styles.authorRow}>
+            <Image 
+              source={{ uri: post.avatar || `https://i.pravatar.cc/150?u=${post.authorId}` }}
+              style={styles.authorAvatar}
             />
-            {post.photos.length > 1 && (
-              <View style={styles.imageIndicators}>
-                {post.photos.map((_, index) => (
-                  <View
-                    key={index}
-                    style={[
-                      styles.indicator,
-                      currentImageIndex === index && styles.indicatorActive
-                    ]}
-                  />
-                ))}
-              </View>
+            <View style={styles.authorInfo}>
+              <Text style={[styles.authorName, { color: themeColors.text }]}>
+                {isMyPost ? (user?.name || post.author) : post.author}
+              </Text>
+              <Text style={[styles.postTime, { color: themeColors.textSecondary }]}>
+                {formatTime(post.timestamp || post.createdAt)}
+              </Text>
+            </View>
+            {!isMyPost && user && (
+              <TouchableOpacity style={styles.messageButton} onPress={handleMessage}>
+                <Ionicons name="chatbubble-outline" size={20} color={colors.primary} />
+              </TouchableOpacity>
             )}
           </View>
-        )}
 
-        {/* Location */}
-        {post.location && (
-          <View style={styles.locationCard}>
-            <Ionicons name="location" size={20} color={colors.primary} />
-            <Text style={styles.locationText}>{post.location}</Text>
+          {/* Title & Description */}
+          <Text style={[styles.postTitle, { color: themeColors.text }]}>
+            {post.title || t('helpNeeded')}
+          </Text>
+          <Text style={[styles.postDescription, { color: themeColors.textSecondary }]}>
+            {post.description}
+          </Text>
+
+          {/* Photos */}
+          {post.photos && post.photos.length > 0 && (
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.photosScroll}>
+              {post.photos.map((photo, index) => (
+                <Image 
+                  key={index}
+                  source={{ uri: typeof photo === 'string' ? photo : photo.preview }}
+                  style={styles.postPhoto}
+                />
+              ))}
+            </ScrollView>
+          )}
+
+          {/* Location */}
+          {post.location && (
+            <View style={styles.locationRow}>
+              <Ionicons name="location-outline" size={18} color={colors.primary} />
+              <Text style={[styles.locationText, { color: themeColors.textSecondary }]}>
+                {post.location}
+              </Text>
+            </View>
+          )}
+
+          {/* Actions */}
+          <View style={[styles.actionsRow, { borderTopColor: themeColors.border }]}>
+            <TouchableOpacity style={styles.actionButton} onPress={handleLike}>
+              <Ionicons 
+                name={isLiked ? 'heart' : 'heart-outline'} 
+                size={24} 
+                color={isLiked ? colors.primary : themeColors.textSecondary} 
+              />
+              <Text style={[styles.actionText, { color: isLiked ? colors.primary : themeColors.textSecondary }]}>
+                {likeCount}
+              </Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity style={styles.actionButton}>
+              <Ionicons name="chatbubble-outline" size={24} color={themeColors.textSecondary} />
+              <Text style={[styles.actionText, { color: themeColors.textSecondary }]}>
+                {comments.length}
+              </Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity style={styles.actionButton} onPress={handleShare}>
+              <Ionicons name="share-outline" size={24} color={themeColors.textSecondary} />
+            </TouchableOpacity>
           </View>
-        )}
-
-        {/* Actions */}
-        <View style={styles.actionsRow}>
-          <TouchableOpacity style={styles.actionButton} onPress={handleLike}>
-            <Ionicons 
-              name={isLiked ? "heart" : "heart-outline"} 
-              size={24} 
-              color={isLiked ? colors.primary : colors.textSecondary} 
-            />
-            <Text style={[styles.actionCount, isLiked && styles.actionCountActive]}>
-              {likeCount}
-            </Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity style={styles.actionButton}>
-            <Ionicons name="chatbubble-outline" size={24} color={colors.textSecondary} />
-            <Text style={styles.actionCount}>{comments.length}</Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity style={styles.actionButton}>
-            <Ionicons name="share-social-outline" size={24} color={colors.textSecondary} />
-          </TouchableOpacity>
         </View>
 
         {/* Claim Section */}
-        {!isMyPost && !isApproved && (
-          <View style={styles.claimSection}>
-            <TouchableOpacity
-              style={[styles.claimButton, hasClaimed && styles.claimButtonDisabled]}
-              onPress={handleClaim}
-              disabled={hasClaimed}
-            >
-              <LinearGradient
-                colors={hasClaimed ? [colors.border, colors.border] : [colors.gradientStart, colors.gradientEnd]}
-                start={{ x: 0, y: 0 }}
-                end={{ x: 1, y: 0 }}
-                style={styles.claimGradient}
-              >
-                <Ionicons 
-                  name={hasClaimed ? "checkmark-circle" : "hand-left"} 
-                  size={20} 
-                  color={hasClaimed ? colors.textSecondary : colors.white} 
-                />
-                <Text style={[styles.claimButtonText, hasClaimed && styles.claimButtonTextDisabled]}>
-                  {hasClaimed ? 'Claim Submitted' : t('claimTask')}
-                </Text>
-              </LinearGradient>
-            </TouchableOpacity>
-          </View>
-        )}
-
-        {/* Approved Claimer Badge */}
-        {isApproved && (
-          <View style={styles.approvedSection}>
-            <Ionicons name="checkmark-circle" size={24} color={colors.success} />
-            <View style={styles.approvedInfo}>
-              <Text style={styles.approvedLabel}>Approved Claimer</Text>
-              <Text style={styles.approvedName}>{post.approvedClaimerName}</Text>
-            </View>
-            <Image 
-              source={{ uri: post.approvedClaimerAvatar }} 
-              style={styles.approvedAvatar} 
-            />
-          </View>
-        )}
-
-        {/* Claimers List (for post owner) */}
-        {isMyPost && claimers.length > 0 && !isApproved && (
-          <View style={styles.claimersSection}>
-            <Text style={styles.sectionTitle}>
-              Claimers ({claimers.length})
-            </Text>
-            {claimers.map((claimer) => (
-              <View key={claimer.userId} style={styles.claimerCard}>
-                <Image 
-                  source={{ uri: claimer.userAvatar || 'https://i.pravatar.cc/150' }} 
-                  style={styles.claimerAvatar} 
-                />
-                <View style={styles.claimerInfo}>
-                  <Text style={styles.claimerName}>{claimer.userName}</Text>
-                  <Text style={styles.claimerTime}>{formatTime(claimer.claimedAt)}</Text>
+        <View style={[styles.claimCard, { 
+          backgroundColor: isCompleted ? colors.success : approvedClaimerId ? '#4B5563' : colors.primary 
+        }]}>
+          {isCompleted ? (
+            <>
+              <Ionicons name="trophy" size={32} color="#fff" />
+              <Text style={styles.claimTitle}>{t('taskCompleted')}</Text>
+              {post.helperRating && (
+                <View style={styles.ratingDisplay}>
+                  {[1,2,3,4,5].map(star => (
+                    <Ionicons 
+                      key={star}
+                      name={star <= post.helperRating ? 'star' : 'star-outline'} 
+                      size={24} 
+                      color="#FBBF24" 
+                    />
+                  ))}
                 </View>
-                <TouchableOpacity
-                  style={styles.approveButton}
-                  onPress={() => handleApproveClaimer(claimer.userId)}
-                >
-                  <Text style={styles.approveButtonText}>Approve</Text>
+              )}
+            </>
+          ) : approvedClaimerId ? (
+            <>
+              <Ionicons name="checkmark-circle" size={32} color="#fff" />
+              <Text style={styles.claimTitle}>
+                {isClaimedByMe ? t('claimedByYou') : t('approved')}
+              </Text>
+              
+              {/* Completion Actions */}
+              {isClaimedByMe && !completedByClaimer && (
+                <TouchableOpacity style={styles.completeButton} onPress={handleMarkComplete}>
+                  <Text style={styles.completeButtonText}>{t('markAsComplete')}</Text>
                 </TouchableOpacity>
-              </View>
-            ))}
-          </View>
-        )}
-
-        {/* Comments Section */}
-        <View style={styles.commentsSection}>
-          <Text style={styles.sectionTitle}>
-            Comments ({comments.length})
-          </Text>
-          
-          {sortedComments.map((comment) => (
-            <View key={comment.id} style={styles.commentCard}>
-              <Image 
-                source={{ uri: comment.avatar || 'https://i.pravatar.cc/150' }} 
-                style={styles.commentAvatar} 
-              />
-              <View style={styles.commentContent}>
-                <View style={styles.commentHeader}>
-                  <Text style={styles.commentAuthor}>{comment.author}</Text>
-                  <Text style={styles.commentTime}>{formatTime(comment.timestamp)}</Text>
+              )}
+              
+              {isClaimedByMe && completedByClaimer && !completedByAuthor && (
+                <Text style={styles.waitingText}>Waiting for poster to confirm...</Text>
+              )}
+              
+              {isMyPost && completedByClaimer && !completedByAuthor && (
+                <TouchableOpacity style={styles.confirmButton} onPress={handleConfirmComplete}>
+                  <Text style={styles.confirmButtonText}>{t('confirmAndRate')}</Text>
+                </TouchableOpacity>
+              )}
+            </>
+          ) : isMyPost ? (
+            <>
+              <Text style={styles.claimTitle}>{t('chooseAClaimer')}</Text>
+              {claimers.length > 0 ? (
+                <View style={styles.claimersList}>
+                  {claimers.map((claimer) => (
+                    <View key={claimer.userId} style={styles.claimerItem}>
+                      <Image 
+                        source={{ uri: claimer.userAvatar }}
+                        style={styles.claimerAvatar}
+                      />
+                      <Text style={styles.claimerName}>{claimer.userName}</Text>
+                      <TouchableOpacity 
+                        style={styles.approveButton}
+                        onPress={() => handleApproveClaimer(claimer.userId)}
+                      >
+                        <Text style={styles.approveButtonText}>{t('approve')}</Text>
+                      </TouchableOpacity>
+                    </View>
+                  ))}
                 </View>
-                <Text style={styles.commentText}>{comment.text}</Text>
-              </View>
-            </View>
-          ))}
-
-          {comments.length === 0 && (
-            <Text style={styles.noComments}>No comments yet. Be the first!</Text>
+              ) : (
+                <Text style={styles.noClaimersText}>{t('noClaimers')}</Text>
+              )}
+            </>
+          ) : (
+            <>
+              <Text style={styles.claimTitle}>{t('claimNow')}</Text>
+              {hasClaimed ? (
+                <Text style={styles.waitingText}>{t('waitingForApproval')}</Text>
+              ) : (
+                <TouchableOpacity style={styles.claimButton} onPress={handleClaim}>
+                  <Text style={styles.claimButtonText}>{t('claimTask')}</Text>
+                </TouchableOpacity>
+              )}
+            </>
           )}
         </View>
 
-        <View style={{ height: 100 }} />
+        {/* Comments Section */}
+        <View style={[styles.commentsSection, { backgroundColor: themeColors.surface }]}>
+          <Text style={[styles.commentsTitle, { color: themeColors.text }]}>
+            Comments ({comments.length})
+          </Text>
+
+          {/* Add Comment */}
+          {user && (
+            <View style={styles.addCommentRow}>
+              <Image source={{ uri: user.avatar }} style={styles.commentAvatar} />
+              <TextInput
+                style={[styles.commentInput, { borderColor: themeColors.border, color: themeColors.text }]}
+                placeholder={t('writeAComment')}
+                placeholderTextColor={themeColors.textSecondary}
+                value={newComment}
+                onChangeText={setNewComment}
+              />
+              <TouchableOpacity 
+                style={[styles.sendButton, !newComment.trim() && styles.sendButtonDisabled]}
+                onPress={handleAddComment}
+                disabled={!newComment.trim()}
+              >
+                <Ionicons name="send" size={20} color="#fff" />
+              </TouchableOpacity>
+            </View>
+          )}
+
+          {/* Comments List */}
+          {comments.length === 0 ? (
+            <Text style={[styles.noCommentsText, { color: themeColors.textSecondary }]}>
+              No comments yet. Be the first to comment!
+            </Text>
+          ) : (
+            comments
+              .sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0))
+              .map((comment) => (
+                <View key={comment.id} style={styles.commentItem}>
+                  <Image 
+                    source={{ uri: comment.avatar || `https://i.pravatar.cc/150?u=${comment.authorId}` }}
+                    style={styles.commentAvatar}
+                  />
+                  <View style={styles.commentContent}>
+                    <View style={styles.commentHeader}>
+                      <Text style={[styles.commentAuthor, { color: themeColors.text }]}>
+                        {comment.author}
+                      </Text>
+                      <Text style={[styles.commentTime, { color: themeColors.textSecondary }]}>
+                        {formatTime(comment.timestamp)}
+                      </Text>
+                    </View>
+                    <Text style={[styles.commentText, { color: themeColors.textSecondary }]}>
+                      {comment.text}
+                    </Text>
+                  </View>
+                </View>
+              ))
+          )}
+        </View>
       </ScrollView>
 
-      {/* Comment Input */}
-      <View style={styles.commentInputContainer}>
-        <Image 
-          source={{ uri: user?.avatar || 'https://i.pravatar.cc/150' }} 
-          style={styles.inputAvatar} 
-        />
-        <TextInput
-          style={styles.commentInput}
-          placeholder="Add a comment..."
-          placeholderTextColor={colors.textMuted}
-          value={newComment}
-          onChangeText={setNewComment}
-          multiline
-        />
-        <TouchableOpacity 
-          style={[styles.sendButton, !newComment.trim() && styles.sendButtonDisabled]}
-          onPress={handleSubmitComment}
-          disabled={!newComment.trim()}
-        >
-          <Ionicons 
-            name="send" 
-            size={20} 
-            color={newComment.trim() ? colors.primary : colors.textMuted} 
-          />
-        </TouchableOpacity>
-      </View>
-    </KeyboardAvoidingView>
+      {/* Rating Modal */}
+      <Modal
+        visible={showRatingModal}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setShowRatingModal(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={[styles.modalContent, { backgroundColor: themeColors.surface }]}>
+            <Ionicons name="star" size={48} color={colors.star} />
+            <Text style={[styles.modalTitle, { color: themeColors.text }]}>
+              {t('rateTheHelper')}
+            </Text>
+            <Text style={[styles.modalSubtitle, { color: themeColors.textSecondary }]}>
+              {t('howWasYourExperience')}
+            </Text>
+
+            <View style={styles.starsRow}>
+              {[1, 2, 3, 4, 5].map((star) => (
+                <TouchableOpacity key={star} onPress={() => setSelectedRating(star)}>
+                  <Ionicons 
+                    name={star <= selectedRating ? 'star' : 'star-outline'} 
+                    size={40} 
+                    color={star <= selectedRating ? colors.star : themeColors.textSecondary} 
+                  />
+                </TouchableOpacity>
+              ))}
+            </View>
+
+            <View style={styles.modalButtons}>
+              <TouchableOpacity 
+                style={[styles.modalButton, styles.cancelButton, { borderColor: themeColors.border }]}
+                onPress={() => setShowRatingModal(false)}
+              >
+                <Text style={[styles.cancelButtonText, { color: themeColors.text }]}>{t('cancel')}</Text>
+              </TouchableOpacity>
+              <TouchableOpacity 
+                style={[styles.modalButton, styles.submitButton]}
+                onPress={handleSubmitRating}
+                disabled={isSubmittingRating || selectedRating === 0}
+              >
+                {isSubmittingRating ? (
+                  <ActivityIndicator color="#fff" />
+                ) : (
+                  <Text style={styles.submitButtonText}>{t('submitRating')}</Text>
+                )}
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: colors.background,
   },
-  loadingContainer: {
+  centerContent: {
     flex: 1,
-    alignItems: 'center',
     justifyContent: 'center',
-  },
-  loadingText: {
-    ...typography.body,
-    color: colors.textSecondary,
-  },
-  header: {
-    flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingTop: 50,
-    paddingBottom: spacing.md,
-    paddingHorizontal: spacing.md,
-    backgroundColor: colors.background,
-    borderBottomWidth: 1,
-    borderBottomColor: colors.border,
-  },
-  backButton: {
-    padding: spacing.sm,
-  },
-  headerTitle: {
-    ...typography.h3,
-    color: colors.text,
-  },
-  moreButton: {
-    padding: spacing.sm,
   },
   scrollView: {
     flex: 1,
   },
-  authorCard: {
+  scrollContent: {
+    padding: spacing.lg,
+    gap: spacing.lg,
+  },
+  postCard: {
+    borderRadius: borderRadius.xl,
+    padding: spacing.xl,
+    ...shadows.md,
+  },
+  authorRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    padding: spacing.lg,
-    borderBottomWidth: 1,
-    borderBottomColor: colors.border,
+    marginBottom: spacing.lg,
   },
   authorAvatar: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
+    width: 56,
+    height: 56,
+    borderRadius: 28,
     marginRight: spacing.md,
   },
   authorInfo: {
     flex: 1,
   },
   authorName: {
-    ...typography.bodySemibold,
-    color: colors.text,
+    fontSize: typography.lg,
+    fontWeight: '700',
   },
   postTime: {
-    ...typography.caption,
-    color: colors.textSecondary,
+    fontSize: typography.sm,
     marginTop: 2,
   },
   messageButton: {
     padding: spacing.sm,
-    backgroundColor: colors.tagBg,
+    backgroundColor: colors.errorLight,
     borderRadius: borderRadius.full,
-  },
-  postContent: {
-    padding: spacing.lg,
   },
   postTitle: {
-    ...typography.h2,
-    color: colors.text,
-    marginBottom: spacing.sm,
+    fontSize: typography.xl,
+    fontWeight: '700',
+    marginBottom: spacing.md,
   },
   postDescription: {
-    ...typography.body,
-    color: colors.textSecondary,
+    fontSize: typography.md,
     lineHeight: 24,
+    marginBottom: spacing.lg,
   },
-  tagContainer: {
-    flexDirection: 'row',
-    marginTop: spacing.md,
+  photosScroll: {
+    marginBottom: spacing.lg,
+    marginHorizontal: -spacing.xl,
+    paddingHorizontal: spacing.xl,
   },
-  tagBadge: {
-    backgroundColor: colors.tagBg,
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.xs,
-    borderRadius: borderRadius.full,
-  },
-  tagText: {
-    ...typography.smallMedium,
-    color: colors.tagText,
-  },
-  imageCarousel: {
-    marginBottom: spacing.md,
-  },
-  carouselImage: {
-    width: SCREEN_WIDTH - 48,
-    height: 250,
-    marginHorizontal: spacing.lg,
+  postPhoto: {
+    width: 200,
+    height: 150,
     borderRadius: borderRadius.lg,
+    marginRight: spacing.sm,
   },
-  imageIndicators: {
-    flexDirection: 'row',
-    justifyContent: 'center',
-    marginTop: spacing.sm,
-    gap: 6,
-  },
-  indicator: {
-    width: 6,
-    height: 6,
-    borderRadius: 3,
-    backgroundColor: colors.border,
-  },
-  indicatorActive: {
-    backgroundColor: colors.primary,
-    width: 18,
-  },
-  locationCard: {
+  locationRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginHorizontal: spacing.lg,
-    padding: spacing.md,
-    backgroundColor: colors.card,
-    borderRadius: borderRadius.md,
-    borderWidth: 1,
-    borderColor: colors.border,
-    marginBottom: spacing.md,
+    gap: spacing.sm,
+    backgroundColor: '#FEF2F2',
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    borderRadius: borderRadius.lg,
+    alignSelf: 'flex-start',
+    marginBottom: spacing.lg,
   },
   locationText: {
-    ...typography.body,
-    color: colors.text,
-    marginLeft: spacing.sm,
-    flex: 1,
+    fontSize: typography.sm,
   },
   actionsRow: {
     flexDirection: 'row',
-    paddingHorizontal: spacing.lg,
-    paddingVertical: spacing.md,
-    gap: spacing.lg,
-    borderBottomWidth: 1,
-    borderBottomColor: colors.border,
+    alignItems: 'center',
+    paddingTop: spacing.lg,
+    borderTopWidth: 1,
+    gap: spacing.xl,
   },
   actionButton: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing.xs,
   },
-  actionCount: {
-    ...typography.bodyMedium,
-    color: colors.textSecondary,
+  actionText: {
+    fontSize: typography.md,
+    fontWeight: '500',
   },
-  actionCountActive: {
-    color: colors.primary,
-  },
-  claimSection: {
-    padding: spacing.lg,
-  },
-  claimButton: {
-    borderRadius: borderRadius.md,
-    overflow: 'hidden',
-    ...shadows.button,
-  },
-  claimButtonDisabled: {
-    ...shadows.sm,
-  },
-  claimGradient: {
-    flexDirection: 'row',
+  claimCard: {
+    borderRadius: borderRadius.xl,
+    padding: spacing.xl,
     alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: spacing.md,
-    gap: spacing.sm,
+    ...shadows.lg,
   },
-  claimButtonText: {
-    ...typography.button,
-    color: colors.white,
-  },
-  claimButtonTextDisabled: {
-    color: colors.textSecondary,
-  },
-  approvedSection: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginHorizontal: spacing.lg,
-    padding: spacing.md,
-    backgroundColor: '#ECFDF5',
-    borderRadius: borderRadius.md,
+  claimTitle: {
+    color: '#fff',
+    fontSize: typography.xl,
+    fontWeight: '700',
+    marginTop: spacing.md,
     marginBottom: spacing.md,
   },
-  approvedInfo: {
-    flex: 1,
-    marginLeft: spacing.sm,
+  claimButton: {
+    backgroundColor: '#fff',
+    paddingHorizontal: spacing.xxxl,
+    paddingVertical: spacing.md,
+    borderRadius: borderRadius.lg,
   },
-  approvedLabel: {
-    ...typography.caption,
-    color: colors.success,
+  claimButtonText: {
+    color: colors.primary,
+    fontSize: typography.md,
+    fontWeight: '700',
   },
-  approvedName: {
-    ...typography.bodySemibold,
-    color: colors.text,
+  waitingText: {
+    color: 'rgba(255,255,255,0.8)',
+    fontSize: typography.sm,
   },
-  approvedAvatar: {
+  claimersList: {
+    width: '100%',
+    gap: spacing.sm,
+  },
+  claimerItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(255,255,255,0.1)',
+    padding: spacing.md,
+    borderRadius: borderRadius.lg,
+  },
+  claimerAvatar: {
     width: 40,
     height: 40,
     borderRadius: 20,
-  },
-  claimersSection: {
-    paddingHorizontal: spacing.lg,
-    paddingVertical: spacing.md,
-    borderTopWidth: 1,
-    borderTopColor: colors.border,
-  },
-  sectionTitle: {
-    ...typography.h3,
-    color: colors.text,
-    marginBottom: spacing.md,
-  },
-  claimerCard: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: spacing.sm,
-    borderBottomWidth: 1,
-    borderBottomColor: colors.border,
-  },
-  claimerAvatar: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
     marginRight: spacing.md,
   },
-  claimerInfo: {
-    flex: 1,
-  },
   claimerName: {
-    ...typography.bodyMedium,
-    color: colors.text,
-  },
-  claimerTime: {
-    ...typography.caption,
-    color: colors.textSecondary,
+    flex: 1,
+    color: '#fff',
+    fontWeight: '500',
   },
   approveButton: {
-    backgroundColor: colors.success,
-    paddingHorizontal: spacing.md,
+    backgroundColor: '#fff',
+    paddingHorizontal: spacing.lg,
     paddingVertical: spacing.sm,
-    borderRadius: borderRadius.sm,
+    borderRadius: borderRadius.md,
   },
   approveButtonText: {
-    ...typography.smallMedium,
-    color: colors.white,
+    color: colors.primary,
+    fontWeight: '600',
+    fontSize: typography.sm,
+  },
+  noClaimersText: {
+    color: 'rgba(255,255,255,0.7)',
+    fontSize: typography.sm,
+  },
+  completeButton: {
+    backgroundColor: '#fff',
+    paddingHorizontal: spacing.xl,
+    paddingVertical: spacing.md,
+    borderRadius: borderRadius.lg,
+    marginTop: spacing.md,
+  },
+  completeButtonText: {
+    color: '#4B5563',
+    fontWeight: '600',
+  },
+  confirmButton: {
+    backgroundColor: colors.success,
+    paddingHorizontal: spacing.xl,
+    paddingVertical: spacing.md,
+    borderRadius: borderRadius.lg,
+    marginTop: spacing.md,
+  },
+  confirmButtonText: {
+    color: '#fff',
+    fontWeight: '600',
+  },
+  ratingDisplay: {
+    flexDirection: 'row',
+    marginTop: spacing.md,
   },
   commentsSection: {
-    paddingHorizontal: spacing.lg,
-    paddingVertical: spacing.md,
-    borderTopWidth: 1,
-    borderTopColor: colors.border,
+    borderRadius: borderRadius.xl,
+    padding: spacing.xl,
+    ...shadows.sm,
   },
-  commentCard: {
+  commentsTitle: {
+    fontSize: typography.lg,
+    fontWeight: '700',
+    marginBottom: spacing.lg,
+  },
+  addCommentRow: {
     flexDirection: 'row',
-    marginBottom: spacing.md,
+    alignItems: 'center',
+    gap: spacing.sm,
+    marginBottom: spacing.lg,
   },
   commentAvatar: {
     width: 36,
     height: 36,
     borderRadius: 18,
-    marginRight: spacing.sm,
-  },
-  commentContent: {
-    flex: 1,
-    backgroundColor: colors.inputBg,
-    borderRadius: borderRadius.md,
-    padding: spacing.sm,
-  },
-  commentHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginBottom: 4,
-  },
-  commentAuthor: {
-    ...typography.smallMedium,
-    color: colors.text,
-  },
-  commentTime: {
-    ...typography.caption,
-    color: colors.textSecondary,
-  },
-  commentText: {
-    ...typography.body,
-    color: colors.text,
-  },
-  noComments: {
-    ...typography.body,
-    color: colors.textSecondary,
-    textAlign: 'center',
-    paddingVertical: spacing.lg,
-  },
-  commentInputContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm,
-    backgroundColor: colors.card,
-    borderTopWidth: 1,
-    borderTopColor: colors.border,
-    paddingBottom: Platform.OS === 'ios' ? 34 : spacing.sm,
-  },
-  inputAvatar: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    marginRight: spacing.sm,
   },
   commentInput: {
     flex: 1,
-    backgroundColor: colors.inputBg,
-    borderRadius: borderRadius.full,
+    borderWidth: 1,
+    borderRadius: borderRadius.lg,
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.sm,
-    maxHeight: 100,
-    ...typography.body,
-    color: colors.text,
+    fontSize: typography.base,
   },
   sendButton: {
+    backgroundColor: colors.primary,
     padding: spacing.sm,
-    marginLeft: spacing.xs,
+    borderRadius: borderRadius.lg,
   },
   sendButtonDisabled: {
     opacity: 0.5,
   },
+  noCommentsText: {
+    textAlign: 'center',
+    paddingVertical: spacing.xl,
+  },
+  commentItem: {
+    flexDirection: 'row',
+    gap: spacing.md,
+    marginBottom: spacing.lg,
+  },
+  commentContent: {
+    flex: 1,
+  },
+  commentHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    marginBottom: spacing.xs,
+  },
+  commentAuthor: {
+    fontWeight: '600',
+    fontSize: typography.sm,
+  },
+  commentTime: {
+    fontSize: typography.xs,
+  },
+  commentText: {
+    fontSize: typography.base,
+    lineHeight: 20,
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: spacing.xl,
+  },
+  modalContent: {
+    width: '100%',
+    borderRadius: borderRadius.xxl,
+    padding: spacing.xxl,
+    alignItems: 'center',
+  },
+  modalTitle: {
+    fontSize: typography.xl,
+    fontWeight: '700',
+    marginTop: spacing.lg,
+  },
+  modalSubtitle: {
+    fontSize: typography.base,
+    marginTop: spacing.sm,
+    marginBottom: spacing.xl,
+  },
+  starsRow: {
+    flexDirection: 'row',
+    gap: spacing.sm,
+    marginBottom: spacing.xl,
+  },
+  modalButtons: {
+    flexDirection: 'row',
+    gap: spacing.md,
+    width: '100%',
+  },
+  modalButton: {
+    flex: 1,
+    paddingVertical: spacing.md,
+    borderRadius: borderRadius.lg,
+    alignItems: 'center',
+  },
+  cancelButton: {
+    borderWidth: 1,
+  },
+  cancelButtonText: {
+    fontWeight: '600',
+  },
+  submitButton: {
+    backgroundColor: colors.success,
+  },
+  submitButtonText: {
+    color: '#fff',
+    fontWeight: '600',
+  },
 });
-

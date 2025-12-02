@@ -4,39 +4,61 @@ import {
   Text,
   StyleSheet,
   FlatList,
+  TextInput,
   TouchableOpacity,
   Image,
-  TextInput,
   KeyboardAvoidingView,
   Platform,
+  ActivityIndicator,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { colors, spacing, borderRadius, typography } from '../styles/theme';
-import { db } from '../lib/instant';
-import { useAuth } from '../context/AuthContext';
+import * as ImagePicker from 'expo-image-picker';
+import { useAuthStore } from '../store/authStore';
+import { useSettingsStore } from '../store/settingsStore';
+import { useTranslation } from '../utils/translations';
+import { db, id } from '../lib/instant';
 import { sendMessage, formatMessageTime } from '../utils/messaging';
+import { colors, spacing, borderRadius, typography } from '../styles/theme';
 
 export default function ChatScreen({ route, navigation }) {
-  const { conversationId } = route.params;
-  const { user } = useAuth();
-  const [newMessage, setNewMessage] = useState('');
+  const { conversationId, userName, userAvatar, userId } = route.params;
+  const user = useAuthStore((state) => state.user);
+  const darkMode = useSettingsStore((state) => state.darkMode);
+  const t = useTranslation();
+
+  const [messageText, setMessageText] = useState('');
+  const [isSending, setIsSending] = useState(false);
   const flatListRef = useRef(null);
 
-  // Fetch conversation and messages
-  const { data } = db.useQuery({
-    conversations: { $: { where: { id: conversationId } } },
+  // Fetch messages for this conversation
+  const { isLoading, data } = db.useQuery({ 
     messages: { $: { where: { conversationId: conversationId } } }
   });
 
-  const conversation = data?.conversations?.[0];
-  const messages = (data?.messages || []).sort((a, b) => a.timestamp - b.timestamp);
+  const messages = (data?.messages || []).sort((a, b) => (a.timestamp || 0) - (b.timestamp || 0));
 
-  // Get other participant info
-  const otherUser = conversation ? (
-    conversation.participant1Id === user?.id
-      ? { name: conversation.participant2Name, avatar: conversation.participant2Avatar }
-      : { name: conversation.participant1Name, avatar: conversation.participant1Avatar }
-  ) : null;
+  const themeColors = {
+    background: darkMode ? colors.backgroundDark : colors.background,
+    surface: darkMode ? colors.surfaceDark : colors.surface,
+    text: darkMode ? colors.textDark : colors.text,
+    textSecondary: darkMode ? colors.textSecondaryDark : colors.textSecondary,
+    border: darkMode ? colors.borderDark : colors.border,
+  };
+
+  // Set header title
+  useEffect(() => {
+    navigation.setOptions({
+      headerTitle: () => (
+        <View style={styles.headerTitle}>
+          <Image 
+            source={{ uri: userAvatar || `https://i.pravatar.cc/150?u=${userId}` }}
+            style={styles.headerAvatar}
+          />
+          <Text style={[styles.headerName, { color: themeColors.text }]}>{userName}</Text>
+        </View>
+      ),
+    });
+  }, [userName, userAvatar, darkMode]);
 
   // Scroll to bottom when new messages arrive
   useEffect(() => {
@@ -47,115 +69,191 @@ export default function ChatScreen({ route, navigation }) {
     }
   }, [messages.length]);
 
-  const handleSend = () => {
-    if (!newMessage.trim() || !user) return;
+  const handleSend = async () => {
+    if (!messageText.trim() || !user) return;
 
-    sendMessage(
-      conversationId,
-      user.id,
-      { name: user.name, avatar: user.avatar },
-      newMessage.trim()
-    );
+    setIsSending(true);
+    const text = messageText.trim();
+    setMessageText('');
 
-    setNewMessage('');
+    try {
+      await sendMessage(
+        conversationId,
+        user.id,
+        { name: user.name, avatar: user.avatar },
+        text
+      );
+    } catch (error) {
+      console.error('Send message error:', error);
+      setMessageText(text); // Restore message on error
+    } finally {
+      setIsSending(false);
+    }
   };
 
-  const renderMessage = ({ item: message, index }) => {
-    const isMyMessage = message.senderId === user?.id;
-    const showAvatar = index === 0 || messages[index - 1]?.senderId !== message.senderId;
+  const handlePickImage = async () => {
+    const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    
+    if (status !== 'granted') {
+      return;
+    }
+
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      quality: 0.7,
+      base64: true,
+    });
+
+    if (!result.canceled && result.assets[0]) {
+      setIsSending(true);
+      try {
+        const imageUri = result.assets[0].base64 
+          ? `data:image/jpeg;base64,${result.assets[0].base64}` 
+          : result.assets[0].uri;
+        
+        await sendMessage(
+          conversationId,
+          user.id,
+          { name: user.name, avatar: user.avatar },
+          '',
+          [imageUri]
+        );
+      } catch (error) {
+        console.error('Send image error:', error);
+      } finally {
+        setIsSending(false);
+      }
+    }
+  };
+
+  const renderMessage = ({ item, index }) => {
+    const isMyMessage = item.senderId === user?.id;
+    const showAvatar = !isMyMessage && (
+      index === 0 || messages[index - 1]?.senderId !== item.senderId
+    );
 
     return (
       <View style={[
         styles.messageRow,
-        isMyMessage ? styles.messageRowRight : styles.messageRowLeft
+        isMyMessage ? styles.myMessageRow : styles.otherMessageRow,
       ]}>
-        {!isMyMessage && showAvatar && (
-          <Image
-            source={{ uri: message.senderAvatar || 'https://i.pravatar.cc/150' }}
-            style={styles.messageAvatar}
-          />
+        {!isMyMessage && (
+          <View style={styles.avatarContainer}>
+            {showAvatar ? (
+              <Image 
+                source={{ uri: item.senderAvatar || `https://i.pravatar.cc/150?u=${item.senderId}` }}
+                style={styles.messageAvatar}
+              />
+            ) : (
+              <View style={styles.avatarPlaceholder} />
+            )}
+          </View>
         )}
-        {!isMyMessage && !showAvatar && <View style={styles.avatarSpacer} />}
         
         <View style={[
           styles.messageBubble,
-          isMyMessage ? styles.myMessageBubble : styles.otherMessageBubble
+          isMyMessage ? styles.myBubble : [styles.otherBubble, { backgroundColor: themeColors.surface }],
         ]}>
-          <Text style={[
-            styles.messageText,
-            isMyMessage ? styles.myMessageText : styles.otherMessageText
-          ]}>
-            {message.text}
-          </Text>
+          {item.images && item.images.length > 0 && (
+            <Image 
+              source={{ uri: item.images[0] }}
+              style={styles.messageImage}
+            />
+          )}
+          {item.text ? (
+            <Text style={[
+              styles.messageText,
+              isMyMessage ? styles.myMessageText : { color: themeColors.text },
+            ]}>
+              {item.text}
+            </Text>
+          ) : null}
           <Text style={[
             styles.messageTime,
-            isMyMessage ? styles.myMessageTime : styles.otherMessageTime
+            isMyMessage ? styles.myMessageTime : { color: themeColors.textSecondary },
           ]}>
-            {formatMessageTime(message.timestamp)}
+            {formatMessageTime(item.timestamp)}
           </Text>
         </View>
       </View>
     );
   };
 
-  return (
-    <KeyboardAvoidingView
-      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-      style={styles.container}
-    >
-      {/* Header */}
-      <View style={styles.header}>
-        <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backButton}>
-          <Ionicons name="arrow-back" size={24} color={colors.text} />
-        </TouchableOpacity>
-        {otherUser && (
-          <View style={styles.headerInfo}>
-            <Image
-              source={{ uri: otherUser.avatar || 'https://i.pravatar.cc/150' }}
-              style={styles.headerAvatar}
-            />
-            <Text style={styles.headerName}>{otherUser.name}</Text>
-          </View>
-        )}
-        <View style={styles.headerSpacer} />
-      </View>
+  const renderEmptyState = () => (
+    <View style={styles.emptyContainer}>
+      <Ionicons name="chatbubble-ellipses-outline" size={64} color={themeColors.textSecondary} />
+      <Text style={[styles.emptyText, { color: themeColors.textSecondary }]}>
+        {t('noMessages')}
+      </Text>
+      <Text style={[styles.emptySubtext, { color: themeColors.textSecondary }]}>
+        Say hello to start the conversation!
+      </Text>
+    </View>
+  );
 
-      {/* Messages List */}
-      <FlatList
-        ref={flatListRef}
-        data={messages}
-        renderItem={renderMessage}
-        keyExtractor={(item) => item.id}
-        contentContainerStyle={styles.messagesList}
-        showsVerticalScrollIndicator={false}
-        ListEmptyComponent={
-          <View style={styles.emptyContainer}>
-            <Text style={styles.emptyText}>No messages yet. Say hello!</Text>
-          </View>
-        }
-      />
+  return (
+    <KeyboardAvoidingView 
+      style={[styles.container, { backgroundColor: themeColors.background }]}
+      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+      keyboardVerticalOffset={90}
+    >
+      {isLoading ? (
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color={colors.primary} />
+        </View>
+      ) : (
+        <FlatList
+          ref={flatListRef}
+          data={messages}
+          renderItem={renderMessage}
+          keyExtractor={(item) => item.id}
+          contentContainerStyle={[
+            styles.messagesList,
+            messages.length === 0 && styles.emptyList
+          ]}
+          ListEmptyComponent={renderEmptyState}
+          showsVerticalScrollIndicator={false}
+          onContentSizeChange={() => flatListRef.current?.scrollToEnd({ animated: false })}
+        />
+      )}
 
       {/* Input Bar */}
-      <View style={styles.inputContainer}>
-        <TextInput
-          style={styles.input}
-          placeholder="Type a message..."
-          placeholderTextColor={colors.textMuted}
-          value={newMessage}
-          onChangeText={setNewMessage}
-          multiline
-          maxLength={1000}
-        />
-        <TouchableOpacity
-          style={[styles.sendButton, !newMessage.trim() && styles.sendButtonDisabled]}
-          onPress={handleSend}
-          disabled={!newMessage.trim()}
+      <View style={[styles.inputContainer, { 
+        backgroundColor: themeColors.surface,
+        borderTopColor: themeColors.border,
+      }]}>
+        <TouchableOpacity 
+          style={styles.attachButton}
+          onPress={handlePickImage}
         >
-          <Ionicons
-            name="send"
-            size={20}
-            color={newMessage.trim() ? colors.white : colors.textMuted}
+          <Ionicons name="image-outline" size={24} color={colors.primary} />
+        </TouchableOpacity>
+
+        <View style={[styles.inputWrapper, { borderColor: themeColors.border }]}>
+          <TextInput
+            style={[styles.textInput, { color: themeColors.text }]}
+            placeholder={t('typeMessage')}
+            placeholderTextColor={themeColors.textSecondary}
+            value={messageText}
+            onChangeText={setMessageText}
+            multiline
+            maxLength={1000}
           />
+        </View>
+
+        <TouchableOpacity 
+          style={[
+            styles.sendButton,
+            (!messageText.trim() || isSending) && styles.sendButtonDisabled
+          ]}
+          onPress={handleSend}
+          disabled={!messageText.trim() || isSending}
+        >
+          {isSending ? (
+            <ActivityIndicator size="small" color="#fff" />
+          ) : (
+            <Ionicons name="send" size={20} color="#fff" />
+          )}
         </TouchableOpacity>
       </View>
     </KeyboardAvoidingView>
@@ -165,139 +263,136 @@ export default function ChatScreen({ route, navigation }) {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: colors.background,
   },
-  header: {
+  headerTitle: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingTop: 50,
-    paddingBottom: spacing.md,
-    paddingHorizontal: spacing.md,
-    backgroundColor: colors.card,
-    borderBottomWidth: 1,
-    borderBottomColor: colors.border,
-  },
-  backButton: {
-    padding: spacing.sm,
-  },
-  headerInfo: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginLeft: spacing.sm,
+    gap: spacing.sm,
   },
   headerAvatar: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    marginRight: spacing.sm,
+    width: 32,
+    height: 32,
+    borderRadius: 16,
   },
   headerName: {
-    ...typography.bodySemibold,
-    color: colors.text,
+    fontSize: typography.md,
+    fontWeight: '600',
   },
-  headerSpacer: {
-    width: 40,
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   messagesList: {
-    padding: spacing.md,
+    padding: spacing.lg,
     flexGrow: 1,
+  },
+  emptyList: {
+    flex: 1,
+    justifyContent: 'center',
+  },
+  emptyContainer: {
+    alignItems: 'center',
+    padding: spacing.xxxl,
+  },
+  emptyText: {
+    fontSize: typography.lg,
+    fontWeight: '600',
+    marginTop: spacing.lg,
+  },
+  emptySubtext: {
+    fontSize: typography.sm,
+    marginTop: spacing.sm,
+    textAlign: 'center',
   },
   messageRow: {
     flexDirection: 'row',
     marginBottom: spacing.sm,
     alignItems: 'flex-end',
   },
-  messageRowLeft: {
+  myMessageRow: {
+    justifyContent: 'flex-end',
+  },
+  otherMessageRow: {
     justifyContent: 'flex-start',
   },
-  messageRowRight: {
-    justifyContent: 'flex-end',
+  avatarContainer: {
+    width: 32,
+    marginRight: spacing.sm,
   },
   messageAvatar: {
     width: 32,
     height: 32,
     borderRadius: 16,
-    marginRight: spacing.sm,
   },
-  avatarSpacer: {
-    width: 40,
+  avatarPlaceholder: {
+    width: 32,
+    height: 32,
   },
   messageBubble: {
     maxWidth: '75%',
+    borderRadius: borderRadius.xl,
     padding: spacing.md,
-    borderRadius: borderRadius.lg,
   },
-  myMessageBubble: {
+  myBubble: {
     backgroundColor: colors.primary,
-    borderBottomRightRadius: 4,
+    borderBottomRightRadius: spacing.xs,
   },
-  otherMessageBubble: {
-    backgroundColor: colors.card,
-    borderBottomLeftRadius: 4,
-    borderWidth: 1,
-    borderColor: colors.border,
+  otherBubble: {
+    borderBottomLeftRadius: spacing.xs,
+  },
+  messageImage: {
+    width: 200,
+    height: 150,
+    borderRadius: borderRadius.lg,
+    marginBottom: spacing.xs,
   },
   messageText: {
-    ...typography.body,
+    fontSize: typography.md,
+    lineHeight: 22,
   },
   myMessageText: {
-    color: colors.white,
-  },
-  otherMessageText: {
-    color: colors.text,
+    color: '#fff',
   },
   messageTime: {
-    ...typography.caption,
+    fontSize: typography.xs,
     marginTop: spacing.xs,
+    alignSelf: 'flex-end',
   },
   myMessageTime: {
     color: 'rgba(255,255,255,0.7)',
-    textAlign: 'right',
-  },
-  otherMessageTime: {
-    color: colors.textSecondary,
-  },
-  emptyContainer: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: spacing.xxl,
-  },
-  emptyText: {
-    ...typography.body,
-    color: colors.textSecondary,
   },
   inputContainer: {
     flexDirection: 'row',
     alignItems: 'flex-end',
     padding: spacing.md,
-    backgroundColor: colors.card,
     borderTopWidth: 1,
-    borderTopColor: colors.border,
-    paddingBottom: Platform.OS === 'ios' ? 34 : spacing.md,
+    gap: spacing.sm,
   },
-  input: {
+  attachButton: {
+    padding: spacing.sm,
+  },
+  inputWrapper: {
     flex: 1,
-    backgroundColor: colors.inputBg,
-    borderRadius: borderRadius.full,
-    paddingHorizontal: spacing.md,
+    borderWidth: 1,
+    borderRadius: borderRadius.xl,
+    paddingHorizontal: spacing.lg,
     paddingVertical: spacing.sm,
     maxHeight: 100,
-    ...typography.body,
-    color: colors.text,
+  },
+  textInput: {
+    fontSize: typography.md,
+    maxHeight: 80,
   },
   sendButton: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
     backgroundColor: colors.primary,
-    alignItems: 'center',
+    width: 44,
+    height: 44,
+    borderRadius: 22,
     justifyContent: 'center',
-    marginLeft: spacing.sm,
+    alignItems: 'center',
   },
   sendButtonDisabled: {
-    backgroundColor: colors.border,
+    opacity: 0.5,
   },
 });
-
