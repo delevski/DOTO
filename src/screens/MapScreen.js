@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -7,10 +7,11 @@ import {
   TouchableOpacity,
   Image,
   ActivityIndicator,
+  ScrollView,
   Dimensions,
   Alert,
+  Linking,
 } from 'react-native';
-import MapView, { Marker, Callout, PROVIDER_GOOGLE } from 'react-native-maps';
 import { Ionicons } from '@expo/vector-icons';
 import * as Location from 'expo-location';
 import { useAuthStore } from '../store/authStore';
@@ -19,26 +20,17 @@ import { useTranslation } from '../utils/translations';
 import { db } from '../lib/instant';
 import { colors, spacing, borderRadius, typography, shadows } from '../styles/theme';
 
-const { width, height } = Dimensions.get('window');
-
-const INITIAL_REGION = {
-  latitude: 32.0853,
-  longitude: 34.7818,
-  latitudeDelta: 0.05,
-  longitudeDelta: 0.05,
-};
+const { width } = Dimensions.get('window');
 
 export default function MapScreen({ navigation }) {
   const user = useAuthStore((state) => state.user);
   const darkMode = useSettingsStore((state) => state.darkMode);
   const t = useTranslation();
-  const mapRef = useRef(null);
 
-  const [region, setRegion] = useState(INITIAL_REGION);
   const [searchQuery, setSearchQuery] = useState('');
   const [isLoading, setIsLoading] = useState(true);
-  const [postsWithCoords, setPostsWithCoords] = useState([]);
-  const [selectedPost, setSelectedPost] = useState(null);
+  const [userLocation, setUserLocation] = useState(null);
+  const [nearbyPosts, setNearbyPosts] = useState([]);
 
   // Fetch posts from InstantDB
   const { data } = db.useQuery({ posts: {} });
@@ -59,14 +51,10 @@ export default function MapScreen({ navigation }) {
         const { status } = await Location.requestForegroundPermissionsAsync();
         if (status === 'granted') {
           const location = await Location.getCurrentPositionAsync({});
-          const newRegion = {
+          setUserLocation({
             latitude: location.coords.latitude,
             longitude: location.coords.longitude,
-            latitudeDelta: 0.05,
-            longitudeDelta: 0.05,
-          };
-          setRegion(newRegion);
-          mapRef.current?.animateToRegion(newRegion, 1000);
+          });
         }
       } catch (error) {
         console.log('Location error:', error);
@@ -76,105 +64,11 @@ export default function MapScreen({ navigation }) {
     })();
   }, []);
 
-  // Geocode posts with locations
+  // Filter posts that aren't completed
   useEffect(() => {
-    const geocodePosts = async () => {
-      const postsNeedingCoords = allPosts.filter(p => p.location && !p.latitude);
-      
-      const geocodedPosts = await Promise.all(
-        allPosts.map(async (post) => {
-          if (post.latitude && post.longitude) {
-            return post;
-          }
-          
-          if (post.location) {
-            try {
-              // Use Nominatim API for geocoding
-              const response = await fetch(
-                `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(post.location)}&limit=1`
-              );
-              const data = await response.json();
-              
-              if (data && data[0]) {
-                return {
-                  ...post,
-                  latitude: parseFloat(data[0].lat),
-                  longitude: parseFloat(data[0].lon),
-                };
-              }
-            } catch (error) {
-              console.log('Geocoding error for:', post.location);
-            }
-          }
-          
-          // Generate random coords near Tel Aviv for demo
-          return {
-            ...post,
-            latitude: 32.0853 + (Math.random() - 0.5) * 0.1,
-            longitude: 34.7818 + (Math.random() - 0.5) * 0.1,
-          };
-        })
-      );
-      
-      setPostsWithCoords(geocodedPosts.filter(p => p.latitude && p.longitude && !p.approvedClaimerId));
-    };
-
-    if (allPosts.length > 0) {
-      geocodePosts();
-    }
+    const activePosts = allPosts.filter(p => !p.approvedClaimerId && p.location);
+    setNearbyPosts(activePosts);
   }, [allPosts]);
-
-  const handleSearch = async () => {
-    if (!searchQuery.trim()) return;
-
-    try {
-      const response = await fetch(
-        `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(searchQuery)}&limit=1`
-      );
-      const data = await response.json();
-      
-      if (data && data[0]) {
-        const newRegion = {
-          latitude: parseFloat(data[0].lat),
-          longitude: parseFloat(data[0].lon),
-          latitudeDelta: 0.02,
-          longitudeDelta: 0.02,
-        };
-        setRegion(newRegion);
-        mapRef.current?.animateToRegion(newRegion, 1000);
-      } else {
-        Alert.alert('Not Found', 'Location not found. Try a different search.');
-      }
-    } catch (error) {
-      console.error('Search error:', error);
-    }
-  };
-
-  const goToMyLocation = async () => {
-    try {
-      const location = await Location.getCurrentPositionAsync({});
-      const newRegion = {
-        latitude: location.coords.latitude,
-        longitude: location.coords.longitude,
-        latitudeDelta: 0.02,
-        longitudeDelta: 0.02,
-      };
-      setRegion(newRegion);
-      mapRef.current?.animateToRegion(newRegion, 1000);
-    } catch (error) {
-      Alert.alert('Error', 'Unable to get your location');
-    }
-  };
-
-  const getCategoryColor = (category) => {
-    switch (category) {
-      case 'Moving': return '#3B82F6';
-      case 'Pet Care': return '#10B981';
-      case 'Borrow': return '#F59E0B';
-      case 'Assembly': return '#8B5CF6';
-      default: return colors.primary;
-    }
-  };
 
   const formatTime = (timestamp) => {
     if (!timestamp) return '';
@@ -187,43 +81,46 @@ export default function MapScreen({ navigation }) {
     return `${Math.floor(hours / 24)}d ago`;
   };
 
+  const getCategoryColor = (category) => {
+    switch (category) {
+      case 'Moving': return '#3B82F6';
+      case 'Pet Care': return '#10B981';
+      case 'Borrow': return '#F59E0B';
+      case 'Assembly': return '#8B5CF6';
+      default: return colors.primary;
+    }
+  };
+
+  const getCategoryIcon = (category) => {
+    switch (category) {
+      case 'Moving': return 'car';
+      case 'Pet Care': return 'paw';
+      case 'Borrow': return 'hand-left';
+      case 'Assembly': return 'construct';
+      default: return 'help-circle';
+    }
+  };
+
+  const openInMaps = (location) => {
+    const url = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(location)}`;
+    Linking.openURL(url);
+  };
+
+  const filteredPosts = nearbyPosts.filter(post => {
+    if (!searchQuery.trim()) return true;
+    return post.location?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+           post.title?.toLowerCase().includes(searchQuery.toLowerCase());
+  });
+
   return (
-    <View style={styles.container}>
-      {/* Map */}
-      <MapView
-        ref={mapRef}
-        style={styles.map}
-        initialRegion={region}
-        onRegionChangeComplete={setRegion}
-        showsUserLocation
-        showsMyLocationButton={false}
-      >
-        {postsWithCoords.map((post) => (
-          <Marker
-            key={post.id}
-            coordinate={{
-              latitude: post.latitude,
-              longitude: post.longitude,
-            }}
-            onPress={() => setSelectedPost(post)}
-          >
-            <View style={[styles.markerContainer, { backgroundColor: getCategoryColor(post.category || post.tag) }]}>
-              <Ionicons 
-                name={
-                  post.category === 'Moving' ? 'car' :
-                  post.category === 'Pet Care' ? 'paw' :
-                  post.category === 'Borrow' ? 'hand-left' :
-                  post.category === 'Assembly' ? 'construct' :
-                  'help-circle'
-                } 
-                size={16} 
-                color="#fff" 
-              />
-            </View>
-            <View style={styles.markerArrow} />
-          </Marker>
-        ))}
-      </MapView>
+    <View style={[styles.container, { backgroundColor: themeColors.background }]}>
+      {/* Header */}
+      <View style={[styles.header, { backgroundColor: themeColors.surface, borderBottomColor: themeColors.border }]}>
+        <Text style={[styles.headerTitle, { color: themeColors.text }]}>Map View</Text>
+        <Text style={[styles.headerSubtitle, { color: themeColors.textSecondary }]}>
+          Find tasks near you
+        </Text>
+      </View>
 
       {/* Search Bar */}
       <View style={[styles.searchContainer, { backgroundColor: themeColors.surface }]}>
@@ -231,12 +128,10 @@ export default function MapScreen({ navigation }) {
           <Ionicons name="search-outline" size={20} color={themeColors.textSecondary} />
           <TextInput
             style={[styles.searchInput, { color: themeColors.text }]}
-            placeholder="Search location..."
+            placeholder="Search by location..."
             placeholderTextColor={themeColors.textSecondary}
             value={searchQuery}
             onChangeText={setSearchQuery}
-            onSubmitEditing={handleSearch}
-            returnKeyType="search"
           />
           {searchQuery.length > 0 && (
             <TouchableOpacity onPress={() => setSearchQuery('')}>
@@ -246,76 +141,121 @@ export default function MapScreen({ navigation }) {
         </View>
       </View>
 
-      {/* My Location Button */}
-      <TouchableOpacity 
-        style={[styles.myLocationButton, { backgroundColor: themeColors.surface }]}
-        onPress={goToMyLocation}
-      >
-        <Ionicons name="navigate" size={24} color={colors.primary} />
-      </TouchableOpacity>
+      {/* Location Info */}
+      {userLocation && (
+        <View style={[styles.locationBanner, { backgroundColor: colors.successLight }]}>
+          <Ionicons name="location" size={18} color={colors.success} />
+          <Text style={[styles.locationText, { color: colors.success }]}>
+            Location enabled • Showing tasks nearby
+          </Text>
+        </View>
+      )}
 
-      {/* Posts Count */}
-      <View style={[styles.postsCountBadge, { backgroundColor: colors.primary }]}>
-        <Text style={styles.postsCountText}>
-          {postsWithCoords.length} tasks nearby
+      {/* Tasks Count */}
+      <View style={styles.countBanner}>
+        <Text style={[styles.countText, { color: themeColors.text }]}>
+          {filteredPosts.length} active tasks in your area
         </Text>
       </View>
 
-      {/* Selected Post Card */}
-      {selectedPost && (
-        <View style={[styles.postCard, { backgroundColor: themeColors.surface }]}>
-          <TouchableOpacity 
-            style={styles.closeCardButton}
-            onPress={() => setSelectedPost(null)}
-          >
-            <Ionicons name="close" size={20} color={themeColors.textSecondary} />
+      {/* Posts List */}
+      <ScrollView 
+        style={styles.postsContainer}
+        contentContainerStyle={styles.postsContent}
+        showsVerticalScrollIndicator={false}
+      >
+        {isLoading ? (
+          <View style={styles.centerContent}>
+            <ActivityIndicator size="large" color={colors.primary} />
+            <Text style={[styles.loadingText, { color: themeColors.textSecondary }]}>
+              Finding tasks near you...
+            </Text>
+          </View>
+        ) : filteredPosts.length === 0 ? (
+          <View style={styles.centerContent}>
+            <Ionicons name="map-outline" size={64} color={themeColors.textSecondary} />
+            <Text style={[styles.emptyText, { color: themeColors.textSecondary }]}>
+              No tasks found in this area
+            </Text>
+          </View>
+        ) : (
+          filteredPosts.map((post) => (
+            <TouchableOpacity
+              key={post.id}
+              style={[styles.postCard, { backgroundColor: themeColors.surface }]}
+              onPress={() => navigation.navigate('PostDetails', { postId: post.id })}
+              activeOpacity={0.7}
+            >
+              <View style={styles.postHeader}>
+                <View style={[styles.categoryBadge, { backgroundColor: getCategoryColor(post.category || post.tag) + '20' }]}>
+                  <Ionicons 
+                    name={getCategoryIcon(post.category || post.tag)} 
+                    size={16} 
+                    color={getCategoryColor(post.category || post.tag)} 
+                  />
+                  <Text style={[styles.categoryText, { color: getCategoryColor(post.category || post.tag) }]}>
+                    {post.category || post.tag || 'Other'}
+                  </Text>
+                </View>
+                <Text style={[styles.postTime, { color: themeColors.textSecondary }]}>
+                  {formatTime(post.timestamp)}
+                </Text>
+              </View>
+
+              <View style={styles.postContent}>
+                <Image
+                  source={{ uri: post.avatar || `https://i.pravatar.cc/150?u=${post.authorId}` }}
+                  style={styles.postAvatar}
+                />
+                <View style={styles.postInfo}>
+                  <Text style={[styles.postTitle, { color: themeColors.text }]} numberOfLines={1}>
+                    {post.title || 'Help Needed'}
+                  </Text>
+                  <Text style={[styles.postAuthor, { color: themeColors.textSecondary }]}>
+                    {post.author}
+        </Text>
+                </View>
+              </View>
+
+          <TouchableOpacity
+                style={styles.locationRow}
+                onPress={() => openInMaps(post.location)}
+              >
+                <Ionicons name="location-outline" size={16} color={colors.primary} />
+                <Text style={[styles.locationLabel, { color: themeColors.textSecondary }]} numberOfLines={1}>
+                  {post.location}
+                </Text>
+                <Ionicons name="open-outline" size={14} color={colors.primary} />
           </TouchableOpacity>
 
-          <View style={styles.postCardContent}>
-            <Image 
-              source={{ uri: selectedPost.avatar || `https://i.pravatar.cc/150?u=${selectedPost.authorId}` }}
-              style={styles.postCardAvatar}
-            />
-            <View style={styles.postCardInfo}>
-              <Text style={[styles.postCardTitle, { color: themeColors.text }]} numberOfLines={1}>
-                {selectedPost.title || 'Help Needed'}
-              </Text>
-              <Text style={[styles.postCardAuthor, { color: themeColors.textSecondary }]}>
-                {selectedPost.author} • {formatTime(selectedPost.timestamp)}
-              </Text>
-              <Text style={[styles.postCardDescription, { color: themeColors.textSecondary }]} numberOfLines={2}>
-                {selectedPost.description}
-              </Text>
-            </View>
-          </View>
-
-          <View style={styles.postCardFooter}>
-            <View style={[styles.categoryBadge, { backgroundColor: getCategoryColor(selectedPost.category || selectedPost.tag) + '20' }]}>
-              <Text style={[styles.categoryBadgeText, { color: getCategoryColor(selectedPost.category || selectedPost.tag) }]}>
-                {selectedPost.category || selectedPost.tag || 'Other'}
-              </Text>
-            </View>
-            <TouchableOpacity 
-              style={styles.viewDetailsButton}
-              onPress={() => {
-                setSelectedPost(null);
-                navigation.navigate('PostDetails', { postId: selectedPost.id });
-              }}
-            >
-              <Text style={styles.viewDetailsText}>{t('viewDetails')}</Text>
-              <Ionicons name="arrow-forward" size={16} color="#fff" />
+              <View style={styles.postFooter}>
+                <View style={styles.statsRow}>
+                  <View style={styles.statItem}>
+                    <Ionicons name="heart-outline" size={14} color={themeColors.textSecondary} />
+                    <Text style={[styles.statText, { color: themeColors.textSecondary }]}>
+                      {post.likes || 0}
+                    </Text>
+                  </View>
+                  <View style={styles.statItem}>
+                    <Ionicons name="chatbubble-outline" size={14} color={themeColors.textSecondary} />
+                    <Text style={[styles.statText, { color: themeColors.textSecondary }]}>
+                      {post.comments || 0}
+                    </Text>
+                  </View>
+                </View>
+          <TouchableOpacity
+                  style={styles.viewButton}
+                  onPress={() => navigation.navigate('PostDetails', { postId: post.id })}
+                >
+                  <Text style={styles.viewButtonText}>{t('viewDetails')}</Text>
+                  <Ionicons name="arrow-forward" size={14} color="#fff" />
+          </TouchableOpacity>
+        </View>
             </TouchableOpacity>
-          </View>
-        </View>
-      )}
-
-      {/* Loading Overlay */}
-      {isLoading && (
-        <View style={styles.loadingOverlay}>
-          <ActivityIndicator size="large" color={colors.primary} />
-        </View>
-      )}
-    </View>
+          ))
+        )}
+      </ScrollView>
+      </View>
   );
 }
 
@@ -323,18 +263,23 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
   },
-  map: {
-    width: width,
-    height: height,
+  header: {
+    paddingHorizontal: spacing.xl,
+    paddingTop: 50,
+    paddingBottom: spacing.lg,
+    borderBottomWidth: 1,
+  },
+  headerTitle: {
+    fontSize: typography.xxl,
+    fontWeight: '700',
+  },
+  headerSubtitle: {
+    fontSize: typography.sm,
+    marginTop: spacing.xs,
   },
   searchContainer: {
-    position: 'absolute',
-    top: 50,
-    left: spacing.lg,
-    right: spacing.lg,
-    borderRadius: borderRadius.xl,
-    padding: spacing.sm,
-    ...shadows.lg,
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.md,
   },
   searchBar: {
     flexDirection: 'row',
@@ -350,125 +295,139 @@ const styles = StyleSheet.create({
     fontSize: typography.md,
     paddingVertical: spacing.xs,
   },
-  myLocationButton: {
-    position: 'absolute',
-    right: spacing.lg,
-    bottom: 240,
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-    justifyContent: 'center',
-    alignItems: 'center',
-    ...shadows.lg,
-  },
-  postsCountBadge: {
-    position: 'absolute',
-    top: 120,
-    alignSelf: 'center',
-    paddingHorizontal: spacing.lg,
-    paddingVertical: spacing.sm,
-    borderRadius: borderRadius.full,
-  },
-  postsCountText: {
-    color: '#fff',
-    fontWeight: '600',
-    fontSize: typography.sm,
-  },
-  markerContainer: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    justifyContent: 'center',
-    alignItems: 'center',
-    borderWidth: 2,
-    borderColor: '#fff',
-  },
-  markerArrow: {
-    width: 0,
-    height: 0,
-    borderLeftWidth: 6,
-    borderRightWidth: 6,
-    borderTopWidth: 8,
-    borderLeftColor: 'transparent',
-    borderRightColor: 'transparent',
-    borderTopColor: colors.primary,
-    alignSelf: 'center',
-    marginTop: -2,
-  },
-  postCard: {
-    position: 'absolute',
-    bottom: 100,
-    left: spacing.lg,
-    right: spacing.lg,
-    borderRadius: borderRadius.xl,
-    padding: spacing.lg,
-    ...shadows.xl,
-  },
-  closeCardButton: {
-    position: 'absolute',
-    top: spacing.sm,
-    right: spacing.sm,
-    padding: spacing.xs,
-    zIndex: 1,
-  },
-  postCardContent: {
+  locationBanner: {
     flexDirection: 'row',
-    gap: spacing.md,
-    marginBottom: spacing.md,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: spacing.sm,
+    gap: spacing.xs,
   },
-  postCardAvatar: {
-    width: 56,
-    height: 56,
-    borderRadius: 28,
+  locationText: {
+    fontSize: typography.sm,
+    fontWeight: '500',
   },
-  postCardInfo: {
+  countBanner: {
+    paddingHorizontal: spacing.xl,
+    paddingVertical: spacing.sm,
+  },
+  countText: {
+    fontSize: typography.sm,
+    fontWeight: '600',
+  },
+  postsContainer: {
     flex: 1,
   },
-  postCardTitle: {
-    fontSize: typography.lg,
-    fontWeight: '700',
-    marginBottom: 2,
+  postsContent: {
+    padding: spacing.lg,
+    paddingBottom: 100,
   },
-  postCardAuthor: {
-    fontSize: typography.sm,
-    marginBottom: spacing.xs,
-  },
-  postCardDescription: {
-    fontSize: typography.sm,
-    lineHeight: 18,
-  },
-  postCardFooter: {
-    flexDirection: 'row',
+  centerContent: {
+    flex: 1,
+    justifyContent: 'center',
     alignItems: 'center',
+    paddingVertical: 100,
+  },
+  loadingText: {
+    marginTop: spacing.lg,
+    fontSize: typography.md,
+  },
+  emptyText: {
+    marginTop: spacing.lg,
+    fontSize: typography.md,
+    textAlign: 'center',
+  },
+  postCard: {
+    borderRadius: borderRadius.xl,
+    padding: spacing.lg,
+    marginBottom: spacing.md,
+    ...shadows.sm,
+  },
+  postHeader: {
+    flexDirection: 'row',
     justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: spacing.md,
   },
   categoryBadge: {
-    paddingHorizontal: spacing.md,
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: spacing.sm,
     paddingVertical: spacing.xs,
     borderRadius: borderRadius.full,
+    gap: spacing.xs,
   },
-  categoryBadgeText: {
+  categoryText: {
     fontSize: typography.xs,
     fontWeight: '600',
   },
-  viewDetailsButton: {
+  postTime: {
+    fontSize: typography.xs,
+  },
+  postContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: spacing.md,
+    gap: spacing.md,
+  },
+  postAvatar: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+  },
+  postInfo: {
+    flex: 1,
+  },
+  postTitle: {
+    fontSize: typography.md,
+    fontWeight: '600',
+    marginBottom: 2,
+  },
+  postAuthor: {
+    fontSize: typography.sm,
+  },
+  locationRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#FEF2F2',
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    borderRadius: borderRadius.lg,
+    marginBottom: spacing.md,
+    gap: spacing.xs,
+  },
+  locationLabel: {
+    flex: 1,
+    fontSize: typography.sm,
+  },
+  postFooter: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  statsRow: {
+    flexDirection: 'row',
+    gap: spacing.lg,
+  },
+  statItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+  },
+  statText: {
+    fontSize: typography.sm,
+  },
+  viewButton: {
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: colors.primary,
-    paddingHorizontal: spacing.lg,
+    paddingHorizontal: spacing.md,
     paddingVertical: spacing.sm,
-    borderRadius: borderRadius.lg,
+    borderRadius: borderRadius.md,
     gap: spacing.xs,
   },
-  viewDetailsText: {
+  viewButtonText: {
     color: '#fff',
-    fontWeight: '600',
     fontSize: typography.sm,
-  },
-  loadingOverlay: {
-    ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(255,255,255,0.8)',
-    justifyContent: 'center',
-    alignItems: 'center',
+    fontWeight: '600',
   },
 });

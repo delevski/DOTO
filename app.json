@@ -18,9 +18,9 @@
       "supportsTablet": true,
       "bundleIdentifier": "com.doto.app",
       "infoPlist": {
-        "NSLocationWhenInUseUsageDescription": "DOTO needs your location to show nearby tasks and help you find opportunities to help others in your community.",
-        "NSPhotoLibraryUsageDescription": "DOTO needs access to your photos to let you upload images for posts and profile pictures.",
-        "NSCameraUsageDescription": "DOTO needs camera access to let you take photos for posts."
+        "NSLocationWhenInUseUsageDescription": "DOTO needs your location to show nearby tasks.",
+        "NSPhotoLibraryUsageDescription": "DOTO needs access to your photos to upload images.",
+        "NSCameraUsageDescription": "DOTO needs camera access to take photos."
       }
     },
     "android": {
@@ -29,34 +29,29 @@
         "backgroundColor": "#DC2626"
       },
       "package": "com.doto.app",
-      "versionCode": 3,
-      "compileSdkVersion": 34,
-      "targetSdkVersion": 34,
+      "versionCode": 4,
       "permissions": [
         "ACCESS_FINE_LOCATION",
         "ACCESS_COARSE_LOCATION",
-        "CAMERA",
-        "READ_EXTERNAL_STORAGE",
-        "WRITE_EXTERNAL_STORAGE",
-        "INTERNET"
-      ],
-      "config": {
-        "googleMaps": {
-          "apiKey": ""
-        }
-      }
+        "CAMERA"
+      ]
     },
     "web": {
       "favicon": "./assets/favicon.png",
       "bundler": "metro"
     },
     "plugins": [
-      "expo-location",
+      [
+        "expo-location",
+        {
+          "locationAlwaysAndWhenInUsePermission": "Allow DOTO to use your location."
+        }
+      ],
       [
         "expo-image-picker",
         {
-          "photosPermission": "DOTO needs access to your photos to let you upload images for posts and profile pictures.",
-          "cameraPermission": "DOTO needs camera access to let you take photos for posts."
+          "photosPermission": "Allow DOTO to access your photos.",
+          "cameraPermission": "Allow DOTO to access your camera."
         }
       ]
     ],
