@@ -11,22 +11,19 @@ import {
   Share,
   Alert,
 } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
 import { useAuthStore } from '../store/authStore';
 import { useSettingsStore } from '../store/settingsStore';
-import { useTranslation } from '../utils/translations';
 import { db } from '../lib/instant';
 import { colors, spacing, borderRadius, typography, shadows } from '../styles/theme';
 
 export default function FeedScreen({ navigation }) {
   const user = useAuthStore((state) => state.user);
   const darkMode = useSettingsStore((state) => state.darkMode);
-  const t = useTranslation();
   
   const [activeTab, setActiveTab] = useState('nearby');
   const [refreshing, setRefreshing] = useState(false);
 
-  // Fetch posts and comments from InstantDB
+  // Fetch posts and comments from real InstantDB
   const { isLoading, error, data } = db.useQuery({ 
     posts: {},
     comments: {}
@@ -82,34 +79,39 @@ export default function FeedScreen({ navigation }) {
     const hours = Math.floor(diff / (1000 * 60 * 60));
     const days = Math.floor(hours / 24);
     
-    if (days > 0) return `${days}${t('day')} ${t('ago')}`;
-    if (hours > 0) return `${hours}${t('hr')} ${t('ago')}`;
-    return t('justNow');
+    if (days > 0) return `${days}d ago`;
+    if (hours > 0) return `${hours}h ago`;
+    return 'Just now';
   };
 
   const handleLike = async (post) => {
     if (!user) {
-      Alert.alert('Login Required', t('mustBeLoggedInToLike'));
+      Alert.alert('Login Required', 'Please login to like posts');
       return;
     }
 
     const currentLikedBy = post.likedBy || [];
     const isLiked = currentLikedBy.includes(user.id);
     
-    if (isLiked) {
-      await db.transact(
-        db.tx.posts[post.id].update({
-          likedBy: currentLikedBy.filter(id => id !== user.id),
-          likes: Math.max(0, (post.likes || 0) - 1)
-        })
-      );
-    } else {
-      await db.transact(
-        db.tx.posts[post.id].update({
-          likedBy: [...currentLikedBy, user.id],
-          likes: (post.likes || 0) + 1
-        })
-      );
+    try {
+      if (isLiked) {
+        await db.transact(
+          db.tx.posts[post.id].update({
+            likedBy: currentLikedBy.filter(id => id !== user.id),
+            likes: Math.max(0, (post.likes || 0) - 1)
+          })
+        );
+      } else {
+        await db.transact(
+          db.tx.posts[post.id].update({
+            likedBy: [...currentLikedBy, user.id],
+            likes: (post.likes || 0) + 1
+          })
+        );
+      }
+    } catch (err) {
+      console.error('Like error:', err);
+      Alert.alert('Error', 'Failed to update like');
     }
   };
 
@@ -125,15 +127,15 @@ export default function FeedScreen({ navigation }) {
 
   const onRefresh = async () => {
     setRefreshing(true);
-    // Data refreshes automatically with InstantDB
+    // InstantDB auto-refreshes, but we simulate a delay for UX
     setTimeout(() => setRefreshing(false), 1000);
   };
 
   const tabs = [
-    { key: 'nearby', label: t('nearby') },
-    { key: 'friends', label: t('friends') },
-    { key: 'myPosts', label: t('myPosts') },
-    { key: 'myClaim', label: t('myClaim') },
+    { key: 'nearby', label: 'Nearby' },
+    { key: 'friends', label: 'Friends' },
+    { key: 'myPosts', label: 'My Posts' },
+    { key: 'myClaim', label: 'My Claims' },
   ];
 
   const renderPostCard = (post) => {
@@ -170,9 +172,8 @@ export default function FeedScreen({ navigation }) {
               {isMyPost ? (user?.name || post.author) : post.author}
             </Text>
             <View style={styles.metaRow}>
-              <Ionicons name="time-outline" size={12} color={themeColors.textSecondary} />
               <Text style={[styles.metaText, { color: themeColors.textSecondary }]}>
-                {formatTime(post.timestamp || post.createdAt)}
+                🕐 {formatTime(post.timestamp || post.createdAt)}
               </Text>
               <View style={styles.tagBadge}>
                 <Text style={styles.tagText}>{post.tag || post.category || 'Other'}</Text>
@@ -180,14 +181,9 @@ export default function FeedScreen({ navigation }) {
             </View>
           </View>
           {isApproved && (
-            <View style={[styles.statusBadge, { backgroundColor: isClaimedByMe ? colors.successLight : '#F3F4F6' }]}>
-              <Ionicons 
-                name="checkmark-circle" 
-                size={14} 
-                color={isClaimedByMe ? colors.success : themeColors.textSecondary} 
-              />
-              <Text style={[styles.statusText, { color: isClaimedByMe ? colors.success : themeColors.textSecondary }]}>
-                {isClaimedByMe ? t('claimedByYou') : t('approved')}
+            <View style={[styles.statusBadge, { backgroundColor: isClaimedByMe ? '#D1FAE5' : '#F3F4F6' }]}>
+              <Text style={[styles.statusText, { color: isClaimedByMe ? '#059669' : themeColors.textSecondary }]}>
+                ✓ {isClaimedByMe ? 'Claimed' : 'Approved'}
               </Text>
             </View>
           )}
@@ -195,7 +191,7 @@ export default function FeedScreen({ navigation }) {
 
         {/* Content */}
         <Text style={[styles.postTitle, { color: themeColors.text }]} numberOfLines={2}>
-          {post.title || t('helpNeeded')}
+          {post.title || 'Help Needed'}
         </Text>
         <Text style={[styles.postDescription, { color: themeColors.textSecondary }]} numberOfLines={3}>
           {post.description}
@@ -226,7 +222,7 @@ export default function FeedScreen({ navigation }) {
         {/* Location */}
         {post.location && (
           <View style={styles.locationRow}>
-            <Ionicons name="location-outline" size={14} color={colors.primary} />
+            <Text style={styles.locationIcon}>📍</Text>
             <Text style={[styles.locationText, { color: themeColors.textSecondary }]} numberOfLines={1}>
               {post.location}
             </Text>
@@ -244,11 +240,6 @@ export default function FeedScreen({ navigation }) {
                   style={[styles.claimerAvatar, { marginLeft: index > 0 ? -8 : 0 }]}
                 />
               ))}
-              {claimers.length > 4 && (
-                <View style={[styles.claimerAvatar, styles.moreClaimers, { marginLeft: -8 }]}>
-                  <Text style={styles.moreClaimersText}>+{claimers.length - 4}</Text>
-                </View>
-              )}
             </View>
             <Text style={[styles.claimersText, { color: themeColors.textSecondary }]}>
               {claimers.length} {claimers.length === 1 ? 'claimer' : 'claimers'}
@@ -262,11 +253,7 @@ export default function FeedScreen({ navigation }) {
             style={styles.actionButton}
             onPress={() => handleLike(post)}
           >
-            <Ionicons 
-              name={isLiked ? 'heart' : 'heart-outline'} 
-              size={20} 
-              color={isLiked ? colors.primary : themeColors.textSecondary} 
-            />
+            <Text style={styles.actionIcon}>{isLiked ? '❤️' : '🤍'}</Text>
             <Text style={[styles.actionText, { color: isLiked ? colors.primary : themeColors.textSecondary }]}>
               {likeCount}
             </Text>
@@ -276,7 +263,7 @@ export default function FeedScreen({ navigation }) {
             style={styles.actionButton}
             onPress={() => navigation.navigate('PostDetails', { postId: post.id })}
           >
-            <Ionicons name="chatbubble-outline" size={20} color={themeColors.textSecondary} />
+            <Text style={styles.actionIcon}>💬</Text>
             <Text style={[styles.actionText, { color: themeColors.textSecondary }]}>
               {commentCount}
             </Text>
@@ -286,7 +273,7 @@ export default function FeedScreen({ navigation }) {
             style={styles.actionButton}
             onPress={() => handleShare(post)}
           >
-            <Ionicons name="share-outline" size={20} color={themeColors.textSecondary} />
+            <Text style={styles.actionIcon}>↗️</Text>
           </TouchableOpacity>
 
           {!isApproved && !isMyPost && (
@@ -294,7 +281,7 @@ export default function FeedScreen({ navigation }) {
               style={styles.claimButton}
               onPress={() => navigation.navigate('PostDetails', { postId: post.id })}
             >
-              <Text style={styles.claimButtonText}>{t('claimTask')}</Text>
+              <Text style={styles.claimButtonText}>Claim Task</Text>
             </TouchableOpacity>
           )}
         </View>
@@ -307,13 +294,16 @@ export default function FeedScreen({ navigation }) {
       {/* Header */}
       <View style={[styles.header, { backgroundColor: themeColors.surface, borderBottomColor: themeColors.border }]}>
         <View>
-          <Text style={[styles.headerTitle, { color: themeColors.text }]}>{t('feed')}</Text>
+          <Text style={[styles.headerTitle, { color: themeColors.text }]}>Feed</Text>
           <Text style={[styles.headerSubtitle, { color: themeColors.textSecondary }]}>
-            {t('discoverTasks')}
+            Discover tasks nearby
           </Text>
         </View>
-        <TouchableOpacity style={styles.filterButton}>
-          <Ionicons name="filter-outline" size={20} color={themeColors.text} />
+        <TouchableOpacity 
+          style={styles.filterButton}
+          onPress={() => navigation.navigate('Settings')}
+        >
+          <Text style={styles.filterIcon}>⚙️</Text>
         </TouchableOpacity>
       </View>
 
@@ -354,30 +344,33 @@ export default function FeedScreen({ navigation }) {
           <View style={styles.centerContent}>
             <ActivityIndicator size="large" color={colors.primary} />
             <Text style={[styles.loadingText, { color: themeColors.textSecondary }]}>
-              {t('loadingPosts')}
+              Loading posts...
             </Text>
           </View>
         ) : error ? (
           <View style={styles.centerContent}>
-            <Ionicons name="alert-circle-outline" size={48} color={colors.error} />
+            <Text style={styles.errorIcon}>⚠️</Text>
             <Text style={[styles.errorText, { color: colors.error }]}>
-              {t('errorLoadingPosts')}
+              Error loading posts
+            </Text>
+            <Text style={[styles.errorDetail, { color: themeColors.textSecondary }]}>
+              {error.message}
             </Text>
           </View>
         ) : posts.length === 0 ? (
           <View style={styles.centerContent}>
-            <Ionicons name="document-text-outline" size={64} color={themeColors.textSecondary} />
+            <Text style={styles.emptyIcon}>📋</Text>
             <Text style={[styles.emptyText, { color: themeColors.textSecondary }]}>
-              {activeTab === 'myPosts' ? t('noMyPosts') : 
-               activeTab === 'myClaim' ? t('noMyClaims') : 
-               t('noPostsYet')}
+              {activeTab === 'myPosts' ? 'You haven\'t created any posts yet' : 
+               activeTab === 'myClaim' ? 'You haven\'t claimed any tasks yet' : 
+               'No posts available'}
             </Text>
             {activeTab === 'myPosts' && (
               <TouchableOpacity 
                 style={styles.createButton}
-                onPress={() => navigation.navigate('CreatePost')}
+                onPress={() => navigation.navigate('Create')}
               >
-                <Text style={styles.createButtonText}>{t('createYourFirstPost')}</Text>
+                <Text style={styles.createButtonText}>Create Your First Post</Text>
               </TouchableOpacity>
             )}
           </View>
@@ -403,17 +396,20 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
   },
   headerTitle: {
-    fontSize: typography.xxl,
+    fontSize: 28,
     fontWeight: '700',
   },
   headerSubtitle: {
-    fontSize: typography.sm,
+    fontSize: 14,
     marginTop: spacing.xs,
   },
   filterButton: {
     padding: spacing.sm,
     borderRadius: borderRadius.lg,
-    backgroundColor: colors.background,
+    backgroundColor: '#F3F4F6',
+  },
+  filterIcon: {
+    fontSize: 20,
   },
   tabsContainer: {
     borderBottomWidth: 1,
@@ -431,7 +427,7 @@ const styles = StyleSheet.create({
     borderBottomColor: colors.primary,
   },
   tabText: {
-    fontSize: typography.base,
+    fontSize: 15,
     fontWeight: '500',
   },
   activeTabText: {
@@ -452,15 +448,26 @@ const styles = StyleSheet.create({
   },
   loadingText: {
     marginTop: spacing.lg,
-    fontSize: typography.md,
+    fontSize: 16,
+  },
+  errorIcon: {
+    fontSize: 48,
   },
   errorText: {
     marginTop: spacing.lg,
-    fontSize: typography.md,
+    fontSize: 18,
+    fontWeight: '600',
+  },
+  errorDetail: {
+    marginTop: spacing.sm,
+    fontSize: 14,
+  },
+  emptyIcon: {
+    fontSize: 64,
   },
   emptyText: {
     marginTop: spacing.lg,
-    fontSize: typography.md,
+    fontSize: 16,
     textAlign: 'center',
   },
   createButton: {
@@ -475,11 +482,15 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   postCard: {
-    borderRadius: borderRadius.xl,
+    borderRadius: 16,
     padding: spacing.lg,
     marginBottom: spacing.md,
     borderWidth: 1,
-    ...shadows.sm,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 8,
+    elevation: 2,
   },
   postHeader: {
     flexDirection: 'row',
@@ -496,49 +507,45 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   authorName: {
-    fontSize: typography.md,
+    fontSize: 16,
     fontWeight: '600',
   },
   metaRow: {
     flexDirection: 'row',
     alignItems: 'center',
     marginTop: spacing.xs,
-    gap: spacing.xs,
+    gap: spacing.sm,
   },
   metaText: {
-    fontSize: typography.xs,
+    fontSize: 12,
   },
   tagBadge: {
-    backgroundColor: colors.errorLight,
+    backgroundColor: '#FEE2E2',
     paddingHorizontal: spacing.sm,
     paddingVertical: 2,
-    borderRadius: borderRadius.full,
-    marginLeft: spacing.sm,
+    borderRadius: 12,
   },
   tagText: {
     color: colors.primary,
-    fontSize: typography.xs,
+    fontSize: 11,
     fontWeight: '600',
   },
   statusBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
     paddingHorizontal: spacing.sm,
     paddingVertical: spacing.xs,
-    borderRadius: borderRadius.full,
-    gap: spacing.xs,
+    borderRadius: 12,
   },
   statusText: {
-    fontSize: typography.xs,
+    fontSize: 11,
     fontWeight: '600',
   },
   postTitle: {
-    fontSize: typography.lg,
+    fontSize: 18,
     fontWeight: '700',
     marginBottom: spacing.sm,
   },
   postDescription: {
-    fontSize: typography.base,
+    fontSize: 15,
     lineHeight: 22,
     marginBottom: spacing.md,
   },
@@ -546,13 +553,13 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     gap: spacing.sm,
     marginBottom: spacing.md,
-    borderRadius: borderRadius.lg,
+    borderRadius: 12,
     overflow: 'hidden',
   },
   postPhoto: {
     flex: 1,
     height: 120,
-    borderRadius: borderRadius.md,
+    borderRadius: 8,
   },
   singlePhoto: {
     height: 180,
@@ -569,12 +576,12 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(0,0,0,0.5)',
     justifyContent: 'center',
     alignItems: 'center',
-    borderRadius: borderRadius.md,
+    borderRadius: 8,
   },
   morePhotosText: {
     color: '#fff',
     fontWeight: '700',
-    fontSize: typography.lg,
+    fontSize: 18,
   },
   locationRow: {
     flexDirection: 'row',
@@ -584,11 +591,14 @@ const styles = StyleSheet.create({
     backgroundColor: '#FEF2F2',
     paddingHorizontal: spacing.sm,
     paddingVertical: spacing.xs,
-    borderRadius: borderRadius.md,
+    borderRadius: 8,
     alignSelf: 'flex-start',
   },
+  locationIcon: {
+    fontSize: 14,
+  },
   locationText: {
-    fontSize: typography.sm,
+    fontSize: 13,
     maxWidth: 200,
   },
   claimersRow: {
@@ -607,18 +617,8 @@ const styles = StyleSheet.create({
     borderWidth: 2,
     borderColor: '#fff',
   },
-  moreClaimers: {
-    backgroundColor: colors.textMuted,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  moreClaimersText: {
-    color: '#fff',
-    fontSize: 10,
-    fontWeight: '600',
-  },
   claimersText: {
-    fontSize: typography.sm,
+    fontSize: 13,
   },
   actionsRow: {
     flexDirection: 'row',
@@ -632,20 +632,23 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: spacing.xs,
   },
+  actionIcon: {
+    fontSize: 18,
+  },
   actionText: {
-    fontSize: typography.sm,
+    fontSize: 14,
     fontWeight: '500',
   },
   claimButton: {
     marginLeft: 'auto',
-    backgroundColor: colors.text,
+    backgroundColor: '#1F2937',
     paddingHorizontal: spacing.lg,
     paddingVertical: spacing.sm,
-    borderRadius: borderRadius.md,
+    borderRadius: 8,
   },
   claimButtonText: {
     color: '#fff',
-    fontSize: typography.sm,
+    fontSize: 13,
     fontWeight: '600',
   },
 });

@@ -42,6 +42,12 @@ export const useSettingsStore = create((set, get) => ({
     await get().saveSettings();
   },
 
+  // Set dark mode directly
+  setDarkMode: async (value) => {
+    set({ darkMode: value });
+    await get().saveSettings();
+  },
+
   // Set language
   setLanguage: async (lang) => {
     set({ language: lang });

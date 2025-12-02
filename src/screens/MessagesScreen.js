@@ -1,32 +1,35 @@
-import React, { useState, useMemo } from 'react';
+import React from 'react';
 import {
   View,
   Text,
   StyleSheet,
-  FlatList,
+  ScrollView,
   TouchableOpacity,
   Image,
-  TextInput,
   ActivityIndicator,
 } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
 import { useAuthStore } from '../store/authStore';
 import { useSettingsStore } from '../store/settingsStore';
-import { useTranslation } from '../utils/translations';
 import { db } from '../lib/instant';
-import { formatConversationTime } from '../utils/messaging';
-import { colors, spacing, borderRadius, typography, shadows } from '../styles/theme';
+import { colors, spacing, borderRadius } from '../styles/theme';
 
 export default function MessagesScreen({ navigation }) {
   const user = useAuthStore((state) => state.user);
   const darkMode = useSettingsStore((state) => state.darkMode);
-  const t = useTranslation();
-
-  const [searchQuery, setSearchQuery] = useState('');
 
   // Fetch conversations from InstantDB
-  const { isLoading, data } = db.useQuery({ conversations: {} });
+  const { isLoading, data } = db.useQuery({ 
+    conversations: {},
+    messages: {}
+  });
+
   const allConversations = data?.conversations || [];
+  const allMessages = data?.messages || [];
+
+  // Filter conversations for current user
+  const userConversations = allConversations.filter(conv => 
+    conv.participant1Id === user?.id || conv.participant2Id === user?.id
+  ).sort((a, b) => (b.lastMessageTime || 0) - (a.lastMessageTime || 0));
 
   const themeColors = {
     background: darkMode ? colors.backgroundDark : colors.background,
@@ -36,120 +39,134 @@ export default function MessagesScreen({ navigation }) {
     border: darkMode ? colors.borderDark : colors.border,
   };
 
-  // Filter conversations for current user
-  const myConversations = useMemo(() => {
-    if (!user) return [];
+  const formatTime = (timestamp) => {
+    if (!timestamp) return '';
+    const now = Date.now();
+    const diff = now - timestamp;
+    const hours = Math.floor(diff / (1000 * 60 * 60));
+    const days = Math.floor(hours / 24);
     
-    return allConversations
-      .filter(conv => 
-        conv.participant1Id === user.id || conv.participant2Id === user.id
-      )
-      .map(conv => {
-        const isParticipant1 = conv.participant1Id === user.id;
-        return {
-          ...conv,
-          otherUserId: isParticipant1 ? conv.participant2Id : conv.participant1Id,
-          otherUserName: isParticipant1 ? conv.participant2Name : conv.participant1Name,
-          otherUserAvatar: isParticipant1 ? conv.participant2Avatar : conv.participant1Avatar,
-        };
-      })
-      .filter(conv => {
-        if (!searchQuery.trim()) return true;
-        return conv.otherUserName?.toLowerCase().includes(searchQuery.toLowerCase());
-      })
-      .sort((a, b) => (b.lastMessageTime || b.updatedAt || 0) - (a.lastMessageTime || a.updatedAt || 0));
-  }, [allConversations, user, searchQuery]);
+    if (hours < 1) return 'Just now';
+    if (hours < 24) return `${hours}h ago`;
+    if (days < 7) return `${days}d ago`;
+    
+    const date = new Date(timestamp);
+    return date.toLocaleDateString([], { month: 'short', day: 'numeric' });
+  };
 
-  const renderConversation = ({ item }) => (
-    <TouchableOpacity
-      style={[styles.conversationItem, { backgroundColor: themeColors.surface }]}
-      onPress={() => navigation.navigate('Chat', {
-        conversationId: item.id,
-        userName: item.otherUserName,
-        userAvatar: item.otherUserAvatar,
-        userId: item.otherUserId,
-      })}
-      activeOpacity={0.7}
-    >
-      <Image
-        source={{ uri: item.otherUserAvatar || `https://i.pravatar.cc/150?u=${item.otherUserId}` }}
-        style={styles.avatar}
-      />
-      <View style={styles.conversationContent}>
-        <View style={styles.conversationHeader}>
-          <Text style={[styles.userName, { color: themeColors.text }]} numberOfLines={1}>
-            {item.otherUserName || 'User'}
-          </Text>
-          <Text style={[styles.timestamp, { color: themeColors.textSecondary }]}>
-            {formatConversationTime(item.lastMessageTime || item.updatedAt)}
-          </Text>
-        </View>
-        <Text 
-          style={[styles.lastMessage, { color: themeColors.textSecondary }]} 
-          numberOfLines={1}
-        >
-          {item.lastMessage || 'Start a conversation...'}
+  const getOtherParticipant = (conversation) => {
+    if (conversation.participant1Id === user?.id) {
+      return {
+        id: conversation.participant2Id,
+        name: conversation.participant2Name,
+        avatar: conversation.participant2Avatar,
+      };
+    }
+    return {
+      id: conversation.participant1Id,
+      name: conversation.participant1Name,
+      avatar: conversation.participant1Avatar,
+    };
+  };
+
+  const getUnreadCount = (conversationId) => {
+    return allMessages.filter(
+      m => m.conversationId === conversationId && 
+           m.senderId !== user?.id && 
+           !m.read
+    ).length;
+  };
+
+  if (!user) {
+    return (
+      <View style={[styles.container, styles.centerContent, { backgroundColor: themeColors.background }]}>
+        <Text style={styles.emptyIcon}>💬</Text>
+        <Text style={[styles.emptyTitle, { color: themeColors.text }]}>Login Required</Text>
+        <Text style={[styles.emptyText, { color: themeColors.textSecondary }]}>
+          Please login to view your messages
         </Text>
       </View>
-      <Ionicons name="chevron-forward" size={20} color={themeColors.textSecondary} />
-    </TouchableOpacity>
-  );
-
-  const renderEmptyState = () => (
-    <View style={styles.emptyContainer}>
-      <Ionicons name="chatbubbles-outline" size={80} color={themeColors.textSecondary} />
-      <Text style={[styles.emptyTitle, { color: themeColors.text }]}>
-        {t('noConversations')}
-      </Text>
-      <Text style={[styles.emptySubtitle, { color: themeColors.textSecondary }]}>
-        Start messaging by viewing a post and clicking "Send Message"
-      </Text>
-    </View>
-  );
+    );
+  }
 
   return (
     <View style={[styles.container, { backgroundColor: themeColors.background }]}>
       {/* Header */}
       <View style={[styles.header, { backgroundColor: themeColors.surface, borderBottomColor: themeColors.border }]}>
-        <Text style={[styles.headerTitle, { color: themeColors.text }]}>{t('messages')}</Text>
+        <Text style={[styles.headerTitle, { color: themeColors.text }]}>Messages</Text>
+        <Text style={[styles.headerSubtitle, { color: themeColors.textSecondary }]}>
+          Your conversations
+        </Text>
       </View>
 
-      {/* Search Bar */}
-      <View style={[styles.searchContainer, { backgroundColor: themeColors.surface }]}>
-        <View style={[styles.searchBar, { borderColor: themeColors.border }]}>
-          <Ionicons name="search-outline" size={20} color={themeColors.textSecondary} />
-          <TextInput
-            style={[styles.searchInput, { color: themeColors.text }]}
-            placeholder={t('search')}
-            placeholderTextColor={themeColors.textSecondary}
-            value={searchQuery}
-            onChangeText={setSearchQuery}
-          />
-          {searchQuery.length > 0 && (
-            <TouchableOpacity onPress={() => setSearchQuery('')}>
-              <Ionicons name="close-circle" size={20} color={themeColors.textSecondary} />
-            </TouchableOpacity>
-          )}
-        </View>
-      </View>
-
-      {/* Conversations List */}
       {isLoading ? (
-        <View style={styles.loadingContainer}>
+        <View style={styles.centerContent}>
           <ActivityIndicator size="large" color={colors.primary} />
+          <Text style={[styles.loadingText, { color: themeColors.textSecondary }]}>
+            Loading conversations...
+          </Text>
+        </View>
+      ) : userConversations.length === 0 ? (
+        <View style={styles.centerContent}>
+          <Text style={styles.emptyIcon}>💬</Text>
+          <Text style={[styles.emptyTitle, { color: themeColors.text }]}>No Messages Yet</Text>
+          <Text style={[styles.emptyText, { color: themeColors.textSecondary }]}>
+            Start a conversation by messaging someone from their post
+          </Text>
         </View>
       ) : (
-        <FlatList
-          data={myConversations}
-          renderItem={renderConversation}
-          keyExtractor={(item) => item.id}
-          contentContainerStyle={[
-            styles.listContent,
-            myConversations.length === 0 && styles.emptyListContent
-          ]}
-          ListEmptyComponent={renderEmptyState}
-          showsVerticalScrollIndicator={false}
-        />
+        <ScrollView contentContainerStyle={styles.conversationsList}>
+          {userConversations.map((conversation) => {
+            const other = getOtherParticipant(conversation);
+            const unreadCount = getUnreadCount(conversation.id);
+
+            return (
+              <TouchableOpacity
+                key={conversation.id}
+                style={[styles.conversationItem, { backgroundColor: themeColors.surface }]}
+                onPress={() => navigation.navigate('Chat', {
+                  conversationId: conversation.id,
+                  userName: other.name,
+                  userAvatar: other.avatar,
+                  userId: other.id,
+                })}
+                activeOpacity={0.7}
+              >
+                <Image 
+                  source={{ uri: other.avatar || `https://i.pravatar.cc/150?u=${other.id}` }}
+                  style={styles.avatar}
+                />
+                <View style={styles.conversationContent}>
+                  <View style={styles.conversationHeader}>
+                    <Text style={[styles.participantName, { color: themeColors.text }]}>
+                      {other.name}
+                    </Text>
+                    <Text style={[styles.messageTime, { color: themeColors.textSecondary }]}>
+                      {formatTime(conversation.lastMessageTime)}
+                    </Text>
+                  </View>
+                  <View style={styles.messagePreviewRow}>
+                    <Text 
+                      style={[
+                        styles.messagePreview, 
+                        { color: themeColors.textSecondary },
+                        unreadCount > 0 && styles.unreadPreview
+                      ]} 
+                      numberOfLines={1}
+                    >
+                      {conversation.lastMessage || 'No messages yet'}
+                    </Text>
+                    {unreadCount > 0 && (
+                      <View style={styles.unreadBadge}>
+                        <Text style={styles.unreadCount}>{unreadCount}</Text>
+                      </View>
+                    )}
+                  </View>
+                </View>
+              </TouchableOpacity>
+            );
+          })}
+        </ScrollView>
       )}
     </View>
   );
@@ -159,6 +176,12 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
   },
+  centerContent: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: spacing.xl,
+  },
   header: {
     paddingHorizontal: spacing.xl,
     paddingTop: 50,
@@ -166,89 +189,85 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
   },
   headerTitle: {
-    fontSize: typography.xxl,
+    fontSize: 28,
     fontWeight: '700',
   },
-  searchContainer: {
-    paddingHorizontal: spacing.lg,
-    paddingVertical: spacing.md,
+  headerSubtitle: {
+    fontSize: 14,
+    marginTop: spacing.xs,
   },
-  searchBar: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    borderWidth: 1,
-    borderRadius: borderRadius.lg,
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm,
-    gap: spacing.sm,
+  loadingText: {
+    marginTop: spacing.lg,
+    fontSize: 16,
   },
-  searchInput: {
-    flex: 1,
-    fontSize: typography.md,
-    paddingVertical: spacing.xs,
+  emptyIcon: {
+    fontSize: 64,
+    marginBottom: spacing.lg,
   },
-  loadingContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
+  emptyTitle: {
+    fontSize: 20,
+    fontWeight: '700',
+    marginBottom: spacing.sm,
   },
-  listContent: {
-    paddingHorizontal: spacing.lg,
-    paddingVertical: spacing.sm,
+  emptyText: {
+    fontSize: 15,
+    textAlign: 'center',
   },
-  emptyListContent: {
-    flex: 1,
+  conversationsList: {
+    padding: spacing.lg,
   },
   conversationItem: {
     flexDirection: 'row',
-    alignItems: 'center',
-    padding: spacing.md,
-    borderRadius: borderRadius.lg,
+    padding: spacing.lg,
+    borderRadius: 16,
     marginBottom: spacing.sm,
-    ...shadows.sm,
   },
   avatar: {
     width: 56,
     height: 56,
     borderRadius: 28,
-    marginRight: spacing.md,
+    marginRight: spacing.lg,
   },
   conversationContent: {
     flex: 1,
+    justifyContent: 'center',
   },
   conversationHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: spacing.xs,
+    marginBottom: 4,
   },
-  userName: {
-    fontSize: typography.md,
+  participantName: {
+    fontSize: 16,
     fontWeight: '600',
+  },
+  messageTime: {
+    fontSize: 12,
+  },
+  messagePreviewRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  messagePreview: {
     flex: 1,
-    marginRight: spacing.sm,
+    fontSize: 14,
   },
-  timestamp: {
-    fontSize: typography.xs,
+  unreadPreview: {
+    fontWeight: '600',
   },
-  lastMessage: {
-    fontSize: typography.sm,
-  },
-  emptyContainer: {
-    flex: 1,
+  unreadBadge: {
+    backgroundColor: colors.primary,
+    minWidth: 20,
+    height: 20,
+    borderRadius: 10,
     justifyContent: 'center',
     alignItems: 'center',
-    paddingHorizontal: spacing.xxxl,
+    marginLeft: spacing.sm,
   },
-  emptyTitle: {
-    fontSize: typography.xl,
+  unreadCount: {
+    color: '#fff',
+    fontSize: 11,
     fontWeight: '700',
-    marginTop: spacing.xl,
-    marginBottom: spacing.sm,
-  },
-  emptySubtitle: {
-    fontSize: typography.base,
-    textAlign: 'center',
-    lineHeight: 22,
   },
 });

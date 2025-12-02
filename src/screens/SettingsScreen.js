@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React from 'react';
 import {
   View,
   Text,
@@ -7,29 +7,18 @@ import {
   TouchableOpacity,
   Switch,
   Alert,
-  Modal,
 } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
 import { useAuthStore } from '../store/authStore';
 import { useSettingsStore } from '../store/settingsStore';
-import { useTranslation } from '../utils/translations';
-import { colors, spacing, borderRadius, typography, shadows } from '../styles/theme';
-
-const LANGUAGES = [
-  { code: 'en', name: 'English', flag: '🇺🇸' },
-  { code: 'he', name: 'עברית', flag: '🇮🇱' },
-];
+import { colors, spacing, borderRadius } from '../styles/theme';
 
 export default function SettingsScreen({ navigation }) {
   const user = useAuthStore((state) => state.user);
   const logout = useAuthStore((state) => state.logout);
   const darkMode = useSettingsStore((state) => state.darkMode);
   const language = useSettingsStore((state) => state.language);
-  const toggleDarkMode = useSettingsStore((state) => state.toggleDarkMode);
+  const setDarkMode = useSettingsStore((state) => state.setDarkMode);
   const setLanguage = useSettingsStore((state) => state.setLanguage);
-  const t = useTranslation();
-
-  const [showLanguageModal, setShowLanguageModal] = useState(false);
 
   const themeColors = {
     background: darkMode ? colors.backgroundDark : colors.background,
@@ -39,236 +28,184 @@ export default function SettingsScreen({ navigation }) {
     border: darkMode ? colors.borderDark : colors.border,
   };
 
-  const handleLogout = () => {
+  const handleLogout = async () => {
     Alert.alert(
-      t('logOut'),
-      t('signOutOfAccount'),
+      'Logout',
+      'Are you sure you want to logout?',
       [
-        { text: t('cancel'), style: 'cancel' },
+        { text: 'Cancel', style: 'cancel' },
         { 
-          text: t('logOut'), 
+          text: 'Logout', 
           style: 'destructive',
           onPress: async () => {
             await logout();
+            navigation.reset({
+              index: 0,
+              routes: [{ name: 'Login' }],
+            });
           }
         },
       ]
     );
   };
 
-  const handleDeleteAccount = () => {
-    Alert.alert(
-      t('deleteAccount'),
-      t('areYouSureDeleteAccount'),
-      [
-        { text: t('cancel'), style: 'cancel' },
-        { 
-          text: t('delete'), 
-          style: 'destructive',
-          onPress: async () => {
-            // In production, delete user data from InstantDB
-            await logout();
-          }
-        },
-      ]
-    );
+  const toggleLanguage = () => {
+    const newLang = language === 'en' ? 'he' : 'en';
+    setLanguage(newLang);
   };
-
-  const getCurrentLanguage = () => {
-    return LANGUAGES.find(l => l.code === language) || LANGUAGES[0];
-  };
-
-  const renderSettingItem = ({ 
-    icon, 
-    label, 
-    description, 
-    onPress, 
-    rightElement,
-    danger = false 
-  }) => (
-    <TouchableOpacity
-      style={[styles.settingItem, { borderBottomColor: themeColors.border }]}
-      onPress={onPress}
-      activeOpacity={0.7}
-      disabled={!onPress && !rightElement}
-    >
-      <View style={[
-        styles.settingIcon,
-        { backgroundColor: danger ? colors.errorLight : themeColors.background },
-      ]}>
-        <Ionicons 
-          name={icon} 
-          size={22} 
-          color={danger ? colors.error : colors.primary} 
-        />
-      </View>
-      <View style={styles.settingContent}>
-        <Text style={[
-          styles.settingLabel,
-          { color: danger ? colors.error : themeColors.text },
-        ]}>
-          {label}
-        </Text>
-        {description && (
-          <Text style={[styles.settingDescription, { color: themeColors.textSecondary }]}>
-            {description}
-          </Text>
-        )}
-      </View>
-      {rightElement || (onPress && (
-        <Ionicons name="chevron-forward" size={20} color={themeColors.textSecondary} />
-      ))}
-    </TouchableOpacity>
-  );
 
   return (
-    <ScrollView 
-      style={[styles.container, { backgroundColor: themeColors.background }]}
-      contentContainerStyle={styles.content}
-      showsVerticalScrollIndicator={false}
-    >
-      {/* Account Section */}
-      <View style={[styles.section, { backgroundColor: themeColors.surface }]}>
-        <Text style={[styles.sectionTitle, { color: themeColors.textSecondary }]}>
-          {t('account')}
-        </Text>
-        
-        {renderSettingItem({
-          icon: 'person-outline',
-          label: t('editProfile'),
-          description: t('editProfileDesc'),
-          onPress: () => navigation.navigate('EditProfile'),
-        })}
-        
-        {renderSettingItem({
-          icon: 'shield-checkmark-outline',
-          label: t('privacySecurity'),
-          description: t('privacySecurityDesc'),
-          onPress: () => Alert.alert('Privacy', 'Privacy settings coming soon'),
-        })}
-        
-        {renderSettingItem({
-          icon: 'notifications-outline',
-          label: t('notifications'),
-          description: t('notificationsDesc'),
-          onPress: () => Alert.alert('Notifications', 'Notification settings coming soon'),
-        })}
-      </View>
-
-      {/* App Preferences Section */}
-      <View style={[styles.section, { backgroundColor: themeColors.surface }]}>
-        <Text style={[styles.sectionTitle, { color: themeColors.textSecondary }]}>
-          {t('appPreferences')}
-        </Text>
-        
-        {renderSettingItem({
-          icon: 'language-outline',
-          label: t('language'),
-          description: t('languageDesc'),
-          onPress: () => setShowLanguageModal(true),
-          rightElement: (
-            <View style={styles.languageValue}>
-              <Text style={[styles.languageText, { color: themeColors.textSecondary }]}>
-                {getCurrentLanguage().flag} {getCurrentLanguage().name}
-              </Text>
-              <Ionicons name="chevron-forward" size={20} color={themeColors.textSecondary} />
+    <View style={[styles.container, { backgroundColor: themeColors.background }]}>
+      <ScrollView contentContainerStyle={styles.scrollContent}>
+        {/* Appearance Section */}
+        <View style={[styles.sectionCard, { backgroundColor: themeColors.surface }]}>
+          <Text style={[styles.sectionTitle, { color: themeColors.text }]}>Appearance</Text>
+          
+          <View style={[styles.settingItem, { borderBottomColor: themeColors.border }]}>
+            <View style={styles.settingInfo}>
+              <Text style={styles.settingIcon}>🌙</Text>
+              <View>
+                <Text style={[styles.settingLabel, { color: themeColors.text }]}>Dark Mode</Text>
+                <Text style={[styles.settingDescription, { color: themeColors.textSecondary }]}>
+                  Switch to dark theme
+                </Text>
+              </View>
             </View>
-          ),
-        })}
-        
-        {renderSettingItem({
-          icon: darkMode ? 'moon' : 'moon-outline',
-          label: t('darkMode'),
-          description: t('darkModeDesc'),
-          rightElement: (
             <Switch
               value={darkMode}
-              onValueChange={toggleDarkMode}
-              trackColor={{ false: themeColors.border, true: colors.primary }}
+              onValueChange={setDarkMode}
+              trackColor={{ false: '#E5E7EB', true: colors.primary }}
               thumbColor="#fff"
             />
-          ),
-        })}
-      </View>
+          </View>
 
-      {/* Danger Zone */}
-      <View style={[styles.section, { backgroundColor: themeColors.surface }]}>
-        <Text style={[styles.sectionTitle, { color: colors.error }]}>
-          {t('dangerZone')}
-        </Text>
-        
-        {renderSettingItem({
-          icon: 'log-out-outline',
-          label: t('logOut'),
-          description: t('signOutOfAccount'),
-          onPress: handleLogout,
-          danger: true,
-        })}
-        
-        {renderSettingItem({
-          icon: 'trash-outline',
-          label: t('deleteAccount'),
-          description: t('deleteAccountDesc'),
-          onPress: handleDeleteAccount,
-          danger: true,
-        })}
-      </View>
-
-      {/* App Info */}
-      <View style={styles.appInfo}>
-        <Text style={[styles.appName, { color: colors.primary }]}>DOTO</Text>
-        <Text style={[styles.appVersion, { color: themeColors.textSecondary }]}>
-          Version 1.0.0
-        </Text>
-        <Text style={[styles.appTagline, { color: themeColors.textSecondary }]}>
-          Do One Thing Others
-        </Text>
-      </View>
-
-      {/* Language Modal */}
-      <Modal
-        visible={showLanguageModal}
-        transparent
-        animationType="fade"
-        onRequestClose={() => setShowLanguageModal(false)}
-      >
-        <View style={styles.modalOverlay}>
-          <View style={[styles.modalContent, { backgroundColor: themeColors.surface }]}>
-            <View style={styles.modalHeader}>
-              <Text style={[styles.modalTitle, { color: themeColors.text }]}>
-                {t('language')}
-              </Text>
-              <TouchableOpacity onPress={() => setShowLanguageModal(false)}>
-                <Ionicons name="close" size={24} color={themeColors.textSecondary} />
-              </TouchableOpacity>
-            </View>
-
-            {LANGUAGES.map((lang) => (
-              <TouchableOpacity
-                key={lang.code}
-                style={[
-                  styles.languageOption,
-                  { borderBottomColor: themeColors.border },
-                  language === lang.code && styles.languageOptionActive,
-                ]}
-                onPress={() => {
-                  setLanguage(lang.code);
-                  setShowLanguageModal(false);
-                }}
-              >
-                <Text style={styles.languageFlag}>{lang.flag}</Text>
-                <Text style={[styles.languageName, { color: themeColors.text }]}>
-                  {lang.name}
+          <View style={[styles.settingItem, { borderBottomWidth: 0 }]}>
+            <View style={styles.settingInfo}>
+              <Text style={styles.settingIcon}>🌐</Text>
+              <View>
+                <Text style={[styles.settingLabel, { color: themeColors.text }]}>Language</Text>
+                <Text style={[styles.settingDescription, { color: themeColors.textSecondary }]}>
+                  {language === 'en' ? 'English' : 'עברית'}
                 </Text>
-                {language === lang.code && (
-                  <Ionicons name="checkmark-circle" size={24} color={colors.primary} />
-                )}
-              </TouchableOpacity>
-            ))}
+              </View>
+            </View>
+            <TouchableOpacity 
+              style={[styles.languageButton, { borderColor: themeColors.border }]}
+              onPress={toggleLanguage}
+            >
+              <Text style={[styles.languageButtonText, { color: themeColors.text }]}>
+                {language === 'en' ? 'EN' : 'HE'}
+              </Text>
+            </TouchableOpacity>
           </View>
         </View>
-      </Modal>
-    </ScrollView>
+
+        {/* Account Section */}
+        <View style={[styles.sectionCard, { backgroundColor: themeColors.surface }]}>
+          <Text style={[styles.sectionTitle, { color: themeColors.text }]}>Account</Text>
+          
+          <TouchableOpacity 
+            style={[styles.settingItem, { borderBottomColor: themeColors.border }]}
+            onPress={() => navigation.navigate('EditProfile')}
+          >
+            <View style={styles.settingInfo}>
+              <Text style={styles.settingIcon}>👤</Text>
+              <View>
+                <Text style={[styles.settingLabel, { color: themeColors.text }]}>Edit Profile</Text>
+                <Text style={[styles.settingDescription, { color: themeColors.textSecondary }]}>
+                  Update your profile information
+                </Text>
+              </View>
+            </View>
+            <Text style={[styles.settingArrow, { color: themeColors.textSecondary }]}>›</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity 
+            style={[styles.settingItem, { borderBottomColor: themeColors.border }]}
+            onPress={() => Alert.alert('Coming Soon', 'Notification settings will be available soon.')}
+          >
+            <View style={styles.settingInfo}>
+              <Text style={styles.settingIcon}>🔔</Text>
+              <View>
+                <Text style={[styles.settingLabel, { color: themeColors.text }]}>Notifications</Text>
+                <Text style={[styles.settingDescription, { color: themeColors.textSecondary }]}>
+                  Manage notification preferences
+                </Text>
+              </View>
+            </View>
+            <Text style={[styles.settingArrow, { color: themeColors.textSecondary }]}>›</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity 
+            style={[styles.settingItem, { borderBottomWidth: 0 }]}
+            onPress={() => Alert.alert('Coming Soon', 'Privacy settings will be available soon.')}
+          >
+            <View style={styles.settingInfo}>
+              <Text style={styles.settingIcon}>🔒</Text>
+              <View>
+                <Text style={[styles.settingLabel, { color: themeColors.text }]}>Privacy</Text>
+                <Text style={[styles.settingDescription, { color: themeColors.textSecondary }]}>
+                  Manage your privacy settings
+                </Text>
+              </View>
+            </View>
+            <Text style={[styles.settingArrow, { color: themeColors.textSecondary }]}>›</Text>
+          </TouchableOpacity>
+        </View>
+
+        {/* Support Section */}
+        <View style={[styles.sectionCard, { backgroundColor: themeColors.surface }]}>
+          <Text style={[styles.sectionTitle, { color: themeColors.text }]}>Support</Text>
+          
+          <TouchableOpacity 
+            style={[styles.settingItem, { borderBottomColor: themeColors.border }]}
+            onPress={() => Alert.alert('Help Center', 'Visit our help center at help.doto.app')}
+          >
+            <View style={styles.settingInfo}>
+              <Text style={styles.settingIcon}>❓</Text>
+              <View>
+                <Text style={[styles.settingLabel, { color: themeColors.text }]}>Help Center</Text>
+                <Text style={[styles.settingDescription, { color: themeColors.textSecondary }]}>
+                  Get help and support
+                </Text>
+              </View>
+            </View>
+            <Text style={[styles.settingArrow, { color: themeColors.textSecondary }]}>›</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity 
+            style={[styles.settingItem, { borderBottomWidth: 0 }]}
+            onPress={() => Alert.alert('About DOTO', 'DOTO v1.0.0\n\nDo One Thing Others\n\nBuilding community through helping.')}
+          >
+            <View style={styles.settingInfo}>
+              <Text style={styles.settingIcon}>ℹ️</Text>
+              <View>
+                <Text style={[styles.settingLabel, { color: themeColors.text }]}>About</Text>
+                <Text style={[styles.settingDescription, { color: themeColors.textSecondary }]}>
+                  Version 1.0.0
+                </Text>
+              </View>
+            </View>
+            <Text style={[styles.settingArrow, { color: themeColors.textSecondary }]}>›</Text>
+          </TouchableOpacity>
+        </View>
+
+        {/* Logout Button */}
+        <TouchableOpacity 
+          style={styles.logoutButton}
+          onPress={handleLogout}
+        >
+          <Text style={styles.logoutButtonText}>Logout</Text>
+        </TouchableOpacity>
+
+        {/* Footer */}
+        <View style={styles.footer}>
+          <Text style={[styles.footerText, { color: themeColors.textSecondary }]}>
+            DOTO © 2024
+          </Text>
+        </View>
+      </ScrollView>
+    </View>
   );
 }
 
@@ -276,117 +213,73 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
   },
-  content: {
+  scrollContent: {
     padding: spacing.lg,
-    paddingBottom: 100,
   },
-  section: {
-    borderRadius: borderRadius.xl,
+  sectionCard: {
+    borderRadius: 20,
+    padding: spacing.lg,
     marginBottom: spacing.lg,
-    overflow: 'hidden',
-    ...shadows.sm,
   },
   sectionTitle: {
-    fontSize: typography.sm,
-    fontWeight: '600',
-    textTransform: 'uppercase',
-    letterSpacing: 0.5,
-    paddingHorizontal: spacing.xl,
-    paddingTop: spacing.lg,
-    paddingBottom: spacing.sm,
+    fontSize: 18,
+    fontWeight: '700',
+    marginBottom: spacing.lg,
   },
   settingItem: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: spacing.xl,
-    paddingVertical: spacing.lg,
+    justifyContent: 'space-between',
+    paddingVertical: spacing.md,
     borderBottomWidth: 1,
-    gap: spacing.md,
   },
-  settingIcon: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    justifyContent: 'center',
+  settingInfo: {
+    flexDirection: 'row',
     alignItems: 'center',
-  },
-  settingContent: {
     flex: 1,
   },
+  settingIcon: {
+    fontSize: 24,
+    marginRight: spacing.lg,
+  },
   settingLabel: {
-    fontSize: typography.md,
+    fontSize: 16,
     fontWeight: '500',
   },
   settingDescription: {
-    fontSize: typography.sm,
+    fontSize: 13,
     marginTop: 2,
   },
-  languageValue: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.xs,
-  },
-  languageText: {
-    fontSize: typography.sm,
-  },
-  appInfo: {
-    alignItems: 'center',
-    paddingVertical: spacing.xxxl,
-  },
-  appName: {
-    fontSize: typography.xxl,
-    fontWeight: '800',
-  },
-  appVersion: {
-    fontSize: typography.sm,
-    marginTop: spacing.xs,
-  },
-  appTagline: {
-    fontSize: typography.sm,
-    marginTop: spacing.xs,
-    fontStyle: 'italic',
-  },
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.5)',
-    justifyContent: 'center',
-    alignItems: 'center',
-    padding: spacing.xl,
-  },
-  modalContent: {
-    width: '100%',
-    borderRadius: borderRadius.xxl,
-    overflow: 'hidden',
-  },
-  modalHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    padding: spacing.xl,
-    borderBottomWidth: 1,
-    borderBottomColor: colors.border,
-  },
-  modalTitle: {
-    fontSize: typography.lg,
-    fontWeight: '700',
-  },
-  languageOption: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    padding: spacing.xl,
-    borderBottomWidth: 1,
-    gap: spacing.md,
-  },
-  languageOptionActive: {
-    backgroundColor: colors.errorLight,
-  },
-  languageFlag: {
+  settingArrow: {
     fontSize: 24,
   },
-  languageName: {
-    flex: 1,
-    fontSize: typography.md,
-    fontWeight: '500',
+  languageButton: {
+    borderWidth: 1,
+    borderRadius: 8,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.xs,
+  },
+  languageButtonText: {
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  logoutButton: {
+    backgroundColor: colors.error,
+    borderRadius: 16,
+    paddingVertical: 16,
+    alignItems: 'center',
+    marginBottom: spacing.lg,
+  },
+  logoutButtonText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '700',
+  },
+  footer: {
+    alignItems: 'center',
+    paddingVertical: spacing.lg,
+  },
+  footerText: {
+    fontSize: 13,
   },
 });
-

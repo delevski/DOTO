@@ -2,29 +2,24 @@ import React, { useState } from 'react';
 import {
   View,
   Text,
-  TextInput,
-  TouchableOpacity,
   StyleSheet,
   ScrollView,
+  TextInput,
+  TouchableOpacity,
   Image,
-  ActivityIndicator,
   Alert,
-  KeyboardAvoidingView,
-  Platform,
+  ActivityIndicator,
 } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
 import { useAuthStore } from '../store/authStore';
 import { useSettingsStore } from '../store/settingsStore';
-import { useTranslation } from '../utils/translations';
 import { db } from '../lib/instant';
-import { colors, spacing, borderRadius, typography } from '../styles/theme';
+import { colors, spacing, borderRadius } from '../styles/theme';
 
 export default function EditProfileScreen({ navigation }) {
   const user = useAuthStore((state) => state.user);
   const updateUser = useAuthStore((state) => state.updateUser);
   const darkMode = useSettingsStore((state) => state.darkMode);
-  const t = useTranslation();
 
   const [name, setName] = useState(user?.name || '');
   const [bio, setBio] = useState(user?.bio || '');
@@ -40,32 +35,35 @@ export default function EditProfileScreen({ navigation }) {
   };
 
   const pickImage = async () => {
-    const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
-    
-    if (status !== 'granted') {
-      Alert.alert('Permission needed', 'Please grant camera roll permissions to change your avatar.');
-      return;
-    }
+    try {
+      const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (status !== 'granted') {
+        Alert.alert('Permission needed', 'Please grant camera roll permissions.');
+        return;
+      }
 
-    const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.Images,
-      allowsEditing: true,
-      aspect: [1, 1],
-      quality: 0.7,
-      base64: true,
-    });
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        allowsEditing: true,
+        aspect: [1, 1],
+        quality: 0.5,
+        base64: true,
+      });
 
-    if (!result.canceled && result.assets[0]) {
-      const imageUri = result.assets[0].base64 
-        ? `data:image/jpeg;base64,${result.assets[0].base64}`
-        : result.assets[0].uri;
-      setAvatar(imageUri);
+      if (!result.canceled && result.assets[0]) {
+        const asset = result.assets[0];
+        const base64Image = `data:image/jpeg;base64,${asset.base64}`;
+        setAvatar(base64Image);
+      }
+    } catch (err) {
+      console.error('Image picker error:', err);
+      Alert.alert('Error', 'Failed to pick image');
     }
   };
 
   const handleSave = async () => {
     if (!name.trim()) {
-      Alert.alert('Error', 'Please enter your name');
+      Alert.alert('Required', 'Please enter your name');
       return;
     }
 
@@ -76,51 +74,50 @@ export default function EditProfileScreen({ navigation }) {
         name: name.trim(),
         bio: bio.trim(),
         avatar: avatar,
+        updatedAt: Date.now(),
       };
 
-      // Update in local store
+      // Update in InstantDB
+      await db.transact(
+        db.tx.users[user.id].update(updates)
+      );
+
+      // Update local state
       await updateUser(updates);
 
-      // Update in InstantDB
-      if (user?.id) {
-        await db.transact(
-          db.tx.users[user.id].update({
-            ...updates,
-            updatedAt: Date.now(),
-          })
-        );
-      }
-
-      Alert.alert('Success', 'Profile updated successfully', [
+      Alert.alert('Success', 'Profile updated successfully!', [
         { text: 'OK', onPress: () => navigation.goBack() }
       ]);
-    } catch (error) {
-      console.error('Update profile error:', error);
+    } catch (err) {
+      console.error('Update profile error:', err);
       Alert.alert('Error', 'Failed to update profile');
     } finally {
       setIsLoading(false);
     }
   };
 
+  if (!user) {
+    return (
+      <View style={[styles.container, styles.centerContent, { backgroundColor: themeColors.background }]}>
+        <Text style={[styles.errorText, { color: themeColors.textSecondary }]}>
+          Please login to edit your profile
+        </Text>
+      </View>
+    );
+  }
+
   return (
-    <KeyboardAvoidingView 
-      style={[styles.container, { backgroundColor: themeColors.background }]}
-      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-    >
-      <ScrollView 
-        contentContainerStyle={styles.content}
-        showsVerticalScrollIndicator={false}
-        keyboardShouldPersistTaps="handled"
-      >
+    <View style={[styles.container, { backgroundColor: themeColors.background }]}>
+      <ScrollView contentContainerStyle={styles.scrollContent}>
         {/* Avatar Section */}
         <View style={styles.avatarSection}>
-          <TouchableOpacity style={styles.avatarContainer} onPress={pickImage}>
-            <Image
-              source={{ uri: avatar || `https://i.pravatar.cc/150?u=${user?.id}` }}
+          <TouchableOpacity onPress={pickImage}>
+            <Image 
+              source={{ uri: avatar || `https://i.pravatar.cc/150?u=${user.id}` }}
               style={styles.avatar}
             />
             <View style={styles.avatarOverlay}>
-              <Ionicons name="camera" size={24} color="#fff" />
+              <Text style={styles.avatarOverlayText}>📷</Text>
             </View>
           </TouchableOpacity>
           <TouchableOpacity onPress={pickImage}>
@@ -129,40 +126,27 @@ export default function EditProfileScreen({ navigation }) {
         </View>
 
         {/* Form */}
-        <View style={[styles.form, { backgroundColor: themeColors.surface }]}>
+        <View style={[styles.formCard, { backgroundColor: themeColors.surface }]}>
           {/* Name */}
           <View style={styles.inputGroup}>
-            <Text style={[styles.label, { color: themeColors.text }]}>
-              {t('fullName')}
-            </Text>
+            <Text style={[styles.label, { color: themeColors.text }]}>Name</Text>
             <TextInput
-              style={[styles.input, { 
-                backgroundColor: themeColors.background,
-                borderColor: themeColors.border,
-                color: themeColors.text,
-              }]}
+              style={[styles.input, { color: themeColors.text, borderColor: themeColors.border }]}
               placeholder="Your name"
               placeholderTextColor={themeColors.textSecondary}
               value={name}
               onChangeText={setName}
-              autoCapitalize="words"
             />
           </View>
 
           {/* Email (read-only) */}
           <View style={styles.inputGroup}>
-            <Text style={[styles.label, { color: themeColors.text }]}>
-              {t('emailAddress')}
-            </Text>
-            <View style={[styles.readOnlyInput, { 
-              backgroundColor: themeColors.border,
-              borderColor: themeColors.border,
-            }]}>
-              <Text style={[styles.readOnlyText, { color: themeColors.textSecondary }]}>
-                {user?.email}
-              </Text>
-              <Ionicons name="lock-closed-outline" size={16} color={themeColors.textSecondary} />
-            </View>
+            <Text style={[styles.label, { color: themeColors.text }]}>Email</Text>
+            <TextInput
+              style={[styles.input, styles.inputDisabled, { color: themeColors.textSecondary, borderColor: themeColors.border }]}
+              value={user.email}
+              editable={false}
+            />
             <Text style={[styles.helperText, { color: themeColors.textSecondary }]}>
               Email cannot be changed
             </Text>
@@ -170,15 +154,9 @@ export default function EditProfileScreen({ navigation }) {
 
           {/* Bio */}
           <View style={styles.inputGroup}>
-            <Text style={[styles.label, { color: themeColors.text }]}>
-              Bio
-            </Text>
+            <Text style={[styles.label, { color: themeColors.text }]}>Bio</Text>
             <TextInput
-              style={[styles.input, styles.textArea, { 
-                backgroundColor: themeColors.background,
-                borderColor: themeColors.border,
-                color: themeColors.text,
-              }]}
+              style={[styles.textArea, { color: themeColors.text, borderColor: themeColors.border }]}
               placeholder="Tell us about yourself..."
               placeholderTextColor={themeColors.textSecondary}
               value={bio}
@@ -199,15 +177,11 @@ export default function EditProfileScreen({ navigation }) {
           style={[styles.saveButton, isLoading && styles.saveButtonDisabled]}
           onPress={handleSave}
           disabled={isLoading}
-          activeOpacity={0.8}
         >
           {isLoading ? (
             <ActivityIndicator color="#fff" />
           ) : (
-            <>
-              <Ionicons name="checkmark-circle-outline" size={20} color="#fff" />
-              <Text style={styles.saveButtonText}>Save Changes</Text>
-            </>
+            <Text style={styles.saveButtonText}>Save Changes</Text>
           )}
         </TouchableOpacity>
 
@@ -216,14 +190,11 @@ export default function EditProfileScreen({ navigation }) {
           style={[styles.cancelButton, { borderColor: themeColors.border }]}
           onPress={() => navigation.goBack()}
           disabled={isLoading}
-          activeOpacity={0.8}
         >
-          <Text style={[styles.cancelButtonText, { color: themeColors.text }]}>
-            {t('cancel')}
-          </Text>
+          <Text style={[styles.cancelButtonText, { color: themeColors.text }]}>Cancel</Text>
         </TouchableOpacity>
       </ScrollView>
-    </KeyboardAvoidingView>
+    </View>
   );
 }
 
@@ -231,17 +202,19 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
   },
-  content: {
-    padding: spacing.xl,
-    paddingBottom: 100,
+  centerContent: {
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  scrollContent: {
+    padding: spacing.lg,
+  },
+  errorText: {
+    fontSize: 16,
   },
   avatarSection: {
     alignItems: 'center',
-    marginBottom: spacing.xxl,
-  },
-  avatarContainer: {
-    position: 'relative',
-    marginBottom: spacing.md,
+    marginBottom: spacing.xl,
   },
   avatar: {
     width: 120,
@@ -254,74 +227,69 @@ const styles = StyleSheet.create({
     position: 'absolute',
     bottom: 0,
     right: 0,
-    width: 40,
-    height: 40,
-    borderRadius: 20,
     backgroundColor: colors.primary,
+    width: 36,
+    height: 36,
+    borderRadius: 18,
     justifyContent: 'center',
     alignItems: 'center',
     borderWidth: 3,
     borderColor: '#fff',
   },
+  avatarOverlayText: {
+    fontSize: 16,
+  },
   changePhotoText: {
     color: colors.primary,
-    fontSize: typography.md,
+    fontSize: 14,
     fontWeight: '600',
+    marginTop: spacing.md,
   },
-  form: {
-    borderRadius: borderRadius.xl,
+  formCard: {
+    borderRadius: 20,
     padding: spacing.xl,
     marginBottom: spacing.xl,
   },
   inputGroup: {
-    marginBottom: spacing.xl,
+    marginBottom: spacing.lg,
   },
   label: {
-    fontSize: typography.sm,
+    fontSize: 14,
     fontWeight: '600',
     marginBottom: spacing.sm,
   },
   input: {
     borderWidth: 1,
-    borderRadius: borderRadius.lg,
+    borderRadius: 12,
     paddingHorizontal: spacing.lg,
     paddingVertical: spacing.md,
-    fontSize: typography.md,
+    fontSize: 16,
+  },
+  inputDisabled: {
+    backgroundColor: 'rgba(0,0,0,0.05)',
   },
   textArea: {
-    minHeight: 100,
-    paddingTop: spacing.md,
-  },
-  readOnlyInput: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
     borderWidth: 1,
-    borderRadius: borderRadius.lg,
+    borderRadius: 12,
     paddingHorizontal: spacing.lg,
     paddingVertical: spacing.md,
-  },
-  readOnlyText: {
-    fontSize: typography.md,
+    fontSize: 16,
+    minHeight: 100,
   },
   helperText: {
-    fontSize: typography.xs,
+    fontSize: 12,
     marginTop: spacing.xs,
-    marginLeft: spacing.xs,
   },
   charCount: {
-    fontSize: typography.xs,
+    fontSize: 12,
     textAlign: 'right',
     marginTop: spacing.xs,
   },
   saveButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
     backgroundColor: colors.primary,
-    paddingVertical: spacing.lg,
-    borderRadius: borderRadius.lg,
-    gap: spacing.sm,
+    paddingVertical: 16,
+    borderRadius: 16,
+    alignItems: 'center',
     marginBottom: spacing.md,
   },
   saveButtonDisabled: {
@@ -329,19 +297,17 @@ const styles = StyleSheet.create({
   },
   saveButtonText: {
     color: '#fff',
-    fontSize: typography.md,
-    fontWeight: '600',
+    fontSize: 16,
+    fontWeight: '700',
   },
   cancelButton: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: spacing.lg,
-    borderRadius: borderRadius.lg,
     borderWidth: 1,
+    paddingVertical: 16,
+    borderRadius: 16,
+    alignItems: 'center',
   },
   cancelButtonText: {
-    fontSize: typography.md,
-    fontWeight: '500',
+    fontSize: 16,
+    fontWeight: '600',
   },
 });
-

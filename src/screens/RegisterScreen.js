@@ -12,18 +12,16 @@ import {
   Alert,
   Image,
 } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
 import { useAuthStore } from '../store/authStore';
 import { useSettingsStore } from '../store/settingsStore';
-import { useTranslation } from '../utils/translations';
 import { db, id } from '../lib/instant';
+import { hashPassword, generateVerificationCode } from '../utils/password';
 import { colors, spacing, borderRadius, typography } from '../styles/theme';
 
 export default function RegisterScreen({ navigation }) {
   const login = useAuthStore((state) => state.login);
   const darkMode = useSettingsStore((state) => state.darkMode);
-  const t = useTranslation();
 
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
@@ -52,62 +50,66 @@ export default function RegisterScreen({ navigation }) {
     border: darkMode ? colors.borderDark : colors.border,
   };
 
-  const generateVerificationCode = () => {
-    return Math.floor(100000 + Math.random() * 900000).toString();
-  };
-
   const pickImage = async () => {
-    const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
-    
-    if (status !== 'granted') {
-      Alert.alert('Permission needed', 'Please grant camera roll permissions to upload an avatar.');
-      return;
-    }
+    try {
+      const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (status !== 'granted') {
+        Alert.alert('Permission needed', 'Please grant camera roll permissions to upload a photo.');
+        return;
+      }
 
-    const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.Images,
-      allowsEditing: true,
-      aspect: [1, 1],
-      quality: 0.5,
-      base64: true,
-    });
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        allowsEditing: true,
+        aspect: [1, 1],
+        quality: 0.5,
+        base64: true,
+      });
 
-    if (!result.canceled && result.assets[0]) {
-      setAvatar(result.assets[0].uri);
+      if (!result.canceled && result.assets[0]) {
+        const asset = result.assets[0];
+        // Store as base64 data URL for persistence
+        const base64Image = `data:image/jpeg;base64,${asset.base64}`;
+        setAvatar(base64Image);
+      }
+    } catch (err) {
+      console.error('Image picker error:', err);
+      Alert.alert('Error', 'Failed to pick image');
     }
   };
 
   const handleRegister = async () => {
     setError('');
 
+    // Validation
     if (!name.trim()) {
       setError('Please enter your name');
       return;
     }
 
     if (!email.trim()) {
-      setError(t('pleaseEnterEmail'));
+      setError('Please enter your email');
       return;
     }
 
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     if (!emailRegex.test(email.trim())) {
-      setError(t('pleaseEnterValidEmail'));
+      setError('Please enter a valid email address');
       return;
     }
 
     if (!password) {
-      setError(t('pleaseEnterPassword'));
+      setError('Please enter a password');
       return;
     }
 
     if (password.length < 6) {
-      setError(t('passwordTooShort'));
+      setError('Password must be at least 6 characters');
       return;
     }
 
     if (password !== confirmPassword) {
-      setError(t('passwordsDoNotMatch'));
+      setError('Passwords do not match');
       return;
     }
 
@@ -123,45 +125,43 @@ export default function RegisterScreen({ navigation }) {
       );
 
       if (existingUser) {
-        setError(t('emailAlreadyExists'));
+        setError('An account with this email already exists. Please login instead.');
         setIsLoading(false);
         return;
       }
 
-      // Create new user
+      // Hash password
+      const passwordHash = await hashPassword(password);
+
+      // Create user object
       const userId = id();
-      const newUser = {
+      const userData = {
         id: userId,
         name: name.trim(),
         email: email.trim(),
         emailLower: normalizedEmail,
         avatar: avatar || `https://i.pravatar.cc/150?u=${userId}`,
+        passwordHash,
         rating: 0,
         bio: '',
         createdAt: Date.now(),
         authProvider: 'email',
-        passwordHash: password, // In production, hash this!
       };
-
-      // Save to InstantDB
-      await db.transact(
-        db.tx.users[userId].update(newUser)
-      );
 
       // Generate verification code
       const code = generateVerificationCode();
       setGeneratedCode(code);
-      setPendingUser(newUser);
+      setPendingUser(userData);
       setShowVerification(true);
       
       Alert.alert(
         'Verification Code',
-        `Your code is: ${code}\n\n(In production, this would be sent via email)`,
+        `Your code is: ${code}\n\n(In production, this would be sent to your email)`,
         [{ text: 'OK' }]
       );
     } catch (err) {
       console.error('Registration error:', err);
-      setError(t('failedToRegister'));
+      setError('Failed to register. Please try again.');
     } finally {
       setIsLoading(false);
     }
@@ -189,13 +189,22 @@ export default function RegisterScreen({ navigation }) {
     const enteredCode = verificationCode.join('');
     
     if (enteredCode !== generatedCode) {
-      setError(t('invalidVerificationCode'));
+      setError('Invalid verification code. Please try again.');
       return;
     }
 
-    if (pendingUser) {
-      const { passwordHash, ...safeUser } = pendingUser;
-      await login(safeUser);
+    setIsLoading(true);
+
+    try {
+      // Save user to InstantDB
+      await db.transact(db.tx.users[pendingUser.id].update(pendingUser));
+      
+      // Login the user
+      await login(pendingUser);
+    } catch (err) {
+      console.error('Verification error:', err);
+      setError('Failed to create account. Please try again.');
+      setIsLoading(false);
     }
   };
 
@@ -221,7 +230,7 @@ export default function RegisterScreen({ navigation }) {
         <View style={styles.logoSection}>
           <Text style={styles.logo}>DOTO</Text>
           <Text style={[styles.tagline, { color: themeColors.textSecondary }]}>
-            Do One Thing Others
+            Join our community
           </Text>
         </View>
 
@@ -230,10 +239,10 @@ export default function RegisterScreen({ navigation }) {
           {!showVerification ? (
             <>
               <Text style={[styles.title, { color: themeColors.text }]}>
-                {t('createAccount')}
+                Create Account
               </Text>
               <Text style={[styles.subtitle, { color: themeColors.textSecondary }]}>
-                {t('joinCommunity')}
+                Start helping others in your community
               </Text>
 
               {error ? (
@@ -242,25 +251,29 @@ export default function RegisterScreen({ navigation }) {
                 </View>
               ) : null}
 
-              {/* Avatar Picker */}
-              <TouchableOpacity style={styles.avatarPicker} onPress={pickImage}>
-                {avatar ? (
-                  <Image source={{ uri: avatar }} style={styles.avatarImage} />
-                ) : (
-                  <View style={styles.avatarPlaceholder}>
-                    <Ionicons name="camera-outline" size={32} color={colors.primary} />
-                    <Text style={styles.avatarText}>Add Photo</Text>
-                  </View>
-                )}
-              </TouchableOpacity>
+              {/* Avatar Upload */}
+              <View style={styles.avatarSection}>
+                <TouchableOpacity onPress={pickImage} style={styles.avatarButton}>
+                  {avatar ? (
+                    <Image source={{ uri: avatar }} style={styles.avatarImage} />
+                  ) : (
+                    <View style={[styles.avatarPlaceholder, { borderColor: themeColors.border }]}>
+                      <Text style={styles.avatarIcon}>📷</Text>
+                      <Text style={[styles.avatarText, { color: themeColors.textSecondary }]}>
+                        Add Photo
+                      </Text>
+                    </View>
+                  )}
+                </TouchableOpacity>
+              </View>
 
               {/* Name Input */}
               <View style={styles.inputGroup}>
                 <Text style={[styles.label, { color: themeColors.text }]}>
-                  {t('fullName')}
+                  Full Name
                 </Text>
                 <View style={[styles.inputWrapper, { borderColor: themeColors.border }]}>
-                  <Ionicons name="person-outline" size={20} color={themeColors.textSecondary} />
+                  <Text style={styles.inputIcon}>👤</Text>
                   <TextInput
                     style={[styles.input, { color: themeColors.text }]}
                     placeholder="John Doe"
@@ -276,10 +289,10 @@ export default function RegisterScreen({ navigation }) {
               {/* Email Input */}
               <View style={styles.inputGroup}>
                 <Text style={[styles.label, { color: themeColors.text }]}>
-                  {t('emailAddress')}
+                  Email Address
                 </Text>
                 <View style={[styles.inputWrapper, { borderColor: themeColors.border }]}>
-                  <Ionicons name="mail-outline" size={20} color={themeColors.textSecondary} />
+                  <Text style={styles.inputIcon}>📧</Text>
                   <TextInput
                     style={[styles.input, { color: themeColors.text }]}
                     placeholder="your.email@example.com"
@@ -297,13 +310,13 @@ export default function RegisterScreen({ navigation }) {
               {/* Password Input */}
               <View style={styles.inputGroup}>
                 <Text style={[styles.label, { color: themeColors.text }]}>
-                  {t('password')}
+                  Password
                 </Text>
                 <View style={[styles.inputWrapper, { borderColor: themeColors.border }]}>
-                  <Ionicons name="lock-closed-outline" size={20} color={themeColors.textSecondary} />
+                  <Text style={styles.inputIcon}>🔒</Text>
                   <TextInput
                     style={[styles.input, { color: themeColors.text }]}
-                    placeholder="••••••••"
+                    placeholder="At least 6 characters"
                     placeholderTextColor={themeColors.textSecondary}
                     value={password}
                     onChangeText={setPassword}
@@ -311,11 +324,7 @@ export default function RegisterScreen({ navigation }) {
                     editable={!isLoading}
                   />
                   <TouchableOpacity onPress={() => setShowPassword(!showPassword)}>
-                    <Ionicons 
-                      name={showPassword ? 'eye-off-outline' : 'eye-outline'} 
-                      size={20} 
-                      color={themeColors.textSecondary} 
-                    />
+                    <Text style={styles.inputIcon}>{showPassword ? '🙈' : '👁️'}</Text>
                   </TouchableOpacity>
                 </View>
               </View>
@@ -323,13 +332,13 @@ export default function RegisterScreen({ navigation }) {
               {/* Confirm Password Input */}
               <View style={styles.inputGroup}>
                 <Text style={[styles.label, { color: themeColors.text }]}>
-                  {t('confirmPassword')}
+                  Confirm Password
                 </Text>
                 <View style={[styles.inputWrapper, { borderColor: themeColors.border }]}>
-                  <Ionicons name="lock-closed-outline" size={20} color={themeColors.textSecondary} />
+                  <Text style={styles.inputIcon}>🔒</Text>
                   <TextInput
                     style={[styles.input, { color: themeColors.text }]}
-                    placeholder="••••••••"
+                    placeholder="Repeat your password"
                     placeholderTextColor={themeColors.textSecondary}
                     value={confirmPassword}
                     onChangeText={setConfirmPassword}
@@ -349,7 +358,7 @@ export default function RegisterScreen({ navigation }) {
                 {isLoading ? (
                   <ActivityIndicator color="#fff" />
                 ) : (
-                  <Text style={styles.primaryButtonText}>{t('register')}</Text>
+                  <Text style={styles.primaryButtonText}>Create Account</Text>
                 )}
               </TouchableOpacity>
             </>
@@ -360,17 +369,16 @@ export default function RegisterScreen({ navigation }) {
                 style={styles.backButton}
                 onPress={resetVerification}
               >
-                <Ionicons name="arrow-back" size={24} color={themeColors.text} />
                 <Text style={[styles.backText, { color: themeColors.text }]}>
-                  {t('back')}
+                  ← Back
                 </Text>
               </TouchableOpacity>
 
               <Text style={[styles.title, { color: themeColors.text }]}>
-                {t('enterVerificationCode')}
+                Verify Your Email
               </Text>
               <Text style={[styles.subtitle, { color: themeColors.textSecondary }]}>
-                {t('verificationCodeSent')} {pendingUser?.email}
+                We sent a code to {pendingUser?.email}
               </Text>
 
               {error ? (
@@ -404,21 +412,26 @@ export default function RegisterScreen({ navigation }) {
 
               {/* Show code hint for development */}
               <View style={styles.codeHint}>
-                <Text style={[styles.codeHintText, { color: themeColors.textSecondary }]}>
-                  Your code: {generatedCode}
+                <Text style={[styles.codeHintLabel, { color: themeColors.textSecondary }]}>
+                  Development Mode - Your code:
                 </Text>
+                <Text style={styles.codeHintValue}>{generatedCode}</Text>
               </View>
 
               <TouchableOpacity
                 style={[
                   styles.primaryButton, 
-                  verificationCode.join('').length !== 6 && styles.buttonDisabled
+                  (verificationCode.join('').length !== 6 || isLoading) && styles.buttonDisabled
                 ]}
                 onPress={handleVerifyCode}
-                disabled={verificationCode.join('').length !== 6}
+                disabled={verificationCode.join('').length !== 6 || isLoading}
                 activeOpacity={0.8}
               >
-                <Text style={styles.primaryButtonText}>{t('verifyCode')}</Text>
+                {isLoading ? (
+                  <ActivityIndicator color="#fff" />
+                ) : (
+                  <Text style={styles.primaryButtonText}>Verify & Create Account</Text>
+                )}
               </TouchableOpacity>
             </>
           )}
@@ -428,10 +441,10 @@ export default function RegisterScreen({ navigation }) {
         {!showVerification && (
           <View style={styles.loginContainer}>
             <Text style={[styles.loginText, { color: themeColors.textSecondary }]}>
-              {t('alreadyHaveAccount')}{' '}
+              Already have an account?{' '}
             </Text>
             <TouchableOpacity onPress={() => navigation.navigate('Login')}>
-              <Text style={styles.loginLink}>{t('logIn')}</Text>
+              <Text style={styles.loginLink}>Log In</Text>
             </TouchableOpacity>
           </View>
         )}
@@ -447,11 +460,11 @@ const styles = StyleSheet.create({
   scrollContent: {
     flexGrow: 1,
     padding: spacing.xl,
-    paddingTop: 40,
+    paddingTop: 50,
   },
   logoSection: {
     alignItems: 'center',
-    marginBottom: spacing.xl,
+    marginBottom: 30,
   },
   logo: {
     fontSize: 48,
@@ -459,12 +472,12 @@ const styles = StyleSheet.create({
     color: colors.primary,
   },
   tagline: {
-    fontSize: typography.base,
+    fontSize: 16,
     marginTop: spacing.xs,
   },
   card: {
-    borderRadius: borderRadius.xxl,
-    padding: spacing.xxl,
+    borderRadius: 24,
+    padding: spacing.xl,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.1,
@@ -472,61 +485,63 @@ const styles = StyleSheet.create({
     elevation: 5,
   },
   title: {
-    fontSize: typography.xxl,
+    fontSize: 24,
     fontWeight: '700',
     marginBottom: spacing.sm,
-    textAlign: 'center',
   },
   subtitle: {
-    fontSize: typography.base,
+    fontSize: 15,
     marginBottom: spacing.lg,
-    textAlign: 'center',
   },
   errorBox: {
-    backgroundColor: colors.errorLight,
+    backgroundColor: '#FEE2E2',
     borderWidth: 1,
     borderColor: '#FCA5A5',
-    borderRadius: borderRadius.lg,
+    borderRadius: 12,
     padding: spacing.md,
     marginBottom: spacing.lg,
   },
   errorText: {
-    color: colors.error,
-    fontSize: typography.sm,
+    color: '#DC2626',
+    fontSize: 14,
   },
-  avatarPicker: {
-    alignSelf: 'center',
-    marginBottom: spacing.xl,
+  avatarSection: {
+    alignItems: 'center',
+    marginBottom: spacing.lg,
+  },
+  avatarButton: {
+    width: 100,
+    height: 100,
+    borderRadius: 50,
+    overflow: 'hidden',
   },
   avatarImage: {
-    width: 100,
-    height: 100,
-    borderRadius: 50,
-    borderWidth: 3,
-    borderColor: colors.primary,
+    width: '100%',
+    height: '100%',
   },
   avatarPlaceholder: {
-    width: 100,
-    height: 100,
-    borderRadius: 50,
-    backgroundColor: colors.errorLight,
+    width: '100%',
+    height: '100%',
     borderWidth: 2,
-    borderColor: colors.primary,
     borderStyle: 'dashed',
+    borderRadius: 50,
     justifyContent: 'center',
     alignItems: 'center',
+    backgroundColor: '#F9FAFB',
+  },
+  avatarIcon: {
+    fontSize: 24,
+    marginBottom: 4,
   },
   avatarText: {
-    color: colors.primary,
-    fontSize: typography.xs,
-    marginTop: spacing.xs,
+    fontSize: 12,
     fontWeight: '500',
   },
   inputGroup: {
     marginBottom: spacing.md,
   },
   label: {
-    fontSize: typography.sm,
+    fontSize: 14,
     fontWeight: '600',
     marginBottom: spacing.sm,
   },
@@ -534,22 +549,25 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     borderWidth: 1,
-    borderRadius: borderRadius.lg,
-    paddingHorizontal: spacing.lg,
-    paddingVertical: spacing.md,
-    gap: spacing.md,
+    borderRadius: 12,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    gap: spacing.sm,
+  },
+  inputIcon: {
+    fontSize: 18,
   },
   input: {
     flex: 1,
-    fontSize: typography.md,
+    fontSize: 16,
     paddingVertical: spacing.xs,
   },
   primaryButton: {
     backgroundColor: colors.primary,
-    borderRadius: borderRadius.lg,
-    paddingVertical: spacing.lg,
+    borderRadius: 12,
+    paddingVertical: 16,
     alignItems: 'center',
-    marginTop: spacing.lg,
+    marginTop: spacing.md,
     shadowColor: colors.primary,
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.3,
@@ -561,7 +579,7 @@ const styles = StyleSheet.create({
   },
   primaryButtonText: {
     color: '#fff',
-    fontSize: typography.md,
+    fontSize: 16,
     fontWeight: '600',
   },
   loginContainer: {
@@ -570,21 +588,18 @@ const styles = StyleSheet.create({
     marginTop: spacing.xl,
   },
   loginText: {
-    fontSize: typography.base,
+    fontSize: 15,
   },
   loginLink: {
-    fontSize: typography.base,
+    fontSize: 15,
     fontWeight: '600',
     color: colors.primary,
   },
   backButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
     marginBottom: spacing.lg,
-    gap: spacing.sm,
   },
   backText: {
-    fontSize: typography.md,
+    fontSize: 16,
     fontWeight: '500',
   },
   codeContainer: {
@@ -597,21 +612,26 @@ const styles = StyleSheet.create({
     width: 48,
     height: 56,
     borderWidth: 2,
-    borderRadius: borderRadius.lg,
-    fontSize: typography.xxl,
+    borderRadius: 12,
+    fontSize: 24,
     fontWeight: '700',
     textAlign: 'center',
   },
   codeHint: {
     backgroundColor: '#DBEAFE',
-    borderRadius: borderRadius.lg,
+    borderRadius: 12,
     padding: spacing.md,
     marginBottom: spacing.lg,
+    alignItems: 'center',
   },
-  codeHintText: {
-    textAlign: 'center',
-    fontSize: typography.sm,
-    fontWeight: '600',
-    color: colors.info,
+  codeHintLabel: {
+    fontSize: 12,
+    marginBottom: spacing.xs,
+  },
+  codeHintValue: {
+    fontSize: 24,
+    fontWeight: '700',
+    color: '#1D4ED8',
+    letterSpacing: 4,
   },
 });

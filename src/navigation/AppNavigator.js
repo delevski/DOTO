@@ -2,8 +2,7 @@ import React from 'react';
 import { NavigationContainer } from '@react-navigation/native';
 import { createStackNavigator } from '@react-navigation/stack';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
-import { Ionicons } from '@expo/vector-icons';
-import { View, TouchableOpacity, StyleSheet } from 'react-native';
+import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
 
 import { useAuthStore } from '../store/authStore';
 import { useSettingsStore } from '../store/settingsStore';
@@ -29,6 +28,17 @@ import EditProfileScreen from '../screens/EditProfileScreen';
 const Stack = createStackNavigator();
 const Tab = createBottomTabNavigator();
 
+// Text-based tab icon
+const TabIcon = ({ label, focused }) => (
+  <Text style={[styles.tabIcon, focused && styles.tabIconFocused]}>
+    {label === 'Feed' ? '🏠' : 
+     label === 'Map' ? '🗺️' :
+     label === 'Create' ? '➕' :
+     label === 'Messages' ? '💬' :
+     label === 'Profile' ? '👤' : '•'}
+  </Text>
+);
+
 // Custom tab bar button for Create Post
 const CreatePostButton = ({ onPress }) => (
   <TouchableOpacity
@@ -37,7 +47,7 @@ const CreatePostButton = ({ onPress }) => (
     activeOpacity={0.8}
   >
     <View style={styles.createButtonInner}>
-      <Ionicons name="add" size={28} color="#fff" />
+      <Text style={styles.createButtonText}>+</Text>
     </View>
   </TouchableOpacity>
 );
@@ -50,31 +60,9 @@ function MainTabs() {
     <Tab.Navigator
       screenOptions={({ route }) => ({
         headerShown: false,
-        tabBarIcon: ({ focused, color, size }) => {
-          let iconName;
-          
-          switch (route.name) {
-            case 'Feed':
-              iconName = focused ? 'home' : 'home-outline';
-              break;
-            case 'Map':
-              iconName = focused ? 'map' : 'map-outline';
-              break;
-            case 'CreatePost':
-              iconName = 'add';
-              break;
-            case 'Messages':
-              iconName = focused ? 'chatbubbles' : 'chatbubbles-outline';
-              break;
-            case 'Profile':
-              iconName = focused ? 'person' : 'person-outline';
-              break;
-            default:
-              iconName = 'ellipse';
-          }
-          
-          return <Ionicons name={iconName} size={size} color={color} />;
-        },
+        tabBarIcon: ({ focused }) => (
+          <TabIcon label={route.name} focused={focused} />
+        ),
         tabBarActiveTintColor: colors.primary,
         tabBarInactiveTintColor: darkMode ? colors.textMutedDark : colors.textMuted,
         tabBarStyle: {
@@ -82,7 +70,7 @@ function MainTabs() {
           borderTopColor: darkMode ? colors.borderDark : colors.border,
           paddingBottom: 8,
           paddingTop: 8,
-          height: 60,
+          height: 65,
         },
         tabBarLabelStyle: {
           fontSize: 11,
@@ -101,7 +89,7 @@ function MainTabs() {
         options={{ tabBarLabel: 'Map' }}
       />
       <Tab.Screen 
-        name="CreatePost" 
+        name="Create" 
         component={CreatePostScreen}
         options={{
           tabBarLabel: '',
@@ -242,5 +230,17 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.3,
     shadowRadius: 8,
     elevation: 8,
+  },
+  createButtonText: {
+    fontSize: 28,
+    fontWeight: '300',
+    color: '#fff',
+    marginTop: -2,
+  },
+  tabIcon: {
+    fontSize: 22,
+  },
+  tabIconFocused: {
+    transform: [{ scale: 1.1 }],
   },
 });

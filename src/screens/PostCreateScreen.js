@@ -10,7 +10,7 @@ import {
   Modal,
 } from 'react-native';
 import MapView from '../components/Map';
-import { Ionicons } from '@expo/vector-icons';
+import Icon from '../components/Icon';
 import { colors, spacing } from '../styles/theme';
 
 export default function PostCreateScreen({ navigation }) {
@@ -26,11 +26,11 @@ export default function PostCreateScreen({ navigation }) {
       <View style={styles.header}>
         <Text style={styles.headerText}>20 km</Text>
         <View style={styles.headerCenter}>
-          <Ionicons name="location" size={20} color={colors.primary} />
+          <Icon name="location" size={20} color={colors.primary} />
           <Text style={styles.headerText}>15</Text>
         </View>
         <View style={styles.headerRight}>
-          <Ionicons name="person" size={20} color={colors.primary} />
+          <Icon name="person" size={20} color={colors.primary} />
           <Text style={styles.headerText}>7</Text>
         </View>
       </View>

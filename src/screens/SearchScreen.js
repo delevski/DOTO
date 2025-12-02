@@ -8,7 +8,7 @@ import {
   SafeAreaView,
   FlatList,
 } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
+import Icon from '../components/Icon';
 import { colors, spacing } from '../styles/theme';
 
 const locations = [
@@ -35,7 +35,7 @@ export default function SearchScreen({ navigation }) {
 
   const renderLocation = ({ item }) => (
     <TouchableOpacity style={styles.locationItem}>
-      <Ionicons
+      <Icon
         name={iconMap[item.icon] || 'location'}
         size={24}
         color={colors.primary}
@@ -52,14 +52,14 @@ export default function SearchScreen({ navigation }) {
     <SafeAreaView style={styles.container}>
       <View style={styles.header}>
         <TouchableOpacity onPress={() => navigation.goBack()}>
-          <Ionicons name="arrow-back" size={24} color={colors.white} />
+          <Icon name="arrow-back" size={24} color={colors.white} />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Look for Posts</Text>
         <View style={styles.placeholder} />
       </View>
 
       <View style={styles.searchContainer}>
-        <Ionicons name="search" size={20} color={colors.textSecondary} />
+        <Icon name="search" size={20} color={colors.textSecondary} />
         <TextInput
           style={styles.searchInput}
           placeholder="Q Search address"
@@ -99,15 +99,15 @@ export default function SearchScreen({ navigation }) {
         <Text style={styles.footerText}>POWERED BY Google</Text>
         <View style={styles.bottomNav}>
           <TouchableOpacity style={styles.navItem}>
-            <Ionicons name="home" size={24} color={colors.white} />
+            <Icon name="home" size={24} color={colors.white} />
             <Text style={styles.navText}>Home</Text>
           </TouchableOpacity>
           <TouchableOpacity style={styles.navItem}>
-            <Ionicons name="briefcase" size={24} color={colors.white} />
+            <Icon name="briefcase" size={24} color={colors.white} />
             <Text style={styles.navText}>Work</Text>
           </TouchableOpacity>
           <TouchableOpacity style={styles.navItem}>
-            <Ionicons name="star" size={24} color={colors.white} />
+            <Icon name="star" size={24} color={colors.white} />
             <Text style={styles.navText}>Favorites</Text>
           </TouchableOpacity>
         </View>

@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef } from 'react';
 import {
   View,
   Text,
@@ -11,19 +11,15 @@ import {
   Platform,
   Alert,
 } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
 import { useAuthStore } from '../store/authStore';
 import { useSettingsStore } from '../store/settingsStore';
-import { useTranslation } from '../utils/translations';
-import { db } from '../lib/instant';
+import { db, id } from '../lib/instant';
+import { verifyPassword, generateVerificationCode } from '../utils/password';
 import { colors, spacing, borderRadius, typography } from '../styles/theme';
 
 export default function LoginScreen({ navigation }) {
   const login = useAuthStore((state) => state.login);
   const darkMode = useSettingsStore((state) => state.darkMode);
-  const t = useTranslation();
-  const language = useSettingsStore((state) => state.language);
-  const isRTL = language === 'he';
 
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -37,8 +33,8 @@ export default function LoginScreen({ navigation }) {
 
   const inputRefs = useRef([]);
 
-  // Query all users
-  const { data: usersData } = db.useQuery({ users: {} });
+  // Query all users from InstantDB
+  const { data: usersData, isLoading: isQueryLoading } = db.useQuery({ users: {} });
   const allUsers = usersData?.users || [];
 
   const themeColors = {
@@ -49,26 +45,22 @@ export default function LoginScreen({ navigation }) {
     border: darkMode ? colors.borderDark : colors.border,
   };
 
-  const generateVerificationCode = () => {
-    return Math.floor(100000 + Math.random() * 900000).toString();
-  };
-
   const handleLogin = async () => {
     setError('');
 
     if (!email.trim()) {
-      setError(t('pleaseEnterEmail'));
+      setError('Please enter your email');
       return;
     }
 
     if (!password) {
-      setError(t('pleaseEnterPassword'));
+      setError('Please enter your password');
       return;
     }
 
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     if (!emailRegex.test(email.trim())) {
-      setError(t('pleaseEnterValidEmail'));
+      setError('Please enter a valid email address');
       return;
     }
 
@@ -77,23 +69,30 @@ export default function LoginScreen({ navigation }) {
     try {
       const normalizedEmail = email.trim().toLowerCase();
       
-      // Find user
+      // Find user in InstantDB
       const userRecord = allUsers.find(u => 
         (u.emailLower && u.emailLower === normalizedEmail) || 
         (u.email && u.email.toLowerCase() === normalizedEmail)
       );
 
       if (!userRecord) {
-        setError(t('accountNotFound'));
+        setError('Account not found. Please register first.');
         setIsLoading(false);
         return;
       }
 
-      // For demo purposes, accept any password or check if it matches
-      // In production, you'd verify the password hash
-      if (userRecord.passwordHash && password !== 'demo123') {
-        // Simple check - in production use proper password verification
-        setError(t('incorrectPassword'));
+      // Check if user has a password (not social login only)
+      if (!userRecord.passwordHash) {
+        setError('This account uses social login. Please use Google or Facebook.');
+        setIsLoading(false);
+        return;
+      }
+
+      // Verify password
+      const isValidPassword = await verifyPassword(password, userRecord.passwordHash);
+      
+      if (!isValidPassword) {
+        setError('Incorrect password. Please try again.');
         setIsLoading(false);
         return;
       }
@@ -104,15 +103,15 @@ export default function LoginScreen({ navigation }) {
       setPendingUser(userRecord);
       setShowVerification(true);
       
-      // Show the code in an alert for development
+      // In production, this would be sent via email
       Alert.alert(
         'Verification Code',
-        `Your code is: ${code}\n\n(In production, this would be sent via email)`,
+        `Your code is: ${code}\n\n(In production, this would be sent to your email)`,
         [{ text: 'OK' }]
       );
     } catch (err) {
       console.error('Login error:', err);
-      setError(t('failedToLogin'));
+      setError('Failed to login. Please try again.');
     } finally {
       setIsLoading(false);
     }
@@ -122,16 +121,29 @@ export default function LoginScreen({ navigation }) {
     setIsLoading(true);
     
     try {
-      // Create or find demo user
-      const demoUser = {
-        id: 'demo-user-id',
-        name: 'Demo User',
-        email: 'demo@doto.app',
-        avatar: 'https://i.pravatar.cc/150?u=demo',
-        rating: 4.8,
-        bio: 'This is a demo account',
-        createdAt: Date.now(),
-      };
+      // Check if demo user exists in database
+      const demoEmail = 'demo@doto.app';
+      let demoUser = allUsers.find(u => 
+        u.email?.toLowerCase() === demoEmail || u.emailLower === demoEmail
+      );
+
+      if (!demoUser) {
+        // Create demo user if not exists
+        const demoUserId = id();
+        demoUser = {
+          id: demoUserId,
+          name: 'Demo User',
+          email: demoEmail,
+          emailLower: demoEmail,
+          avatar: 'https://i.pravatar.cc/150?u=demo',
+          rating: 4.8,
+          bio: 'This is a demo account for testing DOTO',
+          createdAt: Date.now(),
+          authProvider: 'demo',
+        };
+
+        await db.transact(db.tx.users[demoUserId].update(demoUser));
+      }
       
       await login(demoUser);
     } catch (err) {
@@ -164,7 +176,7 @@ export default function LoginScreen({ navigation }) {
     const enteredCode = verificationCode.join('');
     
     if (enteredCode !== generatedCode) {
-      setError(t('invalidVerificationCode'));
+      setError('Invalid verification code. Please try again.');
       return;
     }
 
@@ -180,6 +192,17 @@ export default function LoginScreen({ navigation }) {
     setGeneratedCode('');
     setError('');
   };
+
+  if (isQueryLoading) {
+    return (
+      <View style={[styles.container, { backgroundColor: themeColors.background, justifyContent: 'center', alignItems: 'center' }]}>
+        <ActivityIndicator size="large" color={colors.primary} />
+        <Text style={[styles.loadingText, { color: themeColors.textSecondary }]}>
+          Connecting to database...
+        </Text>
+      </View>
+    );
+  }
 
   return (
     <KeyboardAvoidingView 
@@ -204,10 +227,10 @@ export default function LoginScreen({ navigation }) {
           {!showVerification ? (
             <>
               <Text style={[styles.title, { color: themeColors.text }]}>
-                {t('welcomeBack')}
+                Welcome Back
               </Text>
               <Text style={[styles.subtitle, { color: themeColors.textSecondary }]}>
-                {t('signInToContinue')}
+                Sign in to continue helping your community
               </Text>
 
               {error ? (
@@ -219,10 +242,10 @@ export default function LoginScreen({ navigation }) {
               {/* Email Input */}
               <View style={styles.inputGroup}>
                 <Text style={[styles.label, { color: themeColors.text }]}>
-                  {t('emailAddress')}
+                  Email Address
                 </Text>
                 <View style={[styles.inputWrapper, { borderColor: themeColors.border }]}>
-                  <Ionicons name="mail-outline" size={20} color={themeColors.textSecondary} />
+                  <Text style={styles.inputIcon}>📧</Text>
                   <TextInput
                     style={[styles.input, { color: themeColors.text }]}
                     placeholder="your.email@example.com"
@@ -240,10 +263,10 @@ export default function LoginScreen({ navigation }) {
               {/* Password Input */}
               <View style={styles.inputGroup}>
                 <Text style={[styles.label, { color: themeColors.text }]}>
-                  {t('password')}
+                  Password
                 </Text>
                 <View style={[styles.inputWrapper, { borderColor: themeColors.border }]}>
-                  <Ionicons name="lock-closed-outline" size={20} color={themeColors.textSecondary} />
+                  <Text style={styles.inputIcon}>🔒</Text>
                   <TextInput
                     style={[styles.input, { color: themeColors.text }]}
                     placeholder="••••••••"
@@ -254,11 +277,7 @@ export default function LoginScreen({ navigation }) {
                     editable={!isLoading}
                   />
                   <TouchableOpacity onPress={() => setShowPassword(!showPassword)}>
-                    <Ionicons 
-                      name={showPassword ? 'eye-off-outline' : 'eye-outline'} 
-                      size={20} 
-                      color={themeColors.textSecondary} 
-                    />
+                    <Text style={styles.inputIcon}>{showPassword ? '🙈' : '👁️'}</Text>
                   </TouchableOpacity>
                 </View>
               </View>
@@ -273,7 +292,7 @@ export default function LoginScreen({ navigation }) {
                 {isLoading ? (
                   <ActivityIndicator color="#fff" />
                 ) : (
-                  <Text style={styles.primaryButtonText}>{t('logIn')}</Text>
+                  <Text style={styles.primaryButtonText}>Log In</Text>
                 )}
               </TouchableOpacity>
 
@@ -281,19 +300,19 @@ export default function LoginScreen({ navigation }) {
               <View style={styles.divider}>
                 <View style={[styles.dividerLine, { backgroundColor: themeColors.border }]} />
                 <Text style={[styles.dividerText, { color: themeColors.textSecondary }]}>
-                  {t('orContinueWith')}
+                  or continue with
                 </Text>
                 <View style={[styles.dividerLine, { backgroundColor: themeColors.border }]} />
               </View>
 
               {/* Demo Login Button */}
               <TouchableOpacity
-                style={[styles.demoButton, { borderColor: themeColors.border }]}
+                style={[styles.demoButton, { borderColor: colors.primary }]}
                 onPress={handleDemoLogin}
                 disabled={isLoading}
                 activeOpacity={0.8}
               >
-                <Ionicons name="flash-outline" size={20} color={colors.primary} />
+                <Text style={styles.demoIcon}>⚡</Text>
                 <Text style={[styles.demoButtonText, { color: colors.primary }]}>
                   Try Demo Account
                 </Text>
@@ -305,18 +324,18 @@ export default function LoginScreen({ navigation }) {
                   style={[styles.socialButton, { borderColor: themeColors.border }]}
                   activeOpacity={0.8}
                 >
-                  <Ionicons name="logo-google" size={20} color="#DB4437" />
+                  <Text style={[styles.socialIcon, { color: '#DB4437' }]}>G</Text>
                   <Text style={[styles.socialButtonText, { color: themeColors.text }]}>
-                    {t('google')}
+                    Google
                   </Text>
                 </TouchableOpacity>
                 <TouchableOpacity 
                   style={[styles.socialButton, { borderColor: themeColors.border }]}
                   activeOpacity={0.8}
                 >
-                  <Ionicons name="logo-facebook" size={20} color="#4267B2" />
+                  <Text style={[styles.socialIcon, { color: '#4267B2' }]}>f</Text>
                   <Text style={[styles.socialButtonText, { color: themeColors.text }]}>
-                    {t('facebook')}
+                    Facebook
                   </Text>
                 </TouchableOpacity>
               </View>
@@ -328,17 +347,16 @@ export default function LoginScreen({ navigation }) {
                 style={styles.backButton}
                 onPress={resetVerification}
               >
-                <Ionicons name="arrow-back" size={24} color={themeColors.text} />
                 <Text style={[styles.backText, { color: themeColors.text }]}>
-                  {t('back')}
+                  ← Back
                 </Text>
               </TouchableOpacity>
 
               <Text style={[styles.title, { color: themeColors.text }]}>
-                {t('enterVerificationCode')}
+                Enter Verification Code
               </Text>
               <Text style={[styles.subtitle, { color: themeColors.textSecondary }]}>
-                {t('verificationCodeSent')} {pendingUser?.email}
+                We sent a code to {pendingUser?.email}
               </Text>
 
               {error ? (
@@ -372,9 +390,10 @@ export default function LoginScreen({ navigation }) {
 
               {/* Show code hint for development */}
               <View style={styles.codeHint}>
-                <Text style={[styles.codeHintText, { color: themeColors.textSecondary }]}>
-                  Your code: {generatedCode}
+                <Text style={[styles.codeHintLabel, { color: themeColors.textSecondary }]}>
+                  Development Mode - Your code:
                 </Text>
+                <Text style={styles.codeHintValue}>{generatedCode}</Text>
               </View>
 
               <TouchableOpacity
@@ -386,7 +405,7 @@ export default function LoginScreen({ navigation }) {
                 disabled={verificationCode.join('').length !== 6}
                 activeOpacity={0.8}
               >
-                <Text style={styles.primaryButtonText}>{t('verifyCode')}</Text>
+                <Text style={styles.primaryButtonText}>Verify Code</Text>
               </TouchableOpacity>
             </>
           )}
@@ -396,10 +415,10 @@ export default function LoginScreen({ navigation }) {
         {!showVerification && (
           <View style={styles.signupContainer}>
             <Text style={[styles.signupText, { color: themeColors.textSecondary }]}>
-              {t('dontHaveAccount')}{' '}
+              Don't have an account?{' '}
             </Text>
             <TouchableOpacity onPress={() => navigation.navigate('Register')}>
-              <Text style={styles.signupLink}>{t('signUp')}</Text>
+              <Text style={styles.signupLink}>Sign Up</Text>
             </TouchableOpacity>
           </View>
         )}
@@ -417,9 +436,13 @@ const styles = StyleSheet.create({
     padding: spacing.xl,
     paddingTop: 60,
   },
+  loadingText: {
+    marginTop: spacing.lg,
+    fontSize: typography.md,
+  },
   logoSection: {
     alignItems: 'center',
-    marginBottom: spacing.xxxl,
+    marginBottom: 40,
   },
   logo: {
     fontSize: 56,
@@ -427,12 +450,12 @@ const styles = StyleSheet.create({
     color: colors.primary,
   },
   tagline: {
-    fontSize: typography.md,
+    fontSize: 16,
     marginTop: spacing.xs,
   },
   card: {
-    borderRadius: borderRadius.xxl,
-    padding: spacing.xxl,
+    borderRadius: 24,
+    padding: spacing.xl,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.1,
@@ -440,31 +463,31 @@ const styles = StyleSheet.create({
     elevation: 5,
   },
   title: {
-    fontSize: typography.xxl,
+    fontSize: 26,
     fontWeight: '700',
     marginBottom: spacing.sm,
   },
   subtitle: {
-    fontSize: typography.base,
+    fontSize: 15,
     marginBottom: spacing.xl,
   },
   errorBox: {
-    backgroundColor: colors.errorLight,
+    backgroundColor: '#FEE2E2',
     borderWidth: 1,
     borderColor: '#FCA5A5',
-    borderRadius: borderRadius.lg,
+    borderRadius: 12,
     padding: spacing.md,
     marginBottom: spacing.lg,
   },
   errorText: {
-    color: colors.error,
-    fontSize: typography.sm,
+    color: '#DC2626',
+    fontSize: 14,
   },
   inputGroup: {
     marginBottom: spacing.lg,
   },
   label: {
-    fontSize: typography.sm,
+    fontSize: 14,
     fontWeight: '600',
     marginBottom: spacing.sm,
   },
@@ -472,20 +495,23 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     borderWidth: 1,
-    borderRadius: borderRadius.lg,
-    paddingHorizontal: spacing.lg,
-    paddingVertical: spacing.md,
-    gap: spacing.md,
+    borderRadius: 12,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    gap: spacing.sm,
+  },
+  inputIcon: {
+    fontSize: 18,
   },
   input: {
     flex: 1,
-    fontSize: typography.md,
+    fontSize: 16,
     paddingVertical: spacing.xs,
   },
   primaryButton: {
     backgroundColor: colors.primary,
-    borderRadius: borderRadius.lg,
-    paddingVertical: spacing.lg,
+    borderRadius: 12,
+    paddingVertical: 16,
     alignItems: 'center',
     marginTop: spacing.md,
     shadowColor: colors.primary,
@@ -499,7 +525,7 @@ const styles = StyleSheet.create({
   },
   primaryButtonText: {
     color: '#fff',
-    fontSize: typography.md,
+    fontSize: 16,
     fontWeight: '600',
   },
   divider: {
@@ -512,21 +538,24 @@ const styles = StyleSheet.create({
     height: 1,
   },
   dividerText: {
-    paddingHorizontal: spacing.lg,
-    fontSize: typography.sm,
+    paddingHorizontal: spacing.md,
+    fontSize: 14,
   },
   demoButton: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 2,
-    borderRadius: borderRadius.lg,
-    paddingVertical: spacing.md,
+    borderRadius: 12,
+    paddingVertical: 14,
     marginBottom: spacing.lg,
     gap: spacing.sm,
   },
+  demoIcon: {
+    fontSize: 18,
+  },
   demoButtonText: {
-    fontSize: typography.base,
+    fontSize: 16,
     fontWeight: '600',
   },
   socialButtons: {
@@ -539,12 +568,16 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 1,
-    borderRadius: borderRadius.lg,
-    paddingVertical: spacing.md,
+    borderRadius: 12,
+    paddingVertical: 14,
     gap: spacing.sm,
   },
+  socialIcon: {
+    fontSize: 18,
+    fontWeight: '700',
+  },
   socialButtonText: {
-    fontSize: typography.base,
+    fontSize: 15,
     fontWeight: '500',
   },
   signupContainer: {
@@ -553,21 +586,18 @@ const styles = StyleSheet.create({
     marginTop: spacing.xl,
   },
   signupText: {
-    fontSize: typography.base,
+    fontSize: 15,
   },
   signupLink: {
-    fontSize: typography.base,
+    fontSize: 15,
     fontWeight: '600',
     color: colors.primary,
   },
   backButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
     marginBottom: spacing.lg,
-    gap: spacing.sm,
   },
   backText: {
-    fontSize: typography.md,
+    fontSize: 16,
     fontWeight: '500',
   },
   codeContainer: {
@@ -580,21 +610,26 @@ const styles = StyleSheet.create({
     width: 48,
     height: 56,
     borderWidth: 2,
-    borderRadius: borderRadius.lg,
-    fontSize: typography.xxl,
+    borderRadius: 12,
+    fontSize: 24,
     fontWeight: '700',
     textAlign: 'center',
   },
   codeHint: {
     backgroundColor: '#DBEAFE',
-    borderRadius: borderRadius.lg,
+    borderRadius: 12,
     padding: spacing.md,
     marginBottom: spacing.lg,
+    alignItems: 'center',
   },
-  codeHintText: {
-    textAlign: 'center',
-    fontSize: typography.sm,
-    fontWeight: '600',
-    color: colors.info,
+  codeHintLabel: {
+    fontSize: 12,
+    marginBottom: spacing.xs,
+  },
+  codeHintValue: {
+    fontSize: 24,
+    fontWeight: '700',
+    color: '#1D4ED8',
+    letterSpacing: 4,
   },
 });

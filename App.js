@@ -1,3 +1,6 @@
+// Polyfills must be imported first
+import 'react-native-get-random-values';
+
 import React, { useEffect, useState } from 'react';
 import { View, Text, StyleSheet, ActivityIndicator } from 'react-native';
 import { StatusBar } from 'expo-status-bar';

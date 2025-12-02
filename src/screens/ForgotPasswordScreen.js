@@ -11,7 +11,7 @@ import {
   ActivityIndicator,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
-import { Ionicons } from '@expo/vector-icons';
+import Icon from '../components/Icon';
 import { colors, spacing, borderRadius, typography, shadows } from '../styles/theme';
 import { db } from '../lib/instant';
 import { generateVerificationCode } from '../utils/password';
@@ -85,7 +85,7 @@ export default function ForgotPasswordScreen({ navigation }) {
           style={styles.backButton}
           onPress={() => navigation.goBack()}
         >
-          <Ionicons name="arrow-back" size={24} color={colors.white} />
+          <Icon name="arrow-back" size={24} color={colors.white} />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>{t('forgotPassword')}</Text>
         <Text style={styles.headerSubtitle}>
@@ -101,7 +101,7 @@ export default function ForgotPasswordScreen({ navigation }) {
           <View style={styles.inputGroup}>
             <Text style={styles.label}>{t('emailAddress')}</Text>
             <View style={styles.inputWrapper}>
-              <Ionicons name="mail-outline" size={20} color={colors.textSecondary} style={styles.inputIcon} />
+              <Icon name="mail-outline" size={20} color={colors.textSecondary} style={styles.inputIcon} />
               <TextInput
                 style={styles.input}
                 placeholder="your.email@example.com"

@@ -1,44 +1,38 @@
-import React, { useState, useRef } from 'react';
+import React, { useState } from 'react';
 import {
   View,
   Text,
   StyleSheet,
   ScrollView,
-  Image,
   TouchableOpacity,
+  Image,
   TextInput,
-  Alert,
-  Share,
   ActivityIndicator,
+  Alert,
   Modal,
 } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
 import { useAuthStore } from '../store/authStore';
 import { useSettingsStore } from '../store/settingsStore';
-import { useTranslation } from '../utils/translations';
 import { db, id } from '../lib/instant';
-import { getConversationId, createOrUpdateConversation } from '../utils/messaging';
-import { colors, spacing, borderRadius, typography, shadows } from '../styles/theme';
+import { colors, spacing, borderRadius } from '../styles/theme';
 
 export default function PostDetailsScreen({ route, navigation }) {
   const { postId } = route.params;
   const user = useAuthStore((state) => state.user);
   const darkMode = useSettingsStore((state) => state.darkMode);
-  const t = useTranslation();
-
+  
   const [newComment, setNewComment] = useState('');
   const [showRatingModal, setShowRatingModal] = useState(false);
   const [selectedRating, setSelectedRating] = useState(0);
-  const [isSubmittingRating, setIsSubmittingRating] = useState(false);
 
-  // Fetch post and comments
+  // Fetch post and comments from InstantDB
   const { isLoading, error, data } = db.useQuery({ 
     posts: { $: { where: { id: postId } } },
     comments: { $: { where: { postId: postId } } }
   });
-
+  
   const post = data?.posts?.[0];
-  const comments = data?.comments || [];
+  const comments = (data?.comments || []).sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
 
   const themeColors = {
     background: darkMode ? colors.backgroundDark : colors.background,
@@ -50,23 +44,28 @@ export default function PostDetailsScreen({ route, navigation }) {
 
   if (isLoading) {
     return (
-      <View style={[styles.centerContent, { backgroundColor: themeColors.background }]}>
+      <View style={[styles.container, styles.centerContent, { backgroundColor: themeColors.background }]}>
         <ActivityIndicator size="large" color={colors.primary} />
+        <Text style={[styles.loadingText, { color: themeColors.textSecondary }]}>Loading post...</Text>
       </View>
     );
   }
 
-  if (!post) {
+  if (error || !post) {
     return (
-      <View style={[styles.centerContent, { backgroundColor: themeColors.background }]}>
-        <Text style={{ color: themeColors.text }}>Post not found</Text>
+      <View style={[styles.container, styles.centerContent, { backgroundColor: themeColors.background }]}>
+        <Text style={styles.errorIcon}>⚠️</Text>
+        <Text style={[styles.errorText, { color: colors.error }]}>Post not found</Text>
+        <TouchableOpacity style={styles.backButton} onPress={() => navigation.goBack()}>
+          <Text style={styles.backButtonText}>Go Back</Text>
+        </TouchableOpacity>
       </View>
     );
   }
 
-  const isMyPost = post.authorId === user?.id;
   const claimers = post.claimers || [];
   const approvedClaimerId = post.approvedClaimerId;
+  const isMyPost = post.authorId === user?.id;
   const isClaimedByMe = approvedClaimerId === user?.id;
   const hasClaimed = user && claimers.some(c => c.userId === user.id);
   const likedBy = post.likedBy || [];
@@ -83,40 +82,14 @@ export default function PostDetailsScreen({ route, navigation }) {
     const hours = Math.floor(diff / (1000 * 60 * 60));
     const days = Math.floor(hours / 24);
     
-    if (days > 0) return `${days} day${days > 1 ? 's' : ''} ago`;
-    if (hours > 0) return `${hours} hr${hours > 1 ? 's' : ''} ago`;
+    if (days > 0) return `${days}d ago`;
+    if (hours > 0) return `${hours}h ago`;
     return 'Just now';
-  };
-
-  const handleLike = async () => {
-    if (!user) {
-      Alert.alert('Login Required', t('mustBeLoggedInToLike'));
-      return;
-    }
-
-    const currentLikedBy = post.likedBy || [];
-    const isCurrentlyLiked = currentLikedBy.includes(user.id);
-    
-    if (isCurrentlyLiked) {
-      await db.transact(
-        db.tx.posts[postId].update({
-          likedBy: currentLikedBy.filter(id => id !== user.id),
-          likes: Math.max(0, (post.likes || 0) - 1)
-        })
-      );
-    } else {
-      await db.transact(
-        db.tx.posts[postId].update({
-          likedBy: [...currentLikedBy, user.id],
-          likes: (post.likes || 0) + 1
-        })
-      );
-    }
   };
 
   const handleClaim = async () => {
     if (!user) {
-      Alert.alert('Login Required', 'You must be logged in to claim a task');
+      Alert.alert('Login Required', 'Please login to claim tasks');
       return;
     }
 
@@ -143,8 +116,8 @@ export default function PostDetailsScreen({ route, navigation }) {
           claimers: [...claimers, newClaimer]
         })
       );
-
-      Alert.alert('Success', 'You have claimed this task! Waiting for approval.');
+      
+      Alert.alert('Success', 'Task claimed! The poster will review your claim.');
     } catch (err) {
       console.error('Claim error:', err);
       Alert.alert('Error', 'Failed to claim task');
@@ -154,69 +127,54 @@ export default function PostDetailsScreen({ route, navigation }) {
   const handleApproveClaimer = async (claimerUserId) => {
     try {
       const claimer = claimers.find(c => c.userId === claimerUserId);
-      
+      if (!claimer) return;
+
       await db.transact(
         db.tx.posts[postId].update({
           approvedClaimerId: claimerUserId,
-          claimedBy: claimerUserId,
-          claimedByName: claimer?.userName || 'Someone'
+          approvedClaimerName: claimer.userName,
+          approvedClaimerAvatar: claimer.userAvatar,
+          approvedAt: Date.now()
         })
       );
-
-      Alert.alert('Success', 'Claimer approved!');
+      
+      Alert.alert('Success', `${claimer.userName} has been approved!`);
     } catch (err) {
       console.error('Approve error:', err);
       Alert.alert('Error', 'Failed to approve claimer');
     }
   };
 
-  const handleMarkComplete = async () => {
-    try {
-      await db.transact(
-        db.tx.posts[postId].update({
-          completedByClaimer: true
-        })
-      );
-      Alert.alert('Success', 'Marked as complete! Waiting for poster confirmation.');
-    } catch (err) {
-      console.error('Complete error:', err);
-    }
-  };
-
-  const handleConfirmComplete = () => {
-    setShowRatingModal(true);
-  };
-
-  const handleSubmitRating = async () => {
-    if (selectedRating === 0) {
-      Alert.alert('Error', 'Please select a rating');
+  const handleLike = async () => {
+    if (!user) {
+      Alert.alert('Login Required', 'Please login to like posts');
       return;
     }
 
-    setIsSubmittingRating(true);
-
     try {
-      await db.transact(
-        db.tx.posts[postId].update({
-          completedByAuthor: true,
-          isCompleted: true,
-          completedAt: Date.now(),
-          helperRating: selectedRating
-        })
-      );
-
-      setShowRatingModal(false);
-      Alert.alert('Success', 'Task completed and helper rated!');
+      if (isLiked) {
+        await db.transact(
+          db.tx.posts[postId].update({
+            likedBy: likedBy.filter(uid => uid !== user.id),
+            likes: Math.max(0, (post.likes || 0) - 1)
+          })
+        );
+      } else {
+        await db.transact(
+          db.tx.posts[postId].update({
+            likedBy: [...likedBy, user.id],
+            likes: (post.likes || 0) + 1
+          })
+        );
+      }
     } catch (err) {
-      console.error('Rating error:', err);
-    } finally {
-      setIsSubmittingRating(false);
+      console.error('Like error:', err);
     }
   };
 
   const handleAddComment = async () => {
     if (!user) {
-      Alert.alert('Login Required', t('mustBeLoggedInToComment'));
+      Alert.alert('Login Required', 'Please login to comment');
       return;
     }
 
@@ -238,53 +196,54 @@ export default function PostDetailsScreen({ route, navigation }) {
           comments: (post.comments || 0) + 1
         })
       );
-
       setNewComment('');
     } catch (err) {
       console.error('Comment error:', err);
+      Alert.alert('Error', 'Failed to add comment');
     }
   };
 
-  const handleShare = async () => {
+  const handleMarkComplete = async () => {
     try {
-      await Share.share({
-        message: `Check out this task on DOTO: ${post.title || 'Help Needed'}\n\n${post.description}`,
-      });
-    } catch (error) {
-      console.error('Share error:', error);
+      await db.transact(
+        db.tx.posts[postId].update({
+          completedByClaimer: true
+        })
+      );
+      Alert.alert('Success', 'Task marked as complete! Waiting for poster confirmation.');
+    } catch (err) {
+      console.error('Complete error:', err);
+      Alert.alert('Error', 'Failed to mark as complete');
     }
   };
 
-  const handleMessage = async () => {
-    if (!user) return;
-    
-    const conversationId = getConversationId(user.id, post.authorId);
-    const participant1Id = user.id < post.authorId ? user.id : post.authorId;
-    const participant2Id = user.id < post.authorId ? post.authorId : user.id;
-    
-    await createOrUpdateConversation(
-      conversationId,
-      participant1Id,
-      participant2Id,
-      { name: user.name, avatar: user.avatar },
-      { name: post.author, avatar: post.avatar }
-    );
-    
-    navigation.navigate('Chat', { 
-      conversationId,
-      userName: post.author,
-      userAvatar: post.avatar,
-    });
+  const handleConfirmAndRate = async () => {
+    if (selectedRating === 0) {
+      Alert.alert('Rating Required', 'Please select a rating');
+      return;
+    }
+
+    try {
+      await db.transact(
+        db.tx.posts[postId].update({
+          completedByAuthor: true,
+          isCompleted: true,
+          completedAt: Date.now(),
+          helperRating: selectedRating
+        })
+      );
+      setShowRatingModal(false);
+      Alert.alert('Success', 'Task completed and helper rated!');
+    } catch (err) {
+      console.error('Rate error:', err);
+      Alert.alert('Error', 'Failed to complete task');
+    }
   };
 
   return (
     <View style={[styles.container, { backgroundColor: themeColors.background }]}>
-      <ScrollView 
-        style={styles.scrollView}
-        contentContainerStyle={styles.scrollContent}
-        showsVerticalScrollIndicator={false}
-      >
-        {/* Post Content */}
+      <ScrollView contentContainerStyle={styles.scrollContent}>
+        {/* Post Card */}
         <View style={[styles.postCard, { backgroundColor: themeColors.surface }]}>
           {/* Author Header */}
           <View style={styles.authorRow}>
@@ -300,16 +259,14 @@ export default function PostDetailsScreen({ route, navigation }) {
                 {formatTime(post.timestamp || post.createdAt)}
               </Text>
             </View>
-            {!isMyPost && user && (
-              <TouchableOpacity style={styles.messageButton} onPress={handleMessage}>
-                <Ionicons name="chatbubble-outline" size={20} color={colors.primary} />
-              </TouchableOpacity>
-            )}
+            <View style={styles.tagBadge}>
+              <Text style={styles.tagText}>{post.tag || post.category || 'Other'}</Text>
+            </View>
           </View>
 
-          {/* Title & Description */}
+          {/* Post Content */}
           <Text style={[styles.postTitle, { color: themeColors.text }]}>
-            {post.title || t('helpNeeded')}
+            {post.title || 'Help Needed'}
           </Text>
           <Text style={[styles.postDescription, { color: themeColors.textSecondary }]}>
             {post.description}
@@ -331,7 +288,7 @@ export default function PostDetailsScreen({ route, navigation }) {
           {/* Location */}
           {post.location && (
             <View style={styles.locationRow}>
-              <Ionicons name="location-outline" size={18} color={colors.primary} />
+              <Text style={styles.locationIcon}>📍</Text>
               <Text style={[styles.locationText, { color: themeColors.textSecondary }]}>
                 {post.location}
               </Text>
@@ -341,107 +298,104 @@ export default function PostDetailsScreen({ route, navigation }) {
           {/* Actions */}
           <View style={[styles.actionsRow, { borderTopColor: themeColors.border }]}>
             <TouchableOpacity style={styles.actionButton} onPress={handleLike}>
-              <Ionicons 
-                name={isLiked ? 'heart' : 'heart-outline'} 
-                size={24} 
-                color={isLiked ? colors.primary : themeColors.textSecondary} 
-              />
-              <Text style={[styles.actionText, { color: isLiked ? colors.primary : themeColors.textSecondary }]}>
-                {likeCount}
-              </Text>
+              <Text style={styles.actionIcon}>{isLiked ? '❤️' : '🤍'}</Text>
+              <Text style={[styles.actionText, { color: themeColors.textSecondary }]}>{likeCount}</Text>
             </TouchableOpacity>
-
             <TouchableOpacity style={styles.actionButton}>
-              <Ionicons name="chatbubble-outline" size={24} color={themeColors.textSecondary} />
-              <Text style={[styles.actionText, { color: themeColors.textSecondary }]}>
-                {comments.length}
-              </Text>
+              <Text style={styles.actionIcon}>💬</Text>
+              <Text style={[styles.actionText, { color: themeColors.textSecondary }]}>{comments.length}</Text>
             </TouchableOpacity>
-
-            <TouchableOpacity style={styles.actionButton} onPress={handleShare}>
-              <Ionicons name="share-outline" size={24} color={themeColors.textSecondary} />
+            <TouchableOpacity style={styles.actionButton}>
+              <Text style={styles.actionIcon}>↗️</Text>
+              <Text style={[styles.actionText, { color: themeColors.textSecondary }]}>Share</Text>
             </TouchableOpacity>
           </View>
         </View>
 
         {/* Claim Section */}
         <View style={[styles.claimCard, { 
-          backgroundColor: isCompleted ? colors.success : approvedClaimerId ? '#4B5563' : colors.primary 
+          backgroundColor: isCompleted ? '#059669' : approvedClaimerId ? '#4B5563' : colors.primary 
         }]}>
           {isCompleted ? (
             <>
-              <Ionicons name="trophy" size={32} color="#fff" />
-              <Text style={styles.claimTitle}>{t('taskCompleted')}</Text>
+              <Text style={styles.claimTitle}>✅ Task Completed</Text>
+              <Text style={styles.claimSubtitle}>
+                {isClaimedByMe ? 'Great job! You completed this task.' : 'This task has been completed.'}
+              </Text>
               {post.helperRating && (
                 <View style={styles.ratingDisplay}>
-                  {[1,2,3,4,5].map(star => (
-                    <Ionicons 
-                      key={star}
-                      name={star <= post.helperRating ? 'star' : 'star-outline'} 
-                      size={24} 
-                      color="#FBBF24" 
-                    />
-                  ))}
+                  <Text style={styles.ratingLabel}>Helper Rating:</Text>
+                  <Text style={styles.ratingStars}>{'⭐'.repeat(post.helperRating)}</Text>
                 </View>
               )}
             </>
           ) : approvedClaimerId ? (
             <>
-              <Ionicons name="checkmark-circle" size={32} color="#fff" />
-              <Text style={styles.claimTitle}>
-                {isClaimedByMe ? t('claimedByYou') : t('approved')}
-              </Text>
-              
-              {/* Completion Actions */}
-              {isClaimedByMe && !completedByClaimer && (
-                <TouchableOpacity style={styles.completeButton} onPress={handleMarkComplete}>
-                  <Text style={styles.completeButtonText}>{t('markAsComplete')}</Text>
-                </TouchableOpacity>
-              )}
-              
-              {isClaimedByMe && completedByClaimer && !completedByAuthor && (
-                <Text style={styles.waitingText}>Waiting for poster to confirm...</Text>
-              )}
-              
-              {isMyPost && completedByClaimer && !completedByAuthor && (
-                <TouchableOpacity style={styles.confirmButton} onPress={handleConfirmComplete}>
-                  <Text style={styles.confirmButtonText}>{t('confirmAndRate')}</Text>
-                </TouchableOpacity>
-              )}
-            </>
-          ) : isMyPost ? (
-            <>
-              <Text style={styles.claimTitle}>{t('chooseAClaimer')}</Text>
-              {claimers.length > 0 ? (
-                <View style={styles.claimersList}>
-                  {claimers.map((claimer) => (
-                    <View key={claimer.userId} style={styles.claimerItem}>
-                      <Image 
-                        source={{ uri: claimer.userAvatar }}
-                        style={styles.claimerAvatar}
-                      />
-                      <Text style={styles.claimerName}>{claimer.userName}</Text>
-                      <TouchableOpacity 
-                        style={styles.approveButton}
-                        onPress={() => handleApproveClaimer(claimer.userId)}
-                      >
-                        <Text style={styles.approveButtonText}>{t('approve')}</Text>
-                      </TouchableOpacity>
-                    </View>
-                  ))}
-                </View>
+              <Text style={styles.claimTitle}>✓ Claimer Approved</Text>
+              {isClaimedByMe ? (
+                <>
+                  <Text style={styles.claimSubtitle}>You are the approved helper!</Text>
+                  {!completedByClaimer ? (
+                    <TouchableOpacity style={styles.completeButton} onPress={handleMarkComplete}>
+                      <Text style={styles.completeButtonText}>Mark as Complete</Text>
+                    </TouchableOpacity>
+                  ) : (
+                    <Text style={styles.waitingText}>Waiting for poster to confirm...</Text>
+                  )}
+                </>
+              ) : isMyPost ? (
+                <>
+                  <Text style={styles.claimSubtitle}>
+                    {post.approvedClaimerName || 'Someone'} is helping
+                  </Text>
+                  {completedByClaimer && !completedByAuthor && (
+                    <TouchableOpacity style={styles.completeButton} onPress={() => setShowRatingModal(true)}>
+                      <Text style={styles.completeButtonText}>Confirm & Rate Helper</Text>
+                    </TouchableOpacity>
+                  )}
+                </>
               ) : (
-                <Text style={styles.noClaimersText}>{t('noClaimers')}</Text>
+                <Text style={styles.claimSubtitle}>
+                  {post.approvedClaimerName || 'Someone'} is helping with this task
+                </Text>
               )}
             </>
           ) : (
             <>
-              <Text style={styles.claimTitle}>{t('claimNow')}</Text>
-              {hasClaimed ? (
-                <Text style={styles.waitingText}>{t('waitingForApproval')}</Text>
+              <Text style={styles.claimTitle}>Claim This Task</Text>
+              <Text style={styles.claimSubtitle}>Help {post.author} and earn rewards!</Text>
+              
+              {isMyPost ? (
+                claimers.length > 0 ? (
+                  <View style={styles.claimersSection}>
+                    <Text style={styles.claimersTitle}>Choose a Claimer ({claimers.length})</Text>
+                    {claimers.map((claimer) => (
+                      <View key={claimer.userId} style={styles.claimerItem}>
+                        <Image 
+                          source={{ uri: claimer.userAvatar }}
+                          style={styles.claimerAvatar}
+                        />
+                        <Text style={styles.claimerName}>{claimer.userName}</Text>
+                        <TouchableOpacity 
+                          style={styles.approveButton}
+                          onPress={() => handleApproveClaimer(claimer.userId)}
+                        >
+                          <Text style={styles.approveButtonText}>Approve</Text>
+                        </TouchableOpacity>
+                      </View>
+                    ))}
+                  </View>
+                ) : (
+                  <Text style={styles.noClaimersText}>No claimers yet. Wait for someone to claim your task.</Text>
+                )
+              ) : hasClaimed ? (
+                <View style={styles.claimedBadge}>
+                  <Text style={styles.claimedText}>✓ You've claimed this task</Text>
+                  <Text style={styles.claimedSubtext}>Waiting for approval</Text>
+                </View>
               ) : (
                 <TouchableOpacity style={styles.claimButton} onPress={handleClaim}>
-                  <Text style={styles.claimButtonText}>{t('claimTask')}</Text>
+                  <Text style={styles.claimButtonText}>Claim Now</Text>
                 </TouchableOpacity>
               )}
             </>
@@ -449,7 +403,7 @@ export default function PostDetailsScreen({ route, navigation }) {
         </View>
 
         {/* Comments Section */}
-        <View style={[styles.commentsSection, { backgroundColor: themeColors.surface }]}>
+        <View style={[styles.commentsCard, { backgroundColor: themeColors.surface }]}>
           <Text style={[styles.commentsTitle, { color: themeColors.text }]}>
             Comments ({comments.length})
           </Text>
@@ -459,18 +413,15 @@ export default function PostDetailsScreen({ route, navigation }) {
             <View style={styles.addCommentRow}>
               <Image source={{ uri: user.avatar }} style={styles.commentAvatar} />
               <TextInput
-                style={[styles.commentInput, { borderColor: themeColors.border, color: themeColors.text }]}
-                placeholder={t('writeAComment')}
+                style={[styles.commentInput, { color: themeColors.text, borderColor: themeColors.border }]}
+                placeholder="Write a comment..."
                 placeholderTextColor={themeColors.textSecondary}
                 value={newComment}
                 onChangeText={setNewComment}
+                onSubmitEditing={handleAddComment}
               />
-              <TouchableOpacity 
-                style={[styles.sendButton, !newComment.trim() && styles.sendButtonDisabled]}
-                onPress={handleAddComment}
-                disabled={!newComment.trim()}
-              >
-                <Ionicons name="send" size={20} color="#fff" />
+              <TouchableOpacity style={styles.sendButton} onPress={handleAddComment}>
+                <Text style={styles.sendIcon}>📤</Text>
               </TouchableOpacity>
             </View>
           )}
@@ -481,79 +432,62 @@ export default function PostDetailsScreen({ route, navigation }) {
               No comments yet. Be the first to comment!
             </Text>
           ) : (
-            comments
-              .sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0))
-              .map((comment) => (
-                <View key={comment.id} style={styles.commentItem}>
-                  <Image 
-                    source={{ uri: comment.avatar || `https://i.pravatar.cc/150?u=${comment.authorId}` }}
-                    style={styles.commentAvatar}
-                  />
-                  <View style={styles.commentContent}>
-                    <View style={styles.commentHeader}>
-                      <Text style={[styles.commentAuthor, { color: themeColors.text }]}>
-                        {comment.author}
-                      </Text>
-                      <Text style={[styles.commentTime, { color: themeColors.textSecondary }]}>
-                        {formatTime(comment.timestamp)}
-                      </Text>
-                    </View>
-                    <Text style={[styles.commentText, { color: themeColors.textSecondary }]}>
-                      {comment.text}
+            comments.map((comment) => (
+              <View key={comment.id} style={styles.commentItem}>
+                <Image 
+                  source={{ uri: comment.avatar || `https://i.pravatar.cc/150?u=${comment.authorId}` }}
+                  style={styles.commentAvatar}
+                />
+                <View style={styles.commentContent}>
+                  <View style={styles.commentHeader}>
+                    <Text style={[styles.commentAuthor, { color: themeColors.text }]}>
+                      {comment.author}
+                    </Text>
+                    <Text style={[styles.commentTime, { color: themeColors.textSecondary }]}>
+                      {formatTime(comment.timestamp)}
                     </Text>
                   </View>
+                  <Text style={[styles.commentText, { color: themeColors.textSecondary }]}>
+                    {comment.text}
+                  </Text>
                 </View>
-              ))
+              </View>
+            ))
           )}
         </View>
       </ScrollView>
 
       {/* Rating Modal */}
-      <Modal
-        visible={showRatingModal}
-        transparent
-        animationType="fade"
-        onRequestClose={() => setShowRatingModal(false)}
-      >
+      <Modal visible={showRatingModal} transparent animationType="fade">
         <View style={styles.modalOverlay}>
           <View style={[styles.modalContent, { backgroundColor: themeColors.surface }]}>
-            <Ionicons name="star" size={48} color={colors.star} />
-            <Text style={[styles.modalTitle, { color: themeColors.text }]}>
-              {t('rateTheHelper')}
-            </Text>
+            <Text style={[styles.modalTitle, { color: themeColors.text }]}>Rate the Helper</Text>
             <Text style={[styles.modalSubtitle, { color: themeColors.textSecondary }]}>
-              {t('howWasYourExperience')}
+              How was your experience?
             </Text>
-
+            
             <View style={styles.starsRow}>
               {[1, 2, 3, 4, 5].map((star) => (
                 <TouchableOpacity key={star} onPress={() => setSelectedRating(star)}>
-                  <Ionicons 
-                    name={star <= selectedRating ? 'star' : 'star-outline'} 
-                    size={40} 
-                    color={star <= selectedRating ? colors.star : themeColors.textSecondary} 
-                  />
+                  <Text style={styles.starIcon}>
+                    {star <= selectedRating ? '⭐' : '☆'}
+                  </Text>
                 </TouchableOpacity>
               ))}
             </View>
 
             <View style={styles.modalButtons}>
               <TouchableOpacity 
-                style={[styles.modalButton, styles.cancelButton, { borderColor: themeColors.border }]}
+                style={[styles.modalButton, styles.cancelButton]}
                 onPress={() => setShowRatingModal(false)}
               >
-                <Text style={[styles.cancelButtonText, { color: themeColors.text }]}>{t('cancel')}</Text>
+                <Text style={styles.cancelButtonText}>Cancel</Text>
               </TouchableOpacity>
               <TouchableOpacity 
                 style={[styles.modalButton, styles.submitButton]}
-                onPress={handleSubmitRating}
-                disabled={isSubmittingRating || selectedRating === 0}
+                onPress={handleConfirmAndRate}
               >
-                {isSubmittingRating ? (
-                  <ActivityIndicator color="#fff" />
-                ) : (
-                  <Text style={styles.submitButtonText}>{t('submitRating')}</Text>
-                )}
+                <Text style={styles.submitButtonText}>Submit Rating</Text>
               </TouchableOpacity>
             </View>
           </View>
@@ -568,21 +502,39 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   centerContent: {
-    flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
   },
-  scrollView: {
-    flex: 1,
-  },
   scrollContent: {
     padding: spacing.lg,
-    gap: spacing.lg,
+  },
+  loadingText: {
+    marginTop: spacing.lg,
+    fontSize: 16,
+  },
+  errorIcon: {
+    fontSize: 48,
+  },
+  errorText: {
+    marginTop: spacing.lg,
+    fontSize: 18,
+    fontWeight: '600',
+  },
+  backButton: {
+    marginTop: spacing.lg,
+    backgroundColor: colors.primary,
+    paddingHorizontal: spacing.xl,
+    paddingVertical: spacing.md,
+    borderRadius: borderRadius.lg,
+  },
+  backButtonText: {
+    color: '#fff',
+    fontWeight: '600',
   },
   postCard: {
-    borderRadius: borderRadius.xl,
-    padding: spacing.xl,
-    ...shadows.md,
+    borderRadius: 16,
+    padding: spacing.lg,
+    marginBottom: spacing.lg,
   },
   authorRow: {
     flexDirection: 'row',
@@ -590,65 +542,66 @@ const styles = StyleSheet.create({
     marginBottom: spacing.lg,
   },
   authorAvatar: {
-    width: 56,
-    height: 56,
-    borderRadius: 28,
+    width: 48,
+    height: 48,
+    borderRadius: 24,
     marginRight: spacing.md,
   },
   authorInfo: {
     flex: 1,
   },
   authorName: {
-    fontSize: typography.lg,
-    fontWeight: '700',
+    fontSize: 16,
+    fontWeight: '600',
   },
   postTime: {
-    fontSize: typography.sm,
+    fontSize: 13,
     marginTop: 2,
   },
-  messageButton: {
-    padding: spacing.sm,
-    backgroundColor: colors.errorLight,
-    borderRadius: borderRadius.full,
+  tagBadge: {
+    backgroundColor: '#FEE2E2',
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 4,
+    borderRadius: 12,
+  },
+  tagText: {
+    color: colors.primary,
+    fontSize: 12,
+    fontWeight: '600',
   },
   postTitle: {
-    fontSize: typography.xl,
+    fontSize: 22,
     fontWeight: '700',
-    marginBottom: spacing.md,
+    marginBottom: spacing.sm,
   },
   postDescription: {
-    fontSize: typography.md,
+    fontSize: 16,
     lineHeight: 24,
     marginBottom: spacing.lg,
   },
   photosScroll: {
     marginBottom: spacing.lg,
-    marginHorizontal: -spacing.xl,
-    paddingHorizontal: spacing.xl,
   },
   postPhoto: {
     width: 200,
     height: 150,
-    borderRadius: borderRadius.lg,
+    borderRadius: 12,
     marginRight: spacing.sm,
   },
   locationRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: spacing.sm,
-    backgroundColor: '#FEF2F2',
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm,
-    borderRadius: borderRadius.lg,
-    alignSelf: 'flex-start',
+    gap: spacing.xs,
     marginBottom: spacing.lg,
   },
+  locationIcon: {
+    fontSize: 16,
+  },
   locationText: {
-    fontSize: typography.sm,
+    fontSize: 14,
   },
   actionsRow: {
     flexDirection: 'row',
-    alignItems: 'center',
     paddingTop: spacing.lg,
     borderTopWidth: 1,
     gap: spacing.xl,
@@ -658,48 +611,77 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: spacing.xs,
   },
+  actionIcon: {
+    fontSize: 20,
+  },
   actionText: {
-    fontSize: typography.md,
+    fontSize: 14,
     fontWeight: '500',
   },
   claimCard: {
-    borderRadius: borderRadius.xl,
+    borderRadius: 16,
     padding: spacing.xl,
-    alignItems: 'center',
-    ...shadows.lg,
+    marginBottom: spacing.lg,
   },
   claimTitle: {
     color: '#fff',
-    fontSize: typography.xl,
+    fontSize: 22,
     fontWeight: '700',
-    marginTop: spacing.md,
-    marginBottom: spacing.md,
+    marginBottom: spacing.sm,
+  },
+  claimSubtitle: {
+    color: 'rgba(255,255,255,0.9)',
+    fontSize: 15,
+    marginBottom: spacing.lg,
   },
   claimButton: {
     backgroundColor: '#fff',
-    paddingHorizontal: spacing.xxxl,
-    paddingVertical: spacing.md,
-    borderRadius: borderRadius.lg,
+    paddingVertical: 16,
+    borderRadius: 12,
+    alignItems: 'center',
   },
   claimButtonText: {
     color: colors.primary,
-    fontSize: typography.md,
+    fontSize: 16,
     fontWeight: '700',
   },
-  waitingText: {
-    color: 'rgba(255,255,255,0.8)',
-    fontSize: typography.sm,
+  claimedBadge: {
+    backgroundColor: 'rgba(255,255,255,0.2)',
+    padding: spacing.lg,
+    borderRadius: 12,
+    alignItems: 'center',
   },
-  claimersList: {
-    width: '100%',
-    gap: spacing.sm,
+  claimedText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  claimedSubtext: {
+    color: 'rgba(255,255,255,0.8)',
+    fontSize: 13,
+    marginTop: 4,
+  },
+  noClaimersText: {
+    color: 'rgba(255,255,255,0.8)',
+    fontSize: 14,
+    textAlign: 'center',
+  },
+  claimersSection: {
+    marginTop: spacing.sm,
+  },
+  claimersTitle: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '600',
+    marginBottom: spacing.md,
   },
   claimerItem: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: 'rgba(255,255,255,0.1)',
+    backgroundColor: 'rgba(255,255,255,0.15)',
     padding: spacing.md,
-    borderRadius: borderRadius.lg,
+    borderRadius: 12,
+    marginBottom: spacing.sm,
   },
   claimerAvatar: {
     width: 40,
@@ -710,64 +692,63 @@ const styles = StyleSheet.create({
   claimerName: {
     flex: 1,
     color: '#fff',
+    fontSize: 15,
     fontWeight: '500',
   },
   approveButton: {
     backgroundColor: '#fff',
     paddingHorizontal: spacing.lg,
     paddingVertical: spacing.sm,
-    borderRadius: borderRadius.md,
+    borderRadius: 8,
   },
   approveButtonText: {
     color: colors.primary,
+    fontSize: 13,
     fontWeight: '600',
-    fontSize: typography.sm,
-  },
-  noClaimersText: {
-    color: 'rgba(255,255,255,0.7)',
-    fontSize: typography.sm,
   },
   completeButton: {
     backgroundColor: '#fff',
-    paddingHorizontal: spacing.xl,
-    paddingVertical: spacing.md,
-    borderRadius: borderRadius.lg,
-    marginTop: spacing.md,
+    paddingVertical: 14,
+    borderRadius: 12,
+    alignItems: 'center',
   },
   completeButtonText: {
-    color: '#4B5563',
-    fontWeight: '600',
+    color: '#059669',
+    fontSize: 16,
+    fontWeight: '700',
   },
-  confirmButton: {
-    backgroundColor: colors.success,
-    paddingHorizontal: spacing.xl,
-    paddingVertical: spacing.md,
-    borderRadius: borderRadius.lg,
-    marginTop: spacing.md,
-  },
-  confirmButtonText: {
-    color: '#fff',
-    fontWeight: '600',
+  waitingText: {
+    color: 'rgba(255,255,255,0.8)',
+    fontSize: 14,
+    textAlign: 'center',
   },
   ratingDisplay: {
     flexDirection: 'row',
-    marginTop: spacing.md,
+    alignItems: 'center',
+    gap: spacing.sm,
+    marginTop: spacing.sm,
   },
-  commentsSection: {
-    borderRadius: borderRadius.xl,
-    padding: spacing.xl,
-    ...shadows.sm,
+  ratingLabel: {
+    color: 'rgba(255,255,255,0.9)',
+    fontSize: 14,
+  },
+  ratingStars: {
+    fontSize: 18,
+  },
+  commentsCard: {
+    borderRadius: 16,
+    padding: spacing.lg,
   },
   commentsTitle: {
-    fontSize: typography.lg,
+    fontSize: 18,
     fontWeight: '700',
     marginBottom: spacing.lg,
   },
   addCommentRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: spacing.sm,
     marginBottom: spacing.lg,
+    gap: spacing.sm,
   },
   commentAvatar: {
     width: 36,
@@ -777,46 +758,45 @@ const styles = StyleSheet.create({
   commentInput: {
     flex: 1,
     borderWidth: 1,
-    borderRadius: borderRadius.lg,
-    paddingHorizontal: spacing.md,
+    borderRadius: 20,
+    paddingHorizontal: spacing.lg,
     paddingVertical: spacing.sm,
-    fontSize: typography.base,
+    fontSize: 15,
   },
   sendButton: {
-    backgroundColor: colors.primary,
     padding: spacing.sm,
-    borderRadius: borderRadius.lg,
   },
-  sendButtonDisabled: {
-    opacity: 0.5,
+  sendIcon: {
+    fontSize: 20,
   },
   noCommentsText: {
     textAlign: 'center',
+    fontSize: 14,
     paddingVertical: spacing.xl,
   },
   commentItem: {
     flexDirection: 'row',
-    gap: spacing.md,
     marginBottom: spacing.lg,
   },
   commentContent: {
     flex: 1,
+    marginLeft: spacing.md,
   },
   commentHeader: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing.sm,
-    marginBottom: spacing.xs,
+    marginBottom: 4,
   },
   commentAuthor: {
+    fontSize: 14,
     fontWeight: '600',
-    fontSize: typography.sm,
   },
   commentTime: {
-    fontSize: typography.xs,
+    fontSize: 12,
   },
   commentText: {
-    fontSize: typography.base,
+    fontSize: 14,
     lineHeight: 20,
   },
   modalOverlay: {
@@ -828,24 +808,26 @@ const styles = StyleSheet.create({
   },
   modalContent: {
     width: '100%',
-    borderRadius: borderRadius.xxl,
-    padding: spacing.xxl,
+    borderRadius: 20,
+    padding: spacing.xl,
     alignItems: 'center',
   },
   modalTitle: {
-    fontSize: typography.xl,
+    fontSize: 22,
     fontWeight: '700',
-    marginTop: spacing.lg,
+    marginBottom: spacing.sm,
   },
   modalSubtitle: {
-    fontSize: typography.base,
-    marginTop: spacing.sm,
+    fontSize: 15,
     marginBottom: spacing.xl,
   },
   starsRow: {
     flexDirection: 'row',
-    gap: spacing.sm,
+    gap: spacing.md,
     marginBottom: spacing.xl,
+  },
+  starIcon: {
+    fontSize: 36,
   },
   modalButtons: {
     flexDirection: 'row',
@@ -854,21 +836,24 @@ const styles = StyleSheet.create({
   },
   modalButton: {
     flex: 1,
-    paddingVertical: spacing.md,
-    borderRadius: borderRadius.lg,
+    paddingVertical: 14,
+    borderRadius: 12,
     alignItems: 'center',
   },
   cancelButton: {
-    borderWidth: 1,
+    backgroundColor: '#E5E7EB',
   },
   cancelButtonText: {
+    color: '#4B5563',
+    fontSize: 16,
     fontWeight: '600',
   },
   submitButton: {
-    backgroundColor: colors.success,
+    backgroundColor: '#059669',
   },
   submitButtonText: {
     color: '#fff',
+    fontSize: 16,
     fontWeight: '600',
   },
 });

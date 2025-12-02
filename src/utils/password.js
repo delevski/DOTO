@@ -1,31 +1,44 @@
 // Password utilities for React Native
-// Using a simple hash for demo - in production use bcrypt via a backend
+// Using expo-crypto for secure hashing
 
-// Simple hash function (for demo purposes)
-// In production, you should use proper bcrypt hashing via your backend
+import * as Crypto from 'expo-crypto';
+
+/**
+ * Hash a password using SHA-256
+ * Note: In production, use bcrypt or argon2 via a backend service
+ * This is a simplified version for client-side demo purposes
+ */
 export async function hashPassword(password) {
-  // Simple hash using Web Crypto API compatible approach
-  const encoder = new TextEncoder();
-  const data = encoder.encode(password + '_doto_salt_2024');
-  
-  // Create a simple hash (not cryptographically secure for production)
-  let hash = 0;
-  for (let i = 0; i < data.length; i++) {
-    const char = data[i];
-    hash = ((hash << 5) - hash) + char;
-    hash = hash & hash;
+  try {
+    // Add a salt prefix for basic security
+    const saltedPassword = `doto_salt_${password}_secure`;
+    const hash = await Crypto.digestStringAsync(
+      Crypto.CryptoDigestAlgorithm.SHA256,
+      saltedPassword
+    );
+    return hash;
+  } catch (error) {
+    console.error('Password hashing error:', error);
+    throw new Error('Failed to hash password');
   }
-  
-  return `hash_${Math.abs(hash).toString(16)}`;
 }
 
+/**
+ * Verify a password against a hash
+ */
 export async function verifyPassword(password, storedHash) {
-  const inputHash = await hashPassword(password);
-  return inputHash === storedHash;
+  try {
+    const inputHash = await hashPassword(password);
+    return inputHash === storedHash;
+  } catch (error) {
+    console.error('Password verification error:', error);
+    return false;
+  }
 }
 
-// Generate a random verification code
+/**
+ * Generate a random 6-digit verification code
+ */
 export function generateVerificationCode() {
   return Math.floor(100000 + Math.random() * 900000).toString();
 }
-

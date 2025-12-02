@@ -9,7 +9,7 @@ import {
   ScrollView,
 } from 'react-native';
 import MapView from '../components/Map';
-import { Ionicons } from '@expo/vector-icons';
+import Icon from '../components/Icon';
 import { colors, spacing } from '../styles/theme';
 
 export default function PostClaimScreen({ navigation, route }) {
@@ -29,11 +29,11 @@ export default function PostClaimScreen({ navigation, route }) {
       <View style={styles.header}>
         <Text style={styles.headerText}>20 km</Text>
         <View style={styles.headerCenter}>
-          <Ionicons name="location" size={20} color={colors.primary} />
+          <Icon name="location" size={20} color={colors.primary} />
           <Text style={styles.headerText}>15</Text>
         </View>
         <View style={styles.headerRight}>
-          <Ionicons name="person" size={20} color={colors.primary} />
+          <Icon name="person" size={20} color={colors.primary} />
           <Text style={styles.headerText}>7</Text>
         </View>
       </View>
@@ -62,7 +62,7 @@ export default function PostClaimScreen({ navigation, route }) {
               <View style={styles.posterInfo}>
                 <Text style={styles.posterLabel}>By: {post.poster}</Text>
                 <View style={styles.rating}>
-                  <Ionicons name="star" size={16} color="#FFD700" />
+                  <Icon name="star" size={16} color="#FFD700" />
                   <Text style={styles.ratingText}>{post.rating}</Text>
                   <Text style={styles.percentageText}>{post.percentage}%</Text>
                 </View>
@@ -82,7 +82,7 @@ export default function PostClaimScreen({ navigation, route }) {
               </View>
 
               <TouchableOpacity style={styles.etaButton}>
-                <Ionicons name="time" size={20} color={colors.white} />
+                <Icon name="time" size={20} color={colors.white} />
                 <Text style={styles.etaButtonText}>ETA: {post.eta}</Text>
               </TouchableOpacity>
 
@@ -91,7 +91,7 @@ export default function PostClaimScreen({ navigation, route }) {
                   <Text style={styles.claimButtonText}>Claim</Text>
                 </TouchableOpacity>
                 <TouchableOpacity style={styles.shareButton}>
-                  <Ionicons name="share-social" size={24} color={colors.primary} />
+                  <Icon name="share-social" size={24} color={colors.primary} />
                 </TouchableOpacity>
               </View>
             </ScrollView>
