@@ -13,6 +13,7 @@ import {
 } from 'react-native';
 import { useAuthStore } from '../store/authStore';
 import { useSettingsStore } from '../store/settingsStore';
+import { useRTL, useRTLStyles } from '../context/RTLContext';
 import { db, id } from '../lib/instant';
 import { verifyPassword, generateVerificationCode } from '../utils/password';
 import { colors, spacing, borderRadius, typography } from '../styles/theme';
@@ -20,6 +21,8 @@ import { colors, spacing, borderRadius, typography } from '../styles/theme';
 export default function LoginScreen({ navigation }) {
   const login = useAuthStore((state) => state.login);
   const darkMode = useSettingsStore((state) => state.darkMode);
+  const { t, isRTL } = useRTL();
+  const rtlStyles = useRTLStyles();
 
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -49,18 +52,18 @@ export default function LoginScreen({ navigation }) {
     setError('');
 
     if (!email.trim()) {
-      setError('Please enter your email');
+      setError(t('validation.enterEmail'));
       return;
     }
 
     if (!password) {
-      setError('Please enter your password');
+      setError(t('validation.enterPassword'));
       return;
     }
 
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     if (!emailRegex.test(email.trim())) {
-      setError('Please enter a valid email address');
+      setError(t('validation.invalidEmail'));
       return;
     }
 
@@ -76,14 +79,14 @@ export default function LoginScreen({ navigation }) {
       );
 
       if (!userRecord) {
-        setError('Account not found. Please register first.');
+        setError(t('auth.accountNotFound'));
         setIsLoading(false);
         return;
       }
 
       // Check if user has a password (not social login only)
       if (!userRecord.passwordHash) {
-        setError('This account uses social login. Please use Google or Facebook.');
+        setError(t('auth.socialLoginOnly'));
         setIsLoading(false);
         return;
       }
@@ -92,7 +95,7 @@ export default function LoginScreen({ navigation }) {
       const isValidPassword = await verifyPassword(password, userRecord.passwordHash);
       
       if (!isValidPassword) {
-        setError('Incorrect password. Please try again.');
+        setError(t('auth.incorrectPassword'));
         setIsLoading(false);
         return;
       }
@@ -105,13 +108,13 @@ export default function LoginScreen({ navigation }) {
       
       // In production, this would be sent via email
       Alert.alert(
-        'Verification Code',
-        `Your code is: ${code}\n\n(In production, this would be sent to your email)`,
-        [{ text: 'OK' }]
+        t('auth.verificationCode'),
+        `${t('auth.devModeCode')} ${code}`,
+        [{ text: t('common.ok') }]
       );
     } catch (err) {
       console.error('Login error:', err);
-      setError('Failed to login. Please try again.');
+      setError(t('errors.tryAgain'));
     } finally {
       setIsLoading(false);
     }
@@ -148,7 +151,7 @@ export default function LoginScreen({ navigation }) {
       await login(demoUser);
     } catch (err) {
       console.error('Demo login error:', err);
-      setError('Failed to login with demo account');
+      setError(t('errors.tryAgain'));
     } finally {
       setIsLoading(false);
     }
@@ -161,14 +164,19 @@ export default function LoginScreen({ navigation }) {
     newCode[index] = value;
     setVerificationCode(newCode);
 
-    if (value && index < 5) {
-      inputRefs.current[index + 1]?.focus();
+    // Move to next input (RTL-aware)
+    const nextIndex = isRTL ? index - 1 : index + 1;
+    if (value && nextIndex >= 0 && nextIndex < 6) {
+      inputRefs.current[nextIndex]?.focus();
     }
   };
 
   const handleCodeKeyDown = (index, key) => {
-    if (key === 'Backspace' && !verificationCode[index] && index > 0) {
-      inputRefs.current[index - 1]?.focus();
+    if (key === 'Backspace' && !verificationCode[index]) {
+      const prevIndex = isRTL ? index + 1 : index - 1;
+      if (prevIndex >= 0 && prevIndex < 6) {
+        inputRefs.current[prevIndex]?.focus();
+      }
     }
   };
 
@@ -176,7 +184,7 @@ export default function LoginScreen({ navigation }) {
     const enteredCode = verificationCode.join('');
     
     if (enteredCode !== generatedCode) {
-      setError('Invalid verification code. Please try again.');
+      setError(t('auth.invalidCode'));
       return;
     }
 
@@ -198,7 +206,7 @@ export default function LoginScreen({ navigation }) {
       <View style={[styles.container, { backgroundColor: themeColors.background, justifyContent: 'center', alignItems: 'center' }]}>
         <ActivityIndicator size="large" color={colors.primary} />
         <Text style={[styles.loadingText, { color: themeColors.textSecondary }]}>
-          Connecting to database...
+          {t('common.loading')}
         </Text>
       </View>
     );
@@ -218,7 +226,7 @@ export default function LoginScreen({ navigation }) {
         <View style={styles.logoSection}>
           <Text style={styles.logo}>DOTO</Text>
           <Text style={[styles.tagline, { color: themeColors.textSecondary }]}>
-            Do One Thing Others
+            {isRTL ? 'עשה דבר אחד לאחרים' : 'Do One Thing Others'}
           </Text>
         </View>
 
@@ -226,29 +234,29 @@ export default function LoginScreen({ navigation }) {
         <View style={[styles.card, { backgroundColor: themeColors.surface }]}>
           {!showVerification ? (
             <>
-              <Text style={[styles.title, { color: themeColors.text }]}>
-                Welcome Back
+              <Text style={[styles.title, { color: themeColors.text, textAlign: rtlStyles.textAlign }]}>
+                {t('auth.welcomeBack')}
               </Text>
-              <Text style={[styles.subtitle, { color: themeColors.textSecondary }]}>
-                Sign in to continue helping your community
+              <Text style={[styles.subtitle, { color: themeColors.textSecondary, textAlign: rtlStyles.textAlign }]}>
+                {t('auth.signInSubtitle')}
               </Text>
 
               {error ? (
                 <View style={styles.errorBox}>
-                  <Text style={styles.errorText}>{error}</Text>
+                  <Text style={[styles.errorText, { textAlign: rtlStyles.textAlign }]}>{error}</Text>
                 </View>
               ) : null}
 
               {/* Email Input */}
               <View style={styles.inputGroup}>
-                <Text style={[styles.label, { color: themeColors.text }]}>
-                  Email Address
+                <Text style={[styles.label, { color: themeColors.text, textAlign: rtlStyles.textAlign }]}>
+                  {t('auth.email')}
                 </Text>
-                <View style={[styles.inputWrapper, { borderColor: themeColors.border }]}>
+                <View style={[styles.inputWrapper, { borderColor: themeColors.border, flexDirection: rtlStyles.row }]}>
                   <Text style={styles.inputIcon}>📧</Text>
                   <TextInput
-                    style={[styles.input, { color: themeColors.text }]}
-                    placeholder="your.email@example.com"
+                    style={[styles.input, { color: themeColors.text, textAlign: rtlStyles.textAlign }]}
+                    placeholder={t('auth.emailPlaceholder')}
                     placeholderTextColor={themeColors.textSecondary}
                     value={email}
                     onChangeText={setEmail}
@@ -262,14 +270,14 @@ export default function LoginScreen({ navigation }) {
 
               {/* Password Input */}
               <View style={styles.inputGroup}>
-                <Text style={[styles.label, { color: themeColors.text }]}>
-                  Password
+                <Text style={[styles.label, { color: themeColors.text, textAlign: rtlStyles.textAlign }]}>
+                  {t('auth.password')}
                 </Text>
-                <View style={[styles.inputWrapper, { borderColor: themeColors.border }]}>
+                <View style={[styles.inputWrapper, { borderColor: themeColors.border, flexDirection: rtlStyles.row }]}>
                   <Text style={styles.inputIcon}>🔒</Text>
                   <TextInput
-                    style={[styles.input, { color: themeColors.text }]}
-                    placeholder="••••••••"
+                    style={[styles.input, { color: themeColors.text, textAlign: rtlStyles.textAlign }]}
+                    placeholder={t('auth.passwordPlaceholder')}
                     placeholderTextColor={themeColors.textSecondary}
                     value={password}
                     onChangeText={setPassword}
@@ -292,50 +300,50 @@ export default function LoginScreen({ navigation }) {
                 {isLoading ? (
                   <ActivityIndicator color="#fff" />
                 ) : (
-                  <Text style={styles.primaryButtonText}>Log In</Text>
+                  <Text style={styles.primaryButtonText}>{t('auth.login')}</Text>
                 )}
               </TouchableOpacity>
 
               {/* Divider */}
-              <View style={styles.divider}>
+              <View style={[styles.divider, { flexDirection: rtlStyles.row }]}>
                 <View style={[styles.dividerLine, { backgroundColor: themeColors.border }]} />
                 <Text style={[styles.dividerText, { color: themeColors.textSecondary }]}>
-                  or continue with
+                  {t('auth.orContinueWith')}
                 </Text>
                 <View style={[styles.dividerLine, { backgroundColor: themeColors.border }]} />
               </View>
 
               {/* Demo Login Button */}
               <TouchableOpacity
-                style={[styles.demoButton, { borderColor: colors.primary }]}
+                style={[styles.demoButton, { borderColor: colors.primary, flexDirection: rtlStyles.row }]}
                 onPress={handleDemoLogin}
                 disabled={isLoading}
                 activeOpacity={0.8}
               >
                 <Text style={styles.demoIcon}>⚡</Text>
                 <Text style={[styles.demoButtonText, { color: colors.primary }]}>
-                  Try Demo Account
+                  {t('auth.tryDemoAccount')}
                 </Text>
               </TouchableOpacity>
 
               {/* Social Buttons */}
-              <View style={styles.socialButtons}>
+              <View style={[styles.socialButtons, { flexDirection: rtlStyles.row }]}>
                 <TouchableOpacity 
-                  style={[styles.socialButton, { borderColor: themeColors.border }]}
+                  style={[styles.socialButton, { borderColor: themeColors.border, flexDirection: rtlStyles.row }]}
                   activeOpacity={0.8}
                 >
                   <Text style={[styles.socialIcon, { color: '#DB4437' }]}>G</Text>
                   <Text style={[styles.socialButtonText, { color: themeColors.text }]}>
-                    Google
+                    {t('auth.google')}
                   </Text>
                 </TouchableOpacity>
                 <TouchableOpacity 
-                  style={[styles.socialButton, { borderColor: themeColors.border }]}
+                  style={[styles.socialButton, { borderColor: themeColors.border, flexDirection: rtlStyles.row }]}
                   activeOpacity={0.8}
                 >
                   <Text style={[styles.socialIcon, { color: '#4267B2' }]}>f</Text>
                   <Text style={[styles.socialButtonText, { color: themeColors.text }]}>
-                    Facebook
+                    {t('auth.facebook')}
                   </Text>
                 </TouchableOpacity>
               </View>
@@ -344,29 +352,29 @@ export default function LoginScreen({ navigation }) {
             <>
               {/* Verification Screen */}
               <TouchableOpacity 
-                style={styles.backButton}
+                style={[styles.backButton, { alignSelf: isRTL ? 'flex-end' : 'flex-start' }]}
                 onPress={resetVerification}
               >
                 <Text style={[styles.backText, { color: themeColors.text }]}>
-                  ← Back
+                  {isRTL ? '→ ' : '← '}{t('common.back')}
                 </Text>
               </TouchableOpacity>
 
-              <Text style={[styles.title, { color: themeColors.text }]}>
-                Enter Verification Code
+              <Text style={[styles.title, { color: themeColors.text, textAlign: rtlStyles.textAlign }]}>
+                {t('auth.enterVerificationCode')}
               </Text>
-              <Text style={[styles.subtitle, { color: themeColors.textSecondary }]}>
-                We sent a code to {pendingUser?.email}
+              <Text style={[styles.subtitle, { color: themeColors.textSecondary, textAlign: rtlStyles.textAlign }]}>
+                {t('auth.codeSentTo', { email: pendingUser?.email })}
               </Text>
 
               {error ? (
                 <View style={styles.errorBox}>
-                  <Text style={styles.errorText}>{error}</Text>
+                  <Text style={[styles.errorText, { textAlign: rtlStyles.textAlign }]}>{error}</Text>
                 </View>
               ) : null}
 
               {/* Code Input */}
-              <View style={styles.codeContainer}>
+              <View style={[styles.codeContainer, { flexDirection: rtlStyles.row }]}>
                 {verificationCode.map((digit, index) => (
                   <TextInput
                     key={index}
@@ -391,7 +399,7 @@ export default function LoginScreen({ navigation }) {
               {/* Show code hint for development */}
               <View style={styles.codeHint}>
                 <Text style={[styles.codeHintLabel, { color: themeColors.textSecondary }]}>
-                  Development Mode - Your code:
+                  {t('auth.devModeCode')}
                 </Text>
                 <Text style={styles.codeHintValue}>{generatedCode}</Text>
               </View>
@@ -405,7 +413,7 @@ export default function LoginScreen({ navigation }) {
                 disabled={verificationCode.join('').length !== 6}
                 activeOpacity={0.8}
               >
-                <Text style={styles.primaryButtonText}>Verify Code</Text>
+                <Text style={styles.primaryButtonText}>{t('auth.verifyCode')}</Text>
               </TouchableOpacity>
             </>
           )}
@@ -413,12 +421,12 @@ export default function LoginScreen({ navigation }) {
 
         {/* Sign Up Link */}
         {!showVerification && (
-          <View style={styles.signupContainer}>
+          <View style={[styles.signupContainer, { flexDirection: rtlStyles.row }]}>
             <Text style={[styles.signupText, { color: themeColors.textSecondary }]}>
-              Don't have an account?{' '}
+              {t('auth.dontHaveAccount')}{' '}
             </Text>
             <TouchableOpacity onPress={() => navigation.navigate('Register')}>
-              <Text style={styles.signupLink}>Sign Up</Text>
+              <Text style={styles.signupLink}>{t('auth.register')}</Text>
             </TouchableOpacity>
           </View>
         )}
@@ -492,7 +500,6 @@ const styles = StyleSheet.create({
     marginBottom: spacing.sm,
   },
   inputWrapper: {
-    flexDirection: 'row',
     alignItems: 'center',
     borderWidth: 1,
     borderRadius: 12,
@@ -529,7 +536,6 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   divider: {
-    flexDirection: 'row',
     alignItems: 'center',
     marginVertical: spacing.xl,
   },
@@ -542,7 +548,6 @@ const styles = StyleSheet.create({
     fontSize: 14,
   },
   demoButton: {
-    flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 2,
@@ -559,12 +564,10 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   socialButtons: {
-    flexDirection: 'row',
     gap: spacing.md,
   },
   socialButton: {
     flex: 1,
-    flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 1,
@@ -581,7 +584,6 @@ const styles = StyleSheet.create({
     fontWeight: '500',
   },
   signupContainer: {
-    flexDirection: 'row',
     justifyContent: 'center',
     marginTop: spacing.xl,
   },
@@ -601,7 +603,6 @@ const styles = StyleSheet.create({
     fontWeight: '500',
   },
   codeContainer: {
-    flexDirection: 'row',
     justifyContent: 'center',
     gap: spacing.sm,
     marginVertical: spacing.xl,

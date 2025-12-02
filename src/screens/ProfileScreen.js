@@ -10,21 +10,16 @@ import {
 } from 'react-native';
 import { useAuthStore } from '../store/authStore';
 import { useSettingsStore } from '../store/settingsStore';
+import { useRTL, useRTLStyles } from '../context/RTLContext';
 import { db } from '../lib/instant';
 import { colors, spacing, borderRadius } from '../styles/theme';
-
-const BADGES = [
-  { id: 'first_post', name: 'First Post', icon: '✍️', description: 'Created first help request' },
-  { id: 'first_claim', name: 'First Claim', icon: '🤝', description: 'Claimed first task' },
-  { id: 'five_posts', name: 'Five Posts', icon: '📝', description: 'Created five requests' },
-  { id: 'super_helper', name: 'Super Helper', icon: '🦸', description: 'Completed 10 tasks' },
-  { id: 'community_hero', name: 'Community Hero', icon: '🏆', description: 'Completed 25 tasks' },
-];
 
 export default function ProfileScreen({ navigation }) {
   const user = useAuthStore((state) => state.user);
   const logout = useAuthStore((state) => state.logout);
   const darkMode = useSettingsStore((state) => state.darkMode);
+  const { t, isRTL } = useRTL();
+  const rtlStyles = useRTLStyles();
 
   // Fetch user stats from InstantDB
   const { isLoading, data } = db.useQuery({ 
@@ -59,6 +54,14 @@ export default function ProfileScreen({ navigation }) {
     border: darkMode ? colors.borderDark : colors.border,
   };
 
+  const BADGES = [
+    { id: 'first_post', name: t('profile.badgeNames.firstPost'), icon: '✍️', description: t('profile.badgeDescriptions.firstPost') },
+    { id: 'first_claim', name: t('profile.badgeNames.firstClaim'), icon: '🤝', description: t('profile.badgeDescriptions.firstClaim') },
+    { id: 'five_posts', name: t('profile.badgeNames.fivePosts'), icon: '📝', description: t('profile.badgeDescriptions.fivePosts') },
+    { id: 'super_helper', name: t('profile.badgeNames.superHelper'), icon: '🦸', description: t('profile.badgeDescriptions.superHelper') },
+    { id: 'community_hero', name: t('profile.badgeNames.communityHero'), icon: '🏆', description: t('profile.badgeDescriptions.communityHero') },
+  ];
+
   const handleLogout = async () => {
     await logout();
   };
@@ -67,9 +70,9 @@ export default function ProfileScreen({ navigation }) {
     return (
       <View style={[styles.container, styles.centerContent, { backgroundColor: themeColors.background }]}>
         <Text style={styles.emptyIcon}>👤</Text>
-        <Text style={[styles.emptyTitle, { color: themeColors.text }]}>Not Logged In</Text>
+        <Text style={[styles.emptyTitle, { color: themeColors.text }]}>{t('profile.notLoggedIn')}</Text>
         <Text style={[styles.emptyText, { color: themeColors.textSecondary }]}>
-          Please login to view your profile
+          {t('profile.pleaseLoginToView')}
         </Text>
       </View>
     );
@@ -88,42 +91,44 @@ export default function ProfileScreen({ navigation }) {
           <Text style={[styles.userEmail, { color: themeColors.textSecondary }]}>{user.email}</Text>
           
           {user.bio && (
-            <Text style={[styles.userBio, { color: themeColors.textSecondary }]}>{user.bio}</Text>
+            <Text style={[styles.userBio, { color: themeColors.textSecondary, textAlign: 'center' }]}>{user.bio}</Text>
           )}
 
           <TouchableOpacity 
             style={styles.editButton}
             onPress={() => navigation.navigate('EditProfile')}
           >
-            <Text style={styles.editButtonText}>Edit Profile</Text>
+            <Text style={styles.editButtonText}>{t('profile.editProfile')}</Text>
           </TouchableOpacity>
         </View>
 
         {/* Stats */}
         <View style={[styles.statsCard, { backgroundColor: colors.primary }]}>
-          <Text style={styles.statsTitle}>Your Impact</Text>
-          <View style={styles.statsRow}>
+          <Text style={[styles.statsTitle, { textAlign: 'center' }]}>{t('profile.yourImpact')}</Text>
+          <View style={[styles.statsRow, { flexDirection: rtlStyles.row }]}>
             <View style={styles.statItem}>
               <Text style={styles.statValue}>{stats.avgRating || '-'}</Text>
-              <Text style={styles.statLabel}>Rating ⭐</Text>
+              <Text style={styles.statLabel}>{t('profile.rating')} ⭐</Text>
             </View>
             <View style={styles.statDivider} />
             <View style={styles.statItem}>
               <Text style={styles.statValue}>{stats.postsCreated}</Text>
-              <Text style={styles.statLabel}>Posts</Text>
+              <Text style={styles.statLabel}>{t('profile.posts')}</Text>
             </View>
             <View style={styles.statDivider} />
             <View style={styles.statItem}>
               <Text style={styles.statValue}>{stats.tasksCompleted}</Text>
-              <Text style={styles.statLabel}>Completed</Text>
+              <Text style={styles.statLabel}>{t('profile.completed')}</Text>
             </View>
           </View>
         </View>
 
         {/* Badges */}
         <View style={[styles.sectionCard, { backgroundColor: themeColors.surface }]}>
-          <Text style={[styles.sectionTitle, { color: themeColors.text }]}>Badges</Text>
-          <View style={styles.badgesGrid}>
+          <Text style={[styles.sectionTitle, { color: themeColors.text, textAlign: rtlStyles.textAlign }]}>
+            {t('profile.badges')}
+          </Text>
+          <View style={[styles.badgesGrid, { flexDirection: rtlStyles.row }]}>
             {BADGES.map((badge) => {
               const earned = user.earnedBadges?.includes(badge.id);
               return (
@@ -151,43 +156,45 @@ export default function ProfileScreen({ navigation }) {
 
         {/* Quick Actions */}
         <View style={[styles.sectionCard, { backgroundColor: themeColors.surface }]}>
-          <Text style={[styles.sectionTitle, { color: themeColors.text }]}>Quick Actions</Text>
+          <Text style={[styles.sectionTitle, { color: themeColors.text, textAlign: rtlStyles.textAlign }]}>
+            {t('profile.quickActions')}
+          </Text>
           
           <TouchableOpacity 
-            style={[styles.actionItem, { borderBottomColor: themeColors.border }]}
+            style={[styles.actionItem, { borderBottomColor: themeColors.border, flexDirection: rtlStyles.row }]}
             onPress={() => navigation.navigate('Settings')}
           >
             <Text style={styles.actionIcon}>⚙️</Text>
-            <Text style={[styles.actionLabel, { color: themeColors.text }]}>Settings</Text>
-            <Text style={[styles.actionArrow, { color: themeColors.textSecondary }]}>›</Text>
+            <Text style={[styles.actionLabel, { color: themeColors.text }]}>{t('profile.settings')}</Text>
+            <Text style={[styles.actionArrow, { color: themeColors.textSecondary, transform: isRTL ? [{ scaleX: -1 }] : [] }]}>›</Text>
           </TouchableOpacity>
 
           <TouchableOpacity 
-            style={[styles.actionItem, { borderBottomColor: themeColors.border }]}
+            style={[styles.actionItem, { borderBottomColor: themeColors.border, flexDirection: rtlStyles.row }]}
             onPress={() => navigation.navigate('Feed', { screen: 'myPosts' })}
           >
             <Text style={styles.actionIcon}>📋</Text>
-            <Text style={[styles.actionLabel, { color: themeColors.text }]}>My Posts</Text>
-            <Text style={[styles.actionArrow, { color: themeColors.textSecondary }]}>›</Text>
+            <Text style={[styles.actionLabel, { color: themeColors.text }]}>{t('profile.myPosts')}</Text>
+            <Text style={[styles.actionArrow, { color: themeColors.textSecondary, transform: isRTL ? [{ scaleX: -1 }] : [] }]}>›</Text>
           </TouchableOpacity>
 
           <TouchableOpacity 
-            style={[styles.actionItem, { borderBottomWidth: 0 }]}
+            style={[styles.actionItem, { borderBottomWidth: 0, flexDirection: rtlStyles.row }]}
             onPress={handleLogout}
           >
             <Text style={styles.actionIcon}>🚪</Text>
-            <Text style={[styles.actionLabel, { color: colors.error }]}>Logout</Text>
-            <Text style={[styles.actionArrow, { color: themeColors.textSecondary }]}>›</Text>
+            <Text style={[styles.actionLabel, { color: colors.error }]}>{t('auth.logout')}</Text>
+            <Text style={[styles.actionArrow, { color: themeColors.textSecondary, transform: isRTL ? [{ scaleX: -1 }] : [] }]}>›</Text>
           </TouchableOpacity>
         </View>
 
         {/* App Info */}
         <View style={styles.appInfo}>
           <Text style={[styles.appVersion, { color: themeColors.textSecondary }]}>
-            DOTO v1.0.0
+            {t('profile.appVersion')}
           </Text>
           <Text style={[styles.appTagline, { color: themeColors.textSecondary }]}>
-            Do One Thing Others
+            {t('profile.tagline')}
           </Text>
         </View>
       </ScrollView>
@@ -246,7 +253,6 @@ const styles = StyleSheet.create({
   },
   userBio: {
     fontSize: 14,
-    textAlign: 'center',
     marginBottom: spacing.lg,
   },
   editButton: {
@@ -270,10 +276,8 @@ const styles = StyleSheet.create({
     fontSize: 18,
     fontWeight: '700',
     marginBottom: spacing.lg,
-    textAlign: 'center',
   },
   statsRow: {
-    flexDirection: 'row',
     justifyContent: 'space-around',
   },
   statItem: {
@@ -305,7 +309,6 @@ const styles = StyleSheet.create({
     marginBottom: spacing.lg,
   },
   badgesGrid: {
-    flexDirection: 'row',
     flexWrap: 'wrap',
     gap: spacing.md,
   },
@@ -333,14 +336,13 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
   actionItem: {
-    flexDirection: 'row',
     alignItems: 'center',
     paddingVertical: spacing.lg,
     borderBottomWidth: 1,
   },
   actionIcon: {
     fontSize: 22,
-    marginRight: spacing.lg,
+    marginHorizontal: spacing.md,
   },
   actionLabel: {
     flex: 1,

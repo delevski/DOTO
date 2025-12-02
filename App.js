@@ -2,10 +2,11 @@
 import 'react-native-get-random-values';
 
 import React, { useEffect, useState } from 'react';
-import { View, Text, StyleSheet, ActivityIndicator } from 'react-native';
+import { View, Text, StyleSheet, ActivityIndicator, I18nManager } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { useAuthStore } from './src/store/authStore';
 import { useSettingsStore } from './src/store/settingsStore';
+import { RTLProvider } from './src/context/RTLContext';
 import AppNavigator from './src/navigation/AppNavigator';
 import { colors } from './src/styles/theme';
 
@@ -47,6 +48,7 @@ function AppInitializer({ children }) {
   const isAuthLoading = useAuthStore((state) => state.isLoading);
   const isSettingsLoading = useSettingsStore((state) => state.isLoading);
   const darkMode = useSettingsStore((state) => state.darkMode);
+  const language = useSettingsStore((state) => state.language);
 
   useEffect(() => {
     const initialize = async () => {
@@ -65,13 +67,22 @@ function AppInitializer({ children }) {
     initialize();
   }, []);
 
+  // Apply RTL based on language
+  useEffect(() => {
+    const isRTL = language === 'he';
+    if (I18nManager.isRTL !== isRTL) {
+      I18nManager.allowRTL(isRTL);
+      I18nManager.forceRTL(isRTL);
+    }
+  }, [language]);
+
   if (!isReady || isAuthLoading || isSettingsLoading) {
     return (
       <View style={[styles.loadingContainer, darkMode && styles.loadingContainerDark]}>
         <Text style={styles.logo}>DOTO</Text>
         <ActivityIndicator size="large" color={colors.primary} />
         <Text style={[styles.loadingText, darkMode && styles.loadingTextDark]}>
-          Loading...
+          {language === 'he' ? 'טוען...' : 'Loading...'}
         </Text>
       </View>
     );
@@ -86,10 +97,12 @@ export default function App() {
 
   return (
     <ErrorBoundary>
-      <StatusBar style={darkMode ? 'light' : 'dark'} />
-      <AppInitializer>
-        <AppNavigator />
-      </AppInitializer>
+      <RTLProvider>
+        <StatusBar style={darkMode ? 'light' : 'dark'} />
+        <AppInitializer>
+          <AppNavigator />
+        </AppInitializer>
+      </RTLProvider>
     </ErrorBoundary>
   );
 }

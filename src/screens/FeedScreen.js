@@ -13,12 +13,15 @@ import {
 } from 'react-native';
 import { useAuthStore } from '../store/authStore';
 import { useSettingsStore } from '../store/settingsStore';
+import { useRTL, useRTLStyles } from '../context/RTLContext';
 import { db } from '../lib/instant';
 import { colors, spacing, borderRadius, typography, shadows } from '../styles/theme';
 
 export default function FeedScreen({ navigation }) {
   const user = useAuthStore((state) => state.user);
   const darkMode = useSettingsStore((state) => state.darkMode);
+  const { t, isRTL } = useRTL();
+  const rtlStyles = useRTLStyles();
   
   const [activeTab, setActiveTab] = useState('nearby');
   const [refreshing, setRefreshing] = useState(false);
@@ -79,14 +82,14 @@ export default function FeedScreen({ navigation }) {
     const hours = Math.floor(diff / (1000 * 60 * 60));
     const days = Math.floor(hours / 24);
     
-    if (days > 0) return `${days}d ago`;
-    if (hours > 0) return `${hours}h ago`;
-    return 'Just now';
+    if (days > 0) return t('feed.daysAgo', { count: days });
+    if (hours > 0) return t('feed.hoursAgo', { count: hours });
+    return t('feed.justNow');
   };
 
   const handleLike = async (post) => {
     if (!user) {
-      Alert.alert('Login Required', 'Please login to like posts');
+      Alert.alert(t('auth.loginRequired'), t('auth.pleaseLogin'));
       return;
     }
 
@@ -111,14 +114,14 @@ export default function FeedScreen({ navigation }) {
       }
     } catch (err) {
       console.error('Like error:', err);
-      Alert.alert('Error', 'Failed to update like');
+      Alert.alert(t('common.error'), t('errors.tryAgain'));
     }
   };
 
   const handleShare = async (post) => {
     try {
       await Share.share({
-        message: `Check out this task on DOTO: ${post.title || 'Help Needed'}\n\n${post.description}`,
+        message: `${t('post.helpNeeded')}: ${post.title || t('post.helpNeeded')}\n\n${post.description}`,
       });
     } catch (error) {
       console.error('Share error:', error);
@@ -132,10 +135,10 @@ export default function FeedScreen({ navigation }) {
   };
 
   const tabs = [
-    { key: 'nearby', label: 'Nearby' },
-    { key: 'friends', label: 'Friends' },
-    { key: 'myPosts', label: 'My Posts' },
-    { key: 'myClaim', label: 'My Claims' },
+    { key: 'nearby', label: t('feed.nearby') },
+    { key: 'friends', label: t('feed.friends') },
+    { key: 'myPosts', label: t('feed.myPosts') },
+    { key: 'myClaim', label: t('feed.myClaims') },
   ];
 
   const renderPostCard = (post) => {
@@ -162,44 +165,44 @@ export default function FeedScreen({ navigation }) {
         activeOpacity={0.7}
       >
         {/* Header */}
-        <View style={styles.postHeader}>
+        <View style={[styles.postHeader, { flexDirection: rtlStyles.row }]}>
           <Image 
             source={{ uri: post.avatar || `https://i.pravatar.cc/150?u=${post.authorId}` }}
-            style={styles.avatar}
+            style={[styles.avatar, isRTL ? { marginLeft: spacing.md, marginRight: 0 } : { marginRight: spacing.md }]}
           />
-          <View style={styles.headerInfo}>
+          <View style={[styles.headerInfo, { alignItems: isRTL ? 'flex-end' : 'flex-start' }]}>
             <Text style={[styles.authorName, { color: themeColors.text }]}>
               {isMyPost ? (user?.name || post.author) : post.author}
             </Text>
-            <View style={styles.metaRow}>
+            <View style={[styles.metaRow, { flexDirection: rtlStyles.row }]}>
               <Text style={[styles.metaText, { color: themeColors.textSecondary }]}>
                 🕐 {formatTime(post.timestamp || post.createdAt)}
               </Text>
               <View style={styles.tagBadge}>
-                <Text style={styles.tagText}>{post.tag || post.category || 'Other'}</Text>
+                <Text style={styles.tagText}>{post.tag || post.category || t('post.categories.other')}</Text>
               </View>
             </View>
           </View>
           {isApproved && (
             <View style={[styles.statusBadge, { backgroundColor: isClaimedByMe ? '#D1FAE5' : '#F3F4F6' }]}>
               <Text style={[styles.statusText, { color: isClaimedByMe ? '#059669' : themeColors.textSecondary }]}>
-                ✓ {isClaimedByMe ? 'Claimed' : 'Approved'}
+                ✓ {isClaimedByMe ? t('feed.claimed') : t('feed.approved')}
               </Text>
             </View>
           )}
         </View>
 
         {/* Content */}
-        <Text style={[styles.postTitle, { color: themeColors.text }]} numberOfLines={2}>
-          {post.title || 'Help Needed'}
+        <Text style={[styles.postTitle, { color: themeColors.text, textAlign: rtlStyles.textAlign }]} numberOfLines={2}>
+          {post.title || t('post.helpNeeded')}
         </Text>
-        <Text style={[styles.postDescription, { color: themeColors.textSecondary }]} numberOfLines={3}>
+        <Text style={[styles.postDescription, { color: themeColors.textSecondary, textAlign: rtlStyles.textAlign }]} numberOfLines={3}>
           {post.description}
         </Text>
 
         {/* Photos */}
         {post.photos && post.photos.length > 0 && (
-          <View style={styles.photosContainer}>
+          <View style={[styles.photosContainer, { flexDirection: rtlStyles.row }]}>
             {post.photos.slice(0, 3).map((photo, index) => (
               <Image 
                 key={index}
@@ -221,7 +224,7 @@ export default function FeedScreen({ navigation }) {
 
         {/* Location */}
         {post.location && (
-          <View style={styles.locationRow}>
+          <View style={[styles.locationRow, { flexDirection: rtlStyles.row, alignSelf: isRTL ? 'flex-end' : 'flex-start' }]}>
             <Text style={styles.locationIcon}>📍</Text>
             <Text style={[styles.locationText, { color: themeColors.textSecondary }]} numberOfLines={1}>
               {post.location}
@@ -231,8 +234,8 @@ export default function FeedScreen({ navigation }) {
 
         {/* Claimers */}
         {claimers.length > 0 && !isApproved && (
-          <View style={styles.claimersRow}>
-            <View style={styles.claimerAvatars}>
+          <View style={[styles.claimersRow, { flexDirection: rtlStyles.row }]}>
+            <View style={[styles.claimerAvatars, { flexDirection: rtlStyles.row }]}>
               {claimers.slice(0, 4).map((claimer, index) => (
                 <Image
                   key={claimer.userId}
@@ -242,15 +245,15 @@ export default function FeedScreen({ navigation }) {
               ))}
             </View>
             <Text style={[styles.claimersText, { color: themeColors.textSecondary }]}>
-              {claimers.length} {claimers.length === 1 ? 'claimer' : 'claimers'}
+              {claimers.length} {claimers.length === 1 ? t('feed.claimer') : t('feed.claimers')}
             </Text>
           </View>
         )}
 
         {/* Actions */}
-        <View style={[styles.actionsRow, { borderTopColor: themeColors.border }]}>
+        <View style={[styles.actionsRow, { borderTopColor: themeColors.border, flexDirection: rtlStyles.row }]}>
           <TouchableOpacity 
-            style={styles.actionButton}
+            style={[styles.actionButton, { flexDirection: rtlStyles.row }]}
             onPress={() => handleLike(post)}
           >
             <Text style={styles.actionIcon}>{isLiked ? '❤️' : '🤍'}</Text>
@@ -260,7 +263,7 @@ export default function FeedScreen({ navigation }) {
           </TouchableOpacity>
 
           <TouchableOpacity 
-            style={styles.actionButton}
+            style={[styles.actionButton, { flexDirection: rtlStyles.row }]}
             onPress={() => navigation.navigate('PostDetails', { postId: post.id })}
           >
             <Text style={styles.actionIcon}>💬</Text>
@@ -270,18 +273,18 @@ export default function FeedScreen({ navigation }) {
           </TouchableOpacity>
 
           <TouchableOpacity 
-            style={styles.actionButton}
+            style={[styles.actionButton, { flexDirection: rtlStyles.row }]}
             onPress={() => handleShare(post)}
           >
-            <Text style={styles.actionIcon}>↗️</Text>
+            <Text style={[styles.actionIcon, isRTL && { transform: [{ scaleX: -1 }] }]}>↗️</Text>
           </TouchableOpacity>
 
           {!isApproved && !isMyPost && (
             <TouchableOpacity 
-              style={styles.claimButton}
+              style={[styles.claimButton, isRTL && { marginLeft: 0, marginRight: 'auto' }]}
               onPress={() => navigation.navigate('PostDetails', { postId: post.id })}
             >
-              <Text style={styles.claimButtonText}>Claim Task</Text>
+              <Text style={styles.claimButtonText}>{t('feed.claimTask')}</Text>
             </TouchableOpacity>
           )}
         </View>
@@ -292,11 +295,11 @@ export default function FeedScreen({ navigation }) {
   return (
     <View style={[styles.container, { backgroundColor: themeColors.background }]}>
       {/* Header */}
-      <View style={[styles.header, { backgroundColor: themeColors.surface, borderBottomColor: themeColors.border }]}>
-        <View>
-          <Text style={[styles.headerTitle, { color: themeColors.text }]}>Feed</Text>
+      <View style={[styles.header, { backgroundColor: themeColors.surface, borderBottomColor: themeColors.border, flexDirection: rtlStyles.row }]}>
+        <View style={{ alignItems: isRTL ? 'flex-end' : 'flex-start' }}>
+          <Text style={[styles.headerTitle, { color: themeColors.text }]}>{t('feed.title')}</Text>
           <Text style={[styles.headerSubtitle, { color: themeColors.textSecondary }]}>
-            Discover tasks nearby
+            {t('feed.subtitle')}
           </Text>
         </View>
         <TouchableOpacity 
@@ -309,7 +312,11 @@ export default function FeedScreen({ navigation }) {
 
       {/* Tabs */}
       <View style={[styles.tabsContainer, { backgroundColor: themeColors.surface, borderBottomColor: themeColors.border }]}>
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.tabs}>
+        <ScrollView 
+          horizontal 
+          showsHorizontalScrollIndicator={false} 
+          contentContainerStyle={[styles.tabs, isRTL && { flexDirection: 'row-reverse' }]}
+        >
           {tabs.map((tab) => (
             <TouchableOpacity
               key={tab.key}
@@ -344,14 +351,14 @@ export default function FeedScreen({ navigation }) {
           <View style={styles.centerContent}>
             <ActivityIndicator size="large" color={colors.primary} />
             <Text style={[styles.loadingText, { color: themeColors.textSecondary }]}>
-              Loading posts...
+              {t('feed.loadingPosts')}
             </Text>
           </View>
         ) : error ? (
           <View style={styles.centerContent}>
             <Text style={styles.errorIcon}>⚠️</Text>
             <Text style={[styles.errorText, { color: colors.error }]}>
-              Error loading posts
+              {t('feed.errorLoading')}
             </Text>
             <Text style={[styles.errorDetail, { color: themeColors.textSecondary }]}>
               {error.message}
@@ -361,16 +368,16 @@ export default function FeedScreen({ navigation }) {
           <View style={styles.centerContent}>
             <Text style={styles.emptyIcon}>📋</Text>
             <Text style={[styles.emptyText, { color: themeColors.textSecondary }]}>
-              {activeTab === 'myPosts' ? 'You haven\'t created any posts yet' : 
-               activeTab === 'myClaim' ? 'You haven\'t claimed any tasks yet' : 
-               'No posts available'}
+              {activeTab === 'myPosts' ? t('feed.noMyPosts') : 
+               activeTab === 'myClaim' ? t('feed.noMyClaims') : 
+               t('feed.noPosts')}
             </Text>
             {activeTab === 'myPosts' && (
               <TouchableOpacity 
                 style={styles.createButton}
                 onPress={() => navigation.navigate('Create')}
               >
-                <Text style={styles.createButtonText}>Create Your First Post</Text>
+                <Text style={styles.createButtonText}>{t('feed.createFirstPost')}</Text>
               </TouchableOpacity>
             )}
           </View>
@@ -387,7 +394,6 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   header: {
-    flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
     paddingHorizontal: spacing.xl,
@@ -493,7 +499,6 @@ const styles = StyleSheet.create({
     elevation: 2,
   },
   postHeader: {
-    flexDirection: 'row',
     alignItems: 'flex-start',
     marginBottom: spacing.md,
   },
@@ -501,7 +506,6 @@ const styles = StyleSheet.create({
     width: 44,
     height: 44,
     borderRadius: 22,
-    marginRight: spacing.md,
   },
   headerInfo: {
     flex: 1,
@@ -511,7 +515,6 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   metaRow: {
-    flexDirection: 'row',
     alignItems: 'center',
     marginTop: spacing.xs,
     gap: spacing.sm,
@@ -550,7 +553,6 @@ const styles = StyleSheet.create({
     marginBottom: spacing.md,
   },
   photosContainer: {
-    flexDirection: 'row',
     gap: spacing.sm,
     marginBottom: spacing.md,
     borderRadius: 12,
@@ -584,7 +586,6 @@ const styles = StyleSheet.create({
     fontSize: 18,
   },
   locationRow: {
-    flexDirection: 'row',
     alignItems: 'center',
     gap: spacing.xs,
     marginBottom: spacing.md,
@@ -592,7 +593,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.sm,
     paddingVertical: spacing.xs,
     borderRadius: 8,
-    alignSelf: 'flex-start',
   },
   locationIcon: {
     fontSize: 14,
@@ -602,14 +602,11 @@ const styles = StyleSheet.create({
     maxWidth: 200,
   },
   claimersRow: {
-    flexDirection: 'row',
     alignItems: 'center',
     gap: spacing.sm,
     marginBottom: spacing.md,
   },
-  claimerAvatars: {
-    flexDirection: 'row',
-  },
+  claimerAvatars: {},
   claimerAvatar: {
     width: 28,
     height: 28,
@@ -621,14 +618,12 @@ const styles = StyleSheet.create({
     fontSize: 13,
   },
   actionsRow: {
-    flexDirection: 'row',
     alignItems: 'center',
     paddingTop: spacing.md,
     borderTopWidth: 1,
     gap: spacing.lg,
   },
   actionButton: {
-    flexDirection: 'row',
     alignItems: 'center',
     gap: spacing.xs,
   },
