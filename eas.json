@@ -6,18 +6,27 @@
   "build": {
     "development": {
       "developmentClient": true,
-      "distribution": "internal"
+      "distribution": "internal",
+      "env": {
+        "EXPO_PUBLIC_INSTANTDB_APP_ID": "your-local-instantdb-app-id"
+      }
     },
     "preview": {
       "distribution": "internal",
       "android": {
         "buildType": "apk",
         "image": "latest"
+      },
+      "env": {
+        "EXPO_PUBLIC_INSTANTDB_APP_ID": "a2f65c00-e655-46dd-bd1c-2842dece989d"
       }
     },
     "production": {
       "android": {
         "buildType": "app-bundle"
+      },
+      "env": {
+        "EXPO_PUBLIC_INSTANTDB_APP_ID": "a2f65c00-e655-46dd-bd1c-2842dece989d"
       }
     }
   },

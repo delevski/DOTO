@@ -1,14 +1,30 @@
 // Polyfills must be imported first
 import 'react-native-get-random-values';
 
-import React, { useEffect, useState } from 'react';
-import { View, Text, StyleSheet, ActivityIndicator, I18nManager } from 'react-native';
+import React, { useEffect, useState, useRef } from 'react';
+import { View, Text, StyleSheet, ActivityIndicator, I18nManager, Platform } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
+import * as Notifications from 'expo-notifications';
 import { useAuthStore } from './src/store/authStore';
 import { useSettingsStore } from './src/store/settingsStore';
 import { RTLProvider } from './src/context/RTLContext';
 import AppNavigator from './src/navigation/AppNavigator';
 import { colors } from './src/styles/theme';
+import { 
+  registerForPushNotificationsAsync, 
+  savePushTokenToUser,
+  setupNotificationListeners 
+} from './src/utils/notifications';
+import { navigationRef } from './src/navigation/AppNavigator';
+
+// Configure notification behavior
+Notifications.setNotificationHandler({
+  handleNotification: async () => ({
+    shouldShowAlert: true,
+    shouldPlaySound: true,
+    shouldSetBadge: true,
+  }),
+});
 
 // Error Boundary Component
 class ErrorBoundary extends React.Component {
@@ -49,6 +65,7 @@ function AppInitializer({ children }) {
   const isSettingsLoading = useSettingsStore((state) => state.isLoading);
   const darkMode = useSettingsStore((state) => state.darkMode);
   const language = useSettingsStore((state) => state.language);
+  const user = useAuthStore((state) => state.user);
 
   useEffect(() => {
     const initialize = async () => {
@@ -65,6 +82,49 @@ function AppInitializer({ children }) {
     };
 
     initialize();
+  }, []);
+
+  // Register push notifications when user is logged in
+  useEffect(() => {
+    if (user?.id) {
+      const registerPushNotifications = async () => {
+        try {
+          const token = await registerForPushNotificationsAsync();
+          if (token) {
+            await savePushTokenToUser(user.id, token);
+            console.log('Push token registered for user:', user.id);
+          }
+        } catch (error) {
+          console.error('Error registering push notifications:', error);
+        }
+      };
+      
+      registerPushNotifications();
+    }
+  }, [user?.id]);
+
+  // Set up notification listeners
+  useEffect(() => {
+    const handleNotificationTapped = (response) => {
+      const data = response.notification.request.content.data;
+      console.log('Notification tapped with data:', data);
+      
+      // Navigate to post if postId is provided
+      if (data?.postId && navigationRef.isReady()) {
+        navigationRef.navigate('PostDetails', { postId: data.postId });
+      }
+    };
+
+    const subscriptions = setupNotificationListeners(
+      (notification) => {
+        console.log('Notification received in foreground:', notification);
+      },
+      handleNotificationTapped
+    );
+
+    return () => {
+      subscriptions.forEach(sub => sub.remove());
+    };
   }, []);
 
   // Apply RTL based on language

@@ -15,6 +15,7 @@ import { useAuthStore } from '../store/authStore';
 import { useSettingsStore } from '../store/settingsStore';
 import { db, id } from '../lib/instant';
 import { colors, spacing, borderRadius } from '../styles/theme';
+import { sendPushNotificationToUser } from '../utils/pushNotifications';
 
 export default function PostDetailsScreen({ route, navigation }) {
   const { postId } = route.params;
@@ -104,17 +105,42 @@ export default function PostDetailsScreen({ route, navigation }) {
     }
 
     try {
+      const now = Date.now();
       const newClaimer = {
         userId: user.id,
         userName: user.name,
         userAvatar: user.avatar || `https://i.pravatar.cc/150?u=${user.id}`,
-        claimedAt: Date.now()
+        claimedAt: now
       };
 
       await db.transact(
         db.tx.posts[postId].update({
           claimers: [...claimers, newClaimer]
         })
+      );
+      
+      // Create in-app notification for the poster
+      const notificationId = id();
+      await db.transact(
+        db.tx.notifications[notificationId].update({
+          id: notificationId,
+          userId: post.authorId,
+          postId: postId,
+          type: 'post_claimed',
+          message: `${user.name} wants to help with your task!`,
+          read: false,
+          timestamp: now,
+          postTitle: post.title || 'Help Needed',
+          createdAt: now
+        })
+      );
+      
+      // Send push notification to the poster
+      sendPushNotificationToUser(
+        post.authorId,
+        'New Claim!',
+        `${user.name} wants to help with "${post.title || 'your task'}"`,
+        { postId, type: 'post_claimed' }
       );
       
       Alert.alert('Success', 'Task claimed! The poster will review your claim.');
@@ -129,13 +155,39 @@ export default function PostDetailsScreen({ route, navigation }) {
       const claimer = claimers.find(c => c.userId === claimerUserId);
       if (!claimer) return;
 
+      const now = Date.now();
+      
       await db.transact(
         db.tx.posts[postId].update({
           approvedClaimerId: claimerUserId,
           approvedClaimerName: claimer.userName,
           approvedClaimerAvatar: claimer.userAvatar,
-          approvedAt: Date.now()
+          approvedAt: now
         })
+      );
+      
+      // Create in-app notification for the approved claimer
+      const notificationId = id();
+      await db.transact(
+        db.tx.notifications[notificationId].update({
+          id: notificationId,
+          userId: claimerUserId,
+          postId: postId,
+          type: 'claimer_approved',
+          message: `You were approved to help with "${post.title || 'a task'}"!`,
+          read: false,
+          timestamp: now,
+          postTitle: post.title || 'Help Needed',
+          createdAt: now
+        })
+      );
+      
+      // Send push notification to the approved claimer
+      sendPushNotificationToUser(
+        claimerUserId,
+        'You\'re Approved!',
+        `You were approved to help with "${post.title || 'a task'}"`,
+        { postId, type: 'claimer_approved' }
       );
       
       Alert.alert('Success', `${claimer.userName} has been approved!`);
@@ -205,11 +257,38 @@ export default function PostDetailsScreen({ route, navigation }) {
 
   const handleMarkComplete = async () => {
     try {
+      const now = Date.now();
+      
       await db.transact(
         db.tx.posts[postId].update({
           completedByClaimer: true
         })
       );
+      
+      // Create in-app notification for the poster
+      const notificationId = id();
+      await db.transact(
+        db.tx.notifications[notificationId].update({
+          id: notificationId,
+          userId: post.authorId,
+          postId: postId,
+          type: 'task_marked_complete',
+          message: `The helper has marked "${post.title || 'your task'}" as complete!`,
+          read: false,
+          timestamp: now,
+          postTitle: post.title || 'Help Needed',
+          createdAt: now
+        })
+      );
+      
+      // Send push notification to the poster
+      sendPushNotificationToUser(
+        post.authorId,
+        'Task Completed!',
+        `The helper has finished "${post.title || 'your task'}". Please confirm and rate.`,
+        { postId, type: 'task_marked_complete' }
+      );
+      
       Alert.alert('Success', 'Task marked as complete! Waiting for poster confirmation.');
     } catch (err) {
       console.error('Complete error:', err);
@@ -224,14 +303,42 @@ export default function PostDetailsScreen({ route, navigation }) {
     }
 
     try {
+      const now = Date.now();
+      
       await db.transact(
         db.tx.posts[postId].update({
           completedByAuthor: true,
           isCompleted: true,
-          completedAt: Date.now(),
+          completedAt: now,
           helperRating: selectedRating
         })
       );
+      
+      // Create in-app notification for the helper
+      const notificationId = id();
+      await db.transact(
+        db.tx.notifications[notificationId].update({
+          id: notificationId,
+          userId: approvedClaimerId,
+          postId: postId,
+          type: 'task_completed',
+          message: `Task completed! You received a ${selectedRating}-star rating.`,
+          read: false,
+          timestamp: now,
+          postTitle: post.title || 'Help Needed',
+          rating: selectedRating,
+          createdAt: now
+        })
+      );
+      
+      // Send push notification to the helper
+      sendPushNotificationToUser(
+        approvedClaimerId,
+        'Great Job!',
+        `Task "${post.title || 'completed'}" is done! You received ${selectedRating} stars.`,
+        { postId, type: 'task_completed', rating: selectedRating }
+      );
+      
       setShowRatingModal(false);
       Alert.alert('Success', 'Task completed and helper rated!');
     } catch (err) {

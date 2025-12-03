@@ -23,6 +23,13 @@
         "NSCameraUsageDescription": "DOTO needs camera access to take photos."
       }
     },
+    "notification": {
+      "icon": "./assets/icon.png",
+      "color": "#DC2626",
+      "iosDisplayInForeground": true,
+      "androidMode": "default",
+      "androidCollapsedTitle": "#{unread_notifications} new notifications"
+    },
     "android": {
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
@@ -52,6 +59,14 @@
         {
           "photosPermission": "Allow DOTO to access your photos.",
           "cameraPermission": "Allow DOTO to access your camera."
+        }
+      ],
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/icon.png",
+          "color": "#DC2626",
+          "sounds": []
         }
       ]
     ],

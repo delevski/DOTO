@@ -13,6 +13,7 @@ import { ISRAEL_CENTER, ISRAEL_BOUNDS, validateIsraelBounds } from '../utils/isr
 import { getConversationId, createOrUpdateConversation } from '../utils/messaging';
 import { updateUserStreak } from '../utils/streakTracking';
 import { useOtherUserStats } from '../hooks/useUserStats';
+import { sendPushNotificationToUser } from '../utils/pushNotifications';
 
 // Fix for default marker icons
 import icon from 'leaflet/dist/images/marker-icon.png';

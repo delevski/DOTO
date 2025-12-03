@@ -4,8 +4,8 @@
 import 'react-native-get-random-values';
 import { init, id } from '@instantdb/react-native';
 
-// InstantDB App ID - same as web app
-const APP_ID = 'a2f65c00-e655-46dd-bd1c-2842dece989d';
+// InstantDB App ID - reads from environment variable with fallback to production
+const APP_ID = process.env.EXPO_PUBLIC_INSTANTDB_APP_ID || 'a2f65c00-e655-46dd-bd1c-2842dece989d';
 
 // Initialize InstantDB
 export const db = init({ appId: APP_ID });
