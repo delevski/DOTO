@@ -6,7 +6,7 @@ services:
     name: doto-webapp
     runtime: static
     buildCommand: cd webapp && npm install && npm run build
-    staticPublishPath: webapp/dist
+    publishPath: webapp/dist
     pullRequestPreviewsEnabled: true
     envVars:
       - key: VITE_GOOGLE_CLIENT_ID
