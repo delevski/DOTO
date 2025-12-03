@@ -71,12 +71,21 @@ export default function LoginScreen({ navigation }) {
 
     try {
       const normalizedEmail = email.trim().toLowerCase();
+      console.log('[Login] Looking for user with email:', normalizedEmail);
+      console.log('[Login] Total users in database:', allUsers.length);
       
       // Find user in InstantDB
       const userRecord = allUsers.find(u => 
         (u.emailLower && u.emailLower === normalizedEmail) || 
         (u.email && u.email.toLowerCase() === normalizedEmail)
       );
+
+      console.log('[Login] User found:', userRecord ? 'Yes' : 'No');
+      if (userRecord) {
+        console.log('[Login] User email:', userRecord.email);
+        console.log('[Login] User has passwordHash:', !!userRecord.passwordHash);
+        console.log('[Login] passwordHash preview:', userRecord.passwordHash?.substring(0, 20) + '...');
+      }
 
       if (!userRecord) {
         setError(t('auth.accountNotFound'));
@@ -92,13 +101,29 @@ export default function LoginScreen({ navigation }) {
       }
 
       // Verify password
+      console.log('[Login] Verifying password...');
+      
+      // First hash the password to compare
+      const { hashPassword } = await import('../utils/password');
+      const inputHash = await hashPassword(password);
+      
+      // Show debug alert BEFORE verification
+      Alert.alert(
+        'Debug: Hash Comparison',
+        `Email: ${normalizedEmail}\n\nInput hash (first 40 chars):\n${inputHash?.substring(0, 40)}\n\nStored hash (first 40 chars):\n${userRecord.passwordHash?.substring(0, 40)}\n\nLengths: ${inputHash?.length} vs ${userRecord.passwordHash?.length}\n\nExact match: ${inputHash === userRecord.passwordHash}\nCase-insensitive: ${inputHash?.toLowerCase() === userRecord.passwordHash?.toLowerCase()}`,
+        [{ text: 'OK' }]
+      );
+      
       const isValidPassword = await verifyPassword(password, userRecord.passwordHash);
+      console.log('[Login] Password verification result:', isValidPassword);
       
       if (!isValidPassword) {
+        console.log('[Login] Password verification failed');
         setError(t('auth.incorrectPassword'));
         setIsLoading(false);
         return;
       }
+      console.log('[Login] Password verified successfully!');
 
       // Generate verification code
       const code = generateVerificationCode();
@@ -164,24 +189,27 @@ export default function LoginScreen({ navigation }) {
     newCode[index] = value;
     setVerificationCode(newCode);
 
-    // Move to next input (RTL-aware)
-    const nextIndex = isRTL ? index - 1 : index + 1;
-    if (value && nextIndex >= 0 && nextIndex < 6) {
-      inputRefs.current[nextIndex]?.focus();
+    // Always move left-to-right for number inputs (don't use RTL)
+    if (value && index < 5) {
+      inputRefs.current[index + 1]?.focus();
     }
   };
 
   const handleCodeKeyDown = (index, key) => {
     if (key === 'Backspace' && !verificationCode[index]) {
-      const prevIndex = isRTL ? index + 1 : index - 1;
-      if (prevIndex >= 0 && prevIndex < 6) {
-        inputRefs.current[prevIndex]?.focus();
+      // Always move right-to-left on backspace (don't use RTL)
+      if (index > 0) {
+        inputRefs.current[index - 1]?.focus();
       }
     }
   };
 
   const handleVerifyCode = async () => {
+    // Code inputs are always LTR, so just join directly
     const enteredCode = verificationCode.join('');
+    
+    console.log('[Verify] Generated code:', generatedCode);
+    console.log('[Verify] Entered code:', enteredCode);
     
     if (enteredCode !== generatedCode) {
       setError(t('auth.invalidCode'));
@@ -373,8 +401,8 @@ export default function LoginScreen({ navigation }) {
                 </View>
               ) : null}
 
-              {/* Code Input */}
-              <View style={[styles.codeContainer, { flexDirection: rtlStyles.row }]}>
+              {/* Code Input - Always LTR for numbers */}
+              <View style={[styles.codeContainer, { flexDirection: 'row' }]}>
                 {verificationCode.map((digit, index) => (
                   <TextInput
                     key={index}

@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { I18nManager } from 'react-native';
+import { setLanguage as setI18nLanguage } from '../i18n';
 
 const SETTINGS_KEY = '@doto_settings';
 
@@ -15,14 +16,19 @@ export const useSettingsStore = create((set, get) => ({
       const stored = await AsyncStorage.getItem(SETTINGS_KEY);
       if (stored) {
         const settings = JSON.parse(stored);
+        const lang = settings.language || 'en';
+        
         set({ 
           darkMode: settings.darkMode || false,
-          language: settings.language || 'en',
+          language: lang,
           isLoading: false 
         });
         
+        // Sync with i18n module
+        setI18nLanguage(lang);
+        
         // Apply RTL if Hebrew
-        if (settings.language === 'he' && !I18nManager.isRTL) {
+        if (lang === 'he') {
           I18nManager.allowRTL(true);
           I18nManager.forceRTL(true);
         }
@@ -51,6 +57,9 @@ export const useSettingsStore = create((set, get) => ({
   // Set language
   setLanguage: async (lang) => {
     set({ language: lang });
+    
+    // Sync with i18n module
+    setI18nLanguage(lang);
     
     // Handle RTL for Hebrew
     const isRTL = lang === 'he';
