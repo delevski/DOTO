@@ -15,7 +15,7 @@ import { useAuthStore } from '../store/authStore';
 import { useSettingsStore } from '../store/settingsStore';
 import { useRTL, useRTLStyles } from '../context/RTLContext';
 import { db, id } from '../lib/instant';
-import { verifyPassword, generateVerificationCode } from '../utils/password';
+import { verifyPassword } from '../utils/password';
 import { colors, spacing, borderRadius, typography } from '../styles/theme';
 
 export default function LoginScreen({ navigation }) {
@@ -32,7 +32,6 @@ export default function LoginScreen({ navigation }) {
   const [showVerification, setShowVerification] = useState(false);
   const [verificationCode, setVerificationCode] = useState(['', '', '', '', '', '']);
   const [pendingUser, setPendingUser] = useState(null);
-  const [generatedCode, setGeneratedCode] = useState('');
 
   const inputRefs = useRef([]);
 
@@ -100,18 +99,23 @@ export default function LoginScreen({ navigation }) {
         return;
       }
 
-      // Generate verification code
-      const code = generateVerificationCode();
-      setGeneratedCode(code);
+      // Send magic code via InstantDB
       setPendingUser(userRecord);
       setShowVerification(true);
       
-      // In production, this would be sent via email
-      Alert.alert(
-        t('auth.verificationCode'),
-        `${t('auth.devModeCode')} ${code}`,
-        [{ text: t('common.ok') }]
-      );
+      try {
+        await db.auth.sendMagicCode({ email: normalizedEmail });
+        Alert.alert(
+          t('auth.checkYourEmail') || 'Check Your Email',
+          t('auth.magicCodeSent') || 'We sent a 6-digit verification code to your email.',
+          [{ text: t('common.ok') || 'OK' }]
+        );
+      } catch (err) {
+        console.error('Error sending magic code:', err);
+        setError(err.body?.message || err.message || t('errors.tryAgain'));
+        setShowVerification(false);
+        setPendingUser(null);
+      }
     } catch (err) {
       console.error('Login error:', err);
       setError(t('errors.tryAgain'));
@@ -183,13 +187,30 @@ export default function LoginScreen({ navigation }) {
   const handleVerifyCode = async () => {
     const enteredCode = verificationCode.join('');
     
-    if (enteredCode !== generatedCode) {
-      setError(t('auth.invalidCode'));
+    if (enteredCode.length !== 6) {
+      setError(t('auth.enterFullCode') || 'Please enter the full 6-digit code');
       return;
     }
 
-    if (pendingUser) {
-      await login(pendingUser);
+    setIsLoading(true);
+    setError('');
+
+    try {
+      await db.auth.signInWithMagicCode({ 
+        email: pendingUser?.email?.toLowerCase() || email.trim().toLowerCase(), 
+        code: enteredCode 
+      });
+      
+      // If successful, login the user
+      if (pendingUser) {
+        await login(pendingUser);
+      }
+    } catch (err) {
+      console.error('Error verifying magic code:', err);
+      setError(t('auth.invalidCode') || 'Invalid code. Please try again.');
+      setVerificationCode(['', '', '', '', '', '']);
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -197,7 +218,6 @@ export default function LoginScreen({ navigation }) {
     setShowVerification(false);
     setVerificationCode(['', '', '', '', '', '']);
     setPendingUser(null);
-    setGeneratedCode('');
     setError('');
   };
 
@@ -396,24 +416,21 @@ export default function LoginScreen({ navigation }) {
                 ))}
               </View>
 
-              {/* Show code hint for development */}
-              <View style={styles.codeHint}>
-                <Text style={[styles.codeHintLabel, { color: themeColors.textSecondary }]}>
-                  {t('auth.devModeCode')}
-                </Text>
-                <Text style={styles.codeHintValue}>{generatedCode}</Text>
-              </View>
 
               <TouchableOpacity
                 style={[
                   styles.primaryButton, 
-                  verificationCode.join('').length !== 6 && styles.buttonDisabled
+                  (verificationCode.join('').length !== 6 || isLoading) && styles.buttonDisabled
                 ]}
                 onPress={handleVerifyCode}
-                disabled={verificationCode.join('').length !== 6}
+                disabled={verificationCode.join('').length !== 6 || isLoading}
                 activeOpacity={0.8}
               >
-                <Text style={styles.primaryButtonText}>{t('auth.verifyCode')}</Text>
+                {isLoading ? (
+                  <ActivityIndicator color="#fff" />
+                ) : (
+                  <Text style={styles.primaryButtonText}>{t('auth.verifyCode')}</Text>
+                )}
               </TouchableOpacity>
             </>
           )}

@@ -4,7 +4,6 @@ import { Eye, EyeOff } from 'lucide-react';
 import { useAuthStore } from '../store/useStore';
 import { useSettingsStore } from '../store/settingsStore';
 import { useTranslation } from '../utils/translations';
-import { sendVerificationEmail, generateVerificationCode, isEmailJSConfigured } from '../utils/emailService';
 import { verifyPassword } from '../utils/password';
 import { db } from '../lib/instant';
 import { id } from '@instantdb/react';
@@ -55,9 +54,8 @@ export default function Login() {
 
   useEffect(() => {
     const storedContext = sessionStorage.getItem('pending_login_context');
-    const storedCode = sessionStorage.getItem('verification_code');
 
-    if (storedContext && storedCode) {
+    if (storedContext) {
       try {
         const parsedContext = JSON.parse(storedContext);
         setVerificationContext(parsedContext);
@@ -184,7 +182,6 @@ export default function Login() {
   };
 
   const resetVerificationSession = () => {
-    sessionStorage.removeItem('verification_code');
     sessionStorage.removeItem('pending_login_context');
     sessionStorage.removeItem('pending_login_method');
     setShowVerification(false);
@@ -196,9 +193,6 @@ export default function Login() {
     if (!user?.id || !user?.email) {
       throw new Error('User data missing required fields for verification.');
     }
-
-    const code = generateVerificationCode();
-    sessionStorage.setItem('verification_code', code);
 
     const context = {
       method,
@@ -213,12 +207,14 @@ export default function Login() {
     setVerificationCode(['', '', '', '', '', '']);
     setShowVerification(true);
 
-    const emailSent = await sendVerificationEmail(user.email, code);
-
-    if (!emailSent) {
-      setError('Email could not be sent. Your verification code is displayed below.');
-    } else {
+    try {
+      await db.auth.sendMagicCode({ email: user.email.toLowerCase() });
       setError('');
+    } catch (err) {
+      console.error('Error sending magic code:', err);
+      setError(err.body?.message || err.message || 'Failed to send verification code. Please try again.');
+      setShowVerification(false);
+      setVerificationContext(null);
     }
   };
 
@@ -517,16 +513,10 @@ export default function Login() {
 
     try {
       const enteredCode = verificationCode.join('');
-      const storedCode = sessionStorage.getItem('verification_code');
-
-      if (!storedCode) {
-        setError(t('verificationSessionExpired'));
-        resetVerificationSession();
-        return;
-      }
-
-      if (enteredCode !== storedCode) {
-        setError(t('invalidVerificationCode'));
+      
+      if (enteredCode.length !== 6) {
+        setError(t('enterFullCode') || 'Please enter the full 6-digit code');
+        setIsVerifying(false);
         return;
       }
 
@@ -539,11 +529,18 @@ export default function Login() {
         }
       }
 
-      if (!context?.userId) {
+      if (!context?.email) {
         setError(t('verificationSessionExpired'));
         resetVerificationSession();
+        setIsVerifying(false);
         return;
       }
+
+      // Verify magic code via InstantDB
+      await db.auth.signInWithMagicCode({ 
+        email: context.email.toLowerCase(), 
+        code: enteredCode 
+      });
 
       let userData = context.userSnapshot;
 
@@ -558,6 +555,7 @@ export default function Login() {
       if (!userData) {
         setError(t('accountNotFound'));
         resetVerificationSession();
+        setIsVerifying(false);
         return;
       }
 
@@ -569,7 +567,8 @@ export default function Login() {
       navigate('/feed');
     } catch (err) {
       console.error('Error verifying code:', err);
-      setError(t('failedToVerifyCode') || 'Failed to verify code. Please try again.');
+      setError(t('invalidVerificationCode') || 'Invalid code. Please try again.');
+      setVerificationCode(['', '', '', '', '', '']);
     } finally {
       setIsVerifying(false);
     }
@@ -715,23 +714,9 @@ export default function Login() {
                         />
                       ))}
                     </div>
-                    {isEmailJSConfigured() ? (
-                      <p className="text-xs text-gray-500 dark:text-gray-400 mt-4 text-center">
-                        {t('verificationCodeSentTo')} <span className="font-semibold">{verificationContext?.email || email}</span>
-                      </p>
-                    ) : (
-                      <div className="mt-4 p-4 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-xl">
-                        <p className="text-sm font-semibold text-blue-800 dark:text-blue-300 mb-2 text-center">
-                          📧 Development Mode - Your Verification Code:
-                        </p>
-                        <p className="text-2xl font-bold text-blue-900 dark:text-blue-200 text-center tracking-wider mb-2">
-                          {sessionStorage.getItem('verification_code')}
-                        </p>
-                        <p className="text-xs text-blue-700 dark:text-blue-400 text-center">
-                          Email sending is not configured. Enter the code above to continue.
-                        </p>
-                      </div>
-                    )}
+                    <p className="text-xs text-gray-500 dark:text-gray-400 mt-4 text-center">
+                      {t('verificationCodeSentTo') || 'Code sent to'} <span className="font-semibold">{verificationContext?.email || email}</span>
+                    </p>
                   </div>
                   
                   <button 

@@ -16,7 +16,7 @@ import * as ImagePicker from 'expo-image-picker';
 import { useAuthStore } from '../store/authStore';
 import { useSettingsStore } from '../store/settingsStore';
 import { db, id } from '../lib/instant';
-import { hashPassword, generateVerificationCode } from '../utils/password';
+import { hashPassword } from '../utils/password';
 import { colors, spacing, borderRadius, typography } from '../styles/theme';
 
 export default function RegisterScreen({ navigation }) {
@@ -34,7 +34,6 @@ export default function RegisterScreen({ navigation }) {
   const [showVerification, setShowVerification] = useState(false);
   const [verificationCode, setVerificationCode] = useState(['', '', '', '', '', '']);
   const [pendingUser, setPendingUser] = useState(null);
-  const [generatedCode, setGeneratedCode] = useState('');
 
   const inputRefs = useRef([]);
 
@@ -148,17 +147,23 @@ export default function RegisterScreen({ navigation }) {
         authProvider: 'email',
       };
 
-      // Generate verification code
-      const code = generateVerificationCode();
-      setGeneratedCode(code);
+      // Send magic code via InstantDB
       setPendingUser(userData);
       setShowVerification(true);
       
-      Alert.alert(
-        'Verification Code',
-        `Your code is: ${code}\n\n(In production, this would be sent to your email)`,
-        [{ text: 'OK' }]
-      );
+      try {
+        await db.auth.sendMagicCode({ email: normalizedEmail });
+        Alert.alert(
+          'Check Your Email',
+          'We sent a 6-digit verification code to your email.',
+          [{ text: 'OK' }]
+        );
+      } catch (err) {
+        console.error('Error sending magic code:', err);
+        setError(err.body?.message || err.message || 'Failed to send code. Please try again.');
+        setShowVerification(false);
+        setPendingUser(null);
+      }
     } catch (err) {
       console.error('Registration error:', err);
       setError('Failed to register. Please try again.');
@@ -188,22 +193,28 @@ export default function RegisterScreen({ navigation }) {
   const handleVerifyCode = async () => {
     const enteredCode = verificationCode.join('');
     
-    if (enteredCode !== generatedCode) {
-      setError('Invalid verification code. Please try again.');
+    if (enteredCode.length !== 6) {
+      setError('Please enter the full 6-digit code');
       return;
     }
 
     setIsLoading(true);
+    setError('');
 
     try {
-      // Save user to InstantDB
-      await db.transact(db.tx.users[pendingUser.id].update(pendingUser));
+      // Verify magic code via InstantDB
+      await db.auth.signInWithMagicCode({ 
+        email: pendingUser?.email?.toLowerCase() || email.trim().toLowerCase(), 
+        code: enteredCode 
+      });
       
-      // Login the user
+      // If successful, save user to InstantDB and login
+      await db.transact(db.tx.users[pendingUser.id].update(pendingUser));
       await login(pendingUser);
     } catch (err) {
-      console.error('Verification error:', err);
-      setError('Failed to create account. Please try again.');
+      console.error('Error verifying code:', err);
+      setError('Invalid code. Please try again.');
+      setVerificationCode(['', '', '', '', '', '']);
       setIsLoading(false);
     }
   };
@@ -212,7 +223,6 @@ export default function RegisterScreen({ navigation }) {
     setShowVerification(false);
     setVerificationCode(['', '', '', '', '', '']);
     setPendingUser(null);
-    setGeneratedCode('');
     setError('');
   };
 
@@ -410,13 +420,6 @@ export default function RegisterScreen({ navigation }) {
                 ))}
               </View>
 
-              {/* Show code hint for development */}
-              <View style={styles.codeHint}>
-                <Text style={[styles.codeHintLabel, { color: themeColors.textSecondary }]}>
-                  Development Mode - Your code:
-                </Text>
-                <Text style={styles.codeHintValue}>{generatedCode}</Text>
-              </View>
 
               <TouchableOpacity
                 style={[
