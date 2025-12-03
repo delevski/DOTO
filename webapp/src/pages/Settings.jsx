@@ -9,7 +9,7 @@ import { Link } from 'react-router-dom';
 export default function Settings() {
   const navigate = useNavigate();
   const { darkMode, toggleDarkMode, language, setLanguage } = useSettingsStore();
-  const { logout } = useAuthStore();
+  const { logout, user } = useAuthStore();
   const t = useTranslation();
   const isRTL = language === 'he';
   const [showLanguageModal, setShowLanguageModal] = useState(false);
@@ -26,7 +26,7 @@ export default function Settings() {
   ];
 
   const handleLanguageChange = (langCode) => {
-    setLanguage(langCode);
+    setLanguage(langCode, user?.id);
     setShowLanguageModal(false);
   };
 

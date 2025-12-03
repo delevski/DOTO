@@ -113,7 +113,7 @@ export default function SettingsScreen({ navigation }) {
                   styles.langOption,
                   language === 'en' && styles.langOptionActive,
                 ]}
-                onPress={() => setLanguage('en')}
+                onPress={() => setLanguage('en', user?.id)}
               >
                 <Text style={[
                   styles.langOptionText,
@@ -127,7 +127,7 @@ export default function SettingsScreen({ navigation }) {
                   styles.langOption,
                   language === 'he' && styles.langOptionActive,
                 ]}
-                onPress={() => setLanguage('he')}
+                onPress={() => setLanguage('he', user?.id)}
               >
                 <Text style={[
                   styles.langOptionText,

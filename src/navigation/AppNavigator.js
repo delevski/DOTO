@@ -1,12 +1,8 @@
-import React, { forwardRef } from 'react';
+import React from 'react';
 import { NavigationContainer } from '@react-navigation/native';
 import { createStackNavigator } from '@react-navigation/stack';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
-import { createNavigationContainerRef } from '@react-navigation/native';
-
-// Create a navigation ref that can be used outside of React components
-export const navigationRef = createNavigationContainerRef();
 
 import { useAuthStore } from '../store/authStore';
 import { useSettingsStore } from '../store/settingsStore';
@@ -199,7 +195,6 @@ export default function AppNavigator() {
   
   return (
     <NavigationContainer
-      ref={navigationRef}
       theme={{
         dark: darkMode,
         colors: {
