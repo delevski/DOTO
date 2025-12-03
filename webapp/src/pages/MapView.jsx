@@ -290,55 +290,117 @@ export default function MapView() {
   const { isLoading, error, data } = db.useQuery({ posts: {} });
   const posts = data?.posts || [];
 
+  // Ref to track geocoding in progress to prevent infinite loops and timeouts
+  const geocodingInProgressRef = useRef(false);
+  const geocodingTimeoutRef = useRef(null);
+  const postCoordinatesRef = useRef({});
+  const postsRef = useRef([]);
+  
+  // Track if posts actually changed (by comparing IDs)
+  const postsChanged = JSON.stringify(posts.map(p => p.id).sort()) !== JSON.stringify(postsRef.current.map(p => p.id).sort());
+  
+  if (postsChanged) {
+    postsRef.current = posts;
+  }
+
   // Geocode post locations when posts are loaded
   useEffect(() => {
-    const geocodePosts = async () => {
-      setIsLoadingMarkers(true);
-      
-      // Get cached results first
-      const geocodeCache = getGeocodeCache();
-      const coords = {};
-      
-      // Filter posts that need geocoding
-      const postsToGeocode = posts.filter(post => post.location);
-      
-      // Check cache first - instant results for previously geocoded locations!
-      postsToGeocode.forEach(post => {
-        const cacheKey = post.location.toLowerCase().trim();
-        if (geocodeCache[cacheKey]) {
-          coords[post.id] = geocodeCache[cacheKey].coords;
-        }
-      });
-      
-      // Update state immediately with cached results (progressive loading)
-      setPostCoordinates({ ...coords });
-      
-      // Filter posts that still need geocoding
-      const postsNeedingGeocode = postsToGeocode.filter(post => !coords[post.id]);
-      const total = postsToGeocode.length;
-      const cachedCount = Object.keys(coords).length;
-      
-      setMarkerProgress({ current: cachedCount, total });
-      
-      if (postsNeedingGeocode.length === 0) {
+    // Only proceed if posts actually changed
+    if (!postsChanged || geocodingInProgressRef.current) {
+      return;
+    }
+    // Clear any existing timeout
+    if (geocodingTimeoutRef.current) {
+      clearTimeout(geocodingTimeoutRef.current);
+    }
+
+    // Set a timeout to prevent infinite geocoding
+    const MAX_GEOCODING_TIME = 60000; // 60 seconds max
+    geocodingTimeoutRef.current = setTimeout(() => {
+      if (geocodingInProgressRef.current) {
+        console.warn('Geocoding timeout - stopping to prevent crashes');
+        geocodingInProgressRef.current = false;
         setIsLoadingMarkers(false);
         setMarkerProgress({ current: 0, total: 0 });
+      }
+    }, MAX_GEOCODING_TIME);
+
+    const geocodePosts = async () => {
+      // Prevent concurrent geocoding operations
+      if (geocodingInProgressRef.current) {
         return;
       }
-
-      // Optimized batch processing - larger batches, shorter delays
-      const BATCH_SIZE = 8; // Increased from 5 for better parallelization
-      const BATCH_DELAY = 600; // Reduced from 1000ms - still respects rate limits
       
-      // Process batches with progressive updates
-      for (let i = 0; i < postsNeedingGeocode.length; i += BATCH_SIZE) {
-        const batch = postsNeedingGeocode.slice(i, i + BATCH_SIZE);
+      geocodingInProgressRef.current = true;
+      setIsLoadingMarkers(true);
+      
+      try {
+        // Get cached results first
+        const geocodeCache = getGeocodeCache();
+        const coords = {};
         
-        // Process batch in parallel - NO address pre-fetching (loads on demand)
-        const batchPromises = batch.map(async (post) => {
-          if (post.location) {
+        // Filter posts that need geocoding
+        const postsToGeocode = posts.filter(post => post.location);
+        
+        // Check cache first - instant results for previously geocoded locations!
+        postsToGeocode.forEach(post => {
+          const cacheKey = post.location.toLowerCase().trim();
+          if (geocodeCache[cacheKey]) {
+            coords[post.id] = geocodeCache[cacheKey].coords;
+          }
+        });
+        
+        // Update state immediately with cached results (progressive loading)
+        // Use functional update to avoid dependency issues
+        setPostCoordinates(prev => {
+          const merged = { ...prev, ...coords };
+          postCoordinatesRef.current = merged;
+          return merged;
+        });
+        
+        // Filter posts that still need geocoding
+        const postsNeedingGeocode = postsToGeocode.filter(post => !coords[post.id]);
+        const total = postsToGeocode.length;
+        const cachedCount = Object.keys(coords).length;
+        
+        setMarkerProgress({ current: cachedCount, total });
+
+        if (postsNeedingGeocode.length === 0) {
+          setIsLoadingMarkers(false);
+          setMarkerProgress({ current: 0, total: 0 });
+          geocodingInProgressRef.current = false;
+          return;
+        }
+
+        // Optimized batch processing with timeout protection
+        const BATCH_SIZE = 5; // Reduced to prevent timeouts
+        const BATCH_DELAY = 800; // Increased delay to prevent rate limiting
+        const REQUEST_TIMEOUT = 10000; // 10 seconds per request
+        
+        // Process batches with progressive updates
+        for (let i = 0; i < postsNeedingGeocode.length; i += BATCH_SIZE) {
+          // Check if geocoding was cancelled
+          if (!geocodingInProgressRef.current) {
+            break;
+          }
+
+          const batch = postsNeedingGeocode.slice(i, i + BATCH_SIZE);
+          
+          // Process batch in parallel with timeout protection
+          const batchPromises = batch.map(async (post) => {
+            if (post.location && !geocodingInProgressRef.current) {
+              return false;
+            }
+
             try {
-              const geocoded = await geocodeLocation(post.location);
+              // Add timeout to each geocoding request
+              const geocodePromise = geocodeLocation(post.location);
+              const timeoutPromise = new Promise((_, reject) => 
+                setTimeout(() => reject(new Error('Geocoding timeout')), REQUEST_TIMEOUT)
+              );
+              
+              const geocoded = await Promise.race([geocodePromise, timeoutPromise]);
+              
               if (geocoded) {
                 const newCoords = [geocoded.lat, geocoded.lon];
                 coords[post.id] = newCoords;
@@ -351,50 +413,87 @@ export default function MapView() {
                 };
                 
                 // Progressive update - show markers as they're ready (better UX)
-                setPostCoordinates(prev => ({ ...prev, [post.id]: newCoords }));
+                setPostCoordinates(prev => {
+                  const merged = { ...prev, [post.id]: newCoords };
+                  postCoordinatesRef.current = merged;
+                  return merged;
+                });
                 
                 return true;
               }
             } catch (error) {
               console.error(`Error geocoding post ${post.id}:`, error);
+              // Continue with other posts even if one fails
+            }
+            return false;
+          });
+          
+          // Wait for batch to complete with timeout
+          try {
+            await Promise.all(batchPromises);
+          } catch (error) {
+            console.error('Batch geocoding error:', error);
+            // Continue with next batch
+          }
+          
+          // Update progress
+          const currentCount = cachedCount + Math.min(i + BATCH_SIZE, postsNeedingGeocode.length);
+          setMarkerProgress({ current: currentCount, total });
+          
+          // Save cache periodically (every 3 batches) to avoid excessive writes
+          if (i % (BATCH_SIZE * 3) === 0) {
+            try {
+              setGeocodeCache(geocodeCache);
+            } catch (error) {
+              console.error('Error saving geocode cache:', error);
             }
           }
-          return false;
-        });
-        
-        // Wait for batch to complete
-        await Promise.all(batchPromises);
-        
-        // Update progress
-        const currentCount = cachedCount + Math.min(i + BATCH_SIZE, postsNeedingGeocode.length);
-        setMarkerProgress({ current: currentCount, total });
-        
-        // Save cache periodically (every 3 batches) to avoid excessive writes
-        if (i % (BATCH_SIZE * 3) === 0) {
-          setGeocodeCache(geocodeCache);
+          
+          // Delay between batches to respect rate limits
+          if (i + BATCH_SIZE < postsNeedingGeocode.length && geocodingInProgressRef.current) {
+            await new Promise(resolve => setTimeout(resolve, BATCH_DELAY));
+          }
         }
         
-        // Delay between batches to respect rate limits
-        if (i + BATCH_SIZE < postsNeedingGeocode.length) {
-          await new Promise(resolve => setTimeout(resolve, BATCH_DELAY));
+        // Final cache save
+        try {
+          setGeocodeCache(geocodeCache);
+        } catch (error) {
+          console.error('Error saving final geocode cache:', error);
+        }
+        
+        // Don't pre-fetch addresses - MarkerPopupContent loads them on demand
+        setMarkerAddresses({});
+      } catch (error) {
+        console.error('Geocoding error:', error);
+      } finally {
+        setIsLoadingMarkers(false);
+        setMarkerProgress({ current: 0, total: 0 });
+        geocodingInProgressRef.current = false;
+        if (geocodingTimeoutRef.current) {
+          clearTimeout(geocodingTimeoutRef.current);
+          geocodingTimeoutRef.current = null;
         }
       }
-      
-      // Final cache save
-      setGeocodeCache(geocodeCache);
-      // Don't pre-fetch addresses - MarkerPopupContent loads them on demand
-      setMarkerAddresses({});
-      setIsLoadingMarkers(false);
-      setMarkerProgress({ current: 0, total: 0 });
     };
     
-    if (posts.length > 0) {
+    if (posts.length > 0 && postsChanged) {
       geocodePosts();
     } else {
       setIsLoadingMarkers(false);
       setMarkerProgress({ current: 0, total: 0 });
+      geocodingInProgressRef.current = false;
     }
-  }, [posts]);
+
+    // Cleanup function
+    return () => {
+      geocodingInProgressRef.current = false;
+      if (geocodingTimeoutRef.current) {
+        clearTimeout(geocodingTimeoutRef.current);
+        geocodingTimeoutRef.current = null;
+      }
+    };
+  }, [posts, postsChanged]);
 
   // Handle search input with debouncing for autocomplete
   useEffect(() => {

@@ -127,49 +127,81 @@ export default function Feed() {
     );
   };
 
+  // Ref to track geocoding in progress to prevent infinite loops
+  const geocodingInProgressRef = React.useRef(false);
+  // Ref to store current postCoordinates to avoid dependency issues
+  const postCoordinatesRef = React.useRef(postCoordinates);
+  
+  // Update ref when postCoordinates changes
+  useEffect(() => {
+    postCoordinatesRef.current = postCoordinates;
+  }, [postCoordinates]);
+
   // Geocode post locations when nearby filter is active
-  const geocodePostLocations = async () => {
-    if (!userLocation) return;
+  const geocodePostLocations = React.useCallback(async () => {
+    if (!userLocation || geocodingInProgressRef.current) return;
+    
+    geocodingInProgressRef.current = true;
 
-    const postsToGeocode = allPosts.filter(post => 
-      post.location && !postCoordinates[post.id]
-    );
+    try {
+      // Use ref to get current coordinates without causing dependency issues
+      const currentCoords = postCoordinatesRef.current;
+      const postsToGeocode = allPosts.filter(post => 
+        post.location && !currentCoords[post.id]
+      );
 
-    if (postsToGeocode.length === 0) return;
-
-    // Geocode in batches to avoid rate limiting
-    const BATCH_SIZE = 5;
-    const coords = { ...postCoordinates };
-
-    for (let i = 0; i < postsToGeocode.length; i += BATCH_SIZE) {
-      const batch = postsToGeocode.slice(i, i + BATCH_SIZE);
-      const batchPromises = batch.map(async (post) => {
-        if (post.location && !coords[post.id]) {
-          const geocoded = await geocodeLocation(post.location);
-          if (geocoded) {
-            coords[post.id] = geocoded;
-          }
-        }
-      });
-      await Promise.all(batchPromises);
-      
-      // Update state progressively
-      setPostCoordinates({ ...coords });
-      
-      // Delay between batches
-      if (i + BATCH_SIZE < postsToGeocode.length) {
-        await new Promise(resolve => setTimeout(resolve, 1000));
+      if (postsToGeocode.length === 0) {
+        geocodingInProgressRef.current = false;
+        return;
       }
+
+      // Geocode in batches to avoid rate limiting
+      const BATCH_SIZE = 5;
+      const coords = { ...currentCoords };
+
+      for (let i = 0; i < postsToGeocode.length; i += BATCH_SIZE) {
+        const batch = postsToGeocode.slice(i, i + BATCH_SIZE);
+        const batchPromises = batch.map(async (post) => {
+          if (post.location && !coords[post.id]) {
+            const geocoded = await geocodeLocation(post.location);
+            if (geocoded) {
+              coords[post.id] = geocoded;
+            }
+          }
+        });
+        await Promise.all(batchPromises);
+        
+        // Update state progressively using functional update
+        setPostCoordinates(prev => {
+          // Merge with previous state to avoid overwriting
+          const merged = { ...prev };
+          Object.keys(coords).forEach(key => {
+            if (coords[key] && !merged[key]) {
+              merged[key] = coords[key];
+            }
+          });
+          return merged;
+        });
+        
+        // Update ref
+        postCoordinatesRef.current = { ...postCoordinatesRef.current, ...coords };
+        
+        // Delay between batches
+        if (i + BATCH_SIZE < postsToGeocode.length) {
+          await new Promise(resolve => setTimeout(resolve, 1000));
+        }
+      }
+    } finally {
+      geocodingInProgressRef.current = false;
     }
-  };
+  }, [userLocation, allPosts]); // Removed postCoordinates from dependencies
 
   // Effect to geocode locations when nearby filter is enabled
   useEffect(() => {
-    if (filters.nearbyMe && userLocation && allPosts.length > 0) {
+    if (filters.nearbyMe && userLocation && allPosts.length > 0 && !geocodingInProgressRef.current) {
       geocodePostLocations();
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [filters.nearbyMe, userLocation, allPosts.length]);
+  }, [filters.nearbyMe, userLocation, allPosts.length, geocodePostLocations]);
 
   // Filter and sort posts based on active tab and filters
   const posts = React.useMemo(() => {
@@ -246,9 +278,14 @@ export default function Feed() {
     return filtered;
   }, [allPosts, activeTab, user?.id, filters, postCommentCounts, userLocation, postCoordinates]);
 
-  // Debug: Log posts with photos
+  // Debug: Log posts with photos (only in development, and only when posts actually change)
+  const prevPostsRef = React.useRef([]);
   useEffect(() => {
-    if (posts.length > 0) {
+    // Only log if posts actually changed (by comparing IDs)
+    const currentPostIds = posts.map(p => p.id).join(',');
+    const prevPostIds = prevPostsRef.current.map(p => p.id).join(',');
+    
+    if (currentPostIds !== prevPostIds && posts.length > 0) {
       console.log('Posts loaded:', posts.length);
       posts.forEach((post, index) => {
         if (post.photos) {
@@ -257,6 +294,7 @@ export default function Feed() {
           console.log(`Post ${index} (ID: ${post.id}) has no photos property`);
         }
       });
+      prevPostsRef.current = posts;
     }
   }, [posts]);
 
