@@ -1,46 +1,36 @@
-# Fix Render Deployment - Action Required
+# Render Deployment Status
 
-## Current Status
+## Current Status ✅
 
 ✅ **doto-webapp** service is WORKING and LIVE
-❌ **DOTO** service is FAILING (not using render.yaml blueprint)
 
-## The Problem
-
-The "DOTO" service was created manually with incorrect settings:
-- Build Command: `npm install` (should be `cd webapp && npm install && npm run build`)
-- Publish Path: `DOTO/dist` (should be `webapp/dist`)
-
-## Solution Options
-
-### Option 1: Delete the "DOTO" Service (Recommended)
-Since "doto-webapp" is already working, delete the failing service:
-1. Go to: https://dashboard.render.com/static/srv-d4ncepuuk2gs739o57jg
-2. Click "Settings" → Scroll to "Danger Zone"
-3. Click "Delete Service"
-
-### Option 2: Fix the "DOTO" Service Manually
-1. Go to: https://dashboard.render.com/static/srv-d4ncepuuk2gs739o57jg/settings
-2. Update:
-   - **Build Command**: `cd webapp && npm install && npm run build`
-   - **Publish Directory**: `webapp/dist`
-3. Click "Save Changes"
-4. Trigger manual deploy
-
-### Option 3: Disable Auto-Deploy on "DOTO" Service
-1. Go to: https://dashboard.render.com/static/srv-d4ncepuuk2gs739o57jg/settings
-2. Find "Auto-Deploy" section
-3. Disable auto-deploy to prevent it from deploying
-
-## Why This Happened
-
-The "DOTO" service was created manually before the render.yaml blueprint was added.
-The render.yaml only affects the "doto-webapp" service, which is working correctly.
-
-## Your Working Service
+## Deployment Configuration
 
 - **Service**: doto-webapp
 - **URL**: https://doto-webapp.onrender.com
-- **Status**: ✅ LIVE
+- **Status**: ✅ LIVE and Deployed
 - **Build Command**: `cd webapp && npm install && npm run build`
 - **Publish Path**: `webapp/dist`
+- **Auto-Deploy**: Enabled (deploys on every commit to `main` branch)
+
+## Configuration Files
+
+- **render.yaml**: Located at repository root
+  - Defines the static site service configuration
+  - Automatically detected by Render for blueprint deployments
+
+## Deployment Process
+
+1. Push commits to `main` branch
+2. Render automatically detects changes
+3. Builds the webapp using the configured build command
+4. Publishes from `webapp/dist` directory
+5. Service goes live automatically
+
+## Troubleshooting
+
+If deployments fail, check:
+- Build logs in Render dashboard
+- Verify `webapp/dist` directory exists after build
+- Check that all environment variables are set
+- Ensure build command completes successfully

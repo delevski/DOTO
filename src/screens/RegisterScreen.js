@@ -160,7 +160,20 @@ export default function RegisterScreen({ navigation }) {
         );
       } catch (err) {
         console.error('Error sending magic code:', err);
-        setError(err.body?.message || err.message || 'Failed to send code. Please try again.');
+        // Extract user-friendly error message from InstantDB response
+        let errorMessage = 'Failed to send verification code. Please try again.';
+        if (err.body?.message) {
+          errorMessage = err.body.message;
+          // Handle specific InstantDB validation errors
+          if (err.body.message.includes('marked inactive')) {
+            errorMessage = 'This email domain is not supported. Please use a valid email address (e.g., Gmail, Yahoo, etc.).';
+          } else if (err.body.message.includes('validation-failed')) {
+            errorMessage = 'Invalid email address. Please use a valid email address.';
+          }
+        } else if (err.message) {
+          errorMessage = err.message;
+        }
+        setError(errorMessage);
         setShowVerification(false);
         setPendingUser(null);
       }
