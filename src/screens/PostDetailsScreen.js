@@ -135,11 +135,11 @@ export default function PostDetailsScreen({ route, navigation }) {
         })
       );
       
-      // Send push notification to the poster
+      // Send push notification to the poster (in their preferred language)
       sendPushNotificationToUser(
         post.authorId,
-        'New Claim!',
-        `${user.name} wants to help with "${post.title || 'your task'}"`,
+        'newClaim',
+        { userName: user.name, postTitle: post.title || 'your task' },
         { postId, type: 'post_claimed' }
       );
       
@@ -182,11 +182,11 @@ export default function PostDetailsScreen({ route, navigation }) {
         })
       );
       
-      // Send push notification to the approved claimer
+      // Send push notification to the approved claimer (in their preferred language)
       sendPushNotificationToUser(
         claimerUserId,
-        'You\'re Approved!',
-        `You were approved to help with "${post.title || 'a task'}"`,
+        'claimerApproved',
+        { postTitle: post.title || 'a task' },
         { postId, type: 'claimer_approved' }
       );
       
@@ -281,11 +281,11 @@ export default function PostDetailsScreen({ route, navigation }) {
         })
       );
       
-      // Send push notification to the poster
+      // Send push notification to the poster (in their preferred language)
       sendPushNotificationToUser(
         post.authorId,
-        'Task Completed!',
-        `The helper has finished "${post.title || 'your task'}". Please confirm and rate.`,
+        'taskMarkedComplete',
+        { postTitle: post.title || 'your task' },
         { postId, type: 'task_marked_complete' }
       );
       
@@ -331,11 +331,11 @@ export default function PostDetailsScreen({ route, navigation }) {
         })
       );
       
-      // Send push notification to the helper
+      // Send push notification to the helper (in their preferred language)
       sendPushNotificationToUser(
         approvedClaimerId,
-        'Great Job!',
-        `Task "${post.title || 'completed'}" is done! You received ${selectedRating} stars.`,
+        'taskAccepted',
+        { postTitle: post.title || 'completed', rating: selectedRating },
         { postId, type: 'task_completed', rating: selectedRating }
       );
       

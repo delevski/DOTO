@@ -51,7 +51,7 @@ export default function SettingsScreen({ navigation }) {
 
   const handleLanguageChange = () => {
     const newLang = language === 'en' ? 'he' : 'en';
-    setLanguage(newLang);
+    setLanguage(newLang, user?.id);
     
     // Show alert about potential restart needed for full RTL support
     if (newLang === 'he') {

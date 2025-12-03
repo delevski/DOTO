@@ -1,12 +1,76 @@
 import { db } from '../lib/instant';
 
+// Notification message translations
+const notificationMessages = {
+  en: {
+    newClaim: {
+      title: 'New Claim!',
+      body: (userName, postTitle) => `${userName} wants to help with "${postTitle}"`,
+    },
+    claimerApproved: {
+      title: "You're Approved!",
+      body: (postTitle) => `You were approved to help with "${postTitle}"`,
+    },
+    taskMarkedComplete: {
+      title: 'Task Completed!',
+      body: (postTitle) => `The helper has finished "${postTitle}". Please confirm and rate.`,
+    },
+    taskAccepted: {
+      title: 'Great Job!',
+      body: (postTitle, rating) => `Task "${postTitle}" is done! You received ${rating} stars.`,
+    },
+  },
+  he: {
+    newClaim: {
+      title: 'בקשה חדשה!',
+      body: (userName, postTitle) => `${userName} רוצה לעזור עם "${postTitle}"`,
+    },
+    claimerApproved: {
+      title: 'אושרת!',
+      body: (postTitle) => `אושרת לעזור עם "${postTitle}"`,
+    },
+    taskMarkedComplete: {
+      title: 'המשימה הושלמה!',
+      body: (postTitle) => `העוזר סיים את "${postTitle}". אנא אשר ודרג.`,
+    },
+    taskAccepted: {
+      title: 'עבודה מצוינת!',
+      body: (postTitle, rating) => `המשימה "${postTitle}" הושלמה! קיבלת ${rating} כוכבים.`,
+    },
+  },
+};
+
 /**
- * Get push token for a user from InstantDB
- * @param {string} userId - User ID
- * @returns {Promise<string|null>} Push token or null
+ * Get notification message based on type and language
+ * @param {string} type - Notification type (newClaim, claimerApproved, etc.)
+ * @param {string} language - User's language preference (en/he)
+ * @param {object} params - Parameters for the message (userName, postTitle, rating)
+ * @returns {object} { title, body }
  */
-export async function getUserPushToken(userId) {
-  if (!userId) return null;
+function getNotificationMessage(type, language, params = {}) {
+  const lang = language === 'he' ? 'he' : 'en';
+  const messages = notificationMessages[lang];
+  
+  if (!messages[type]) {
+    return { title: 'DOTO', body: 'You have a new notification' };
+  }
+  
+  const { userName, postTitle, rating } = params;
+  const messageConfig = messages[type];
+  
+  return {
+    title: messageConfig.title,
+    body: messageConfig.body(userName || postTitle, postTitle || rating, rating),
+  };
+}
+
+/**
+ * Get push token and language preference for a user from InstantDB
+ * @param {string} userId - User ID
+ * @returns {Promise<{pushToken: string|null, language: string}>} User info
+ */
+async function getUserPushTokenAndLanguage(userId) {
+  if (!userId) return { pushToken: null, language: 'en' };
 
   try {
     const { data } = await db.query({
@@ -14,10 +78,13 @@ export async function getUserPushToken(userId) {
     });
     
     const user = data?.users?.[0];
-    return user?.pushToken || null;
+    return {
+      pushToken: user?.pushToken || null,
+      language: user?.language || 'en'
+    };
   } catch (error) {
-    console.error('Error fetching user push token:', error);
-    return null;
+    console.error('Error fetching user info:', error);
+    return { pushToken: null, language: 'en' };
   }
 }
 
@@ -29,7 +96,7 @@ export async function getUserPushToken(userId) {
  * @param {object} data - Additional data to send with notification
  * @returns {Promise<boolean>} Success status
  */
-export async function sendPushNotification(pushToken, title, body, data = {}) {
+async function sendPushNotification(pushToken, title, body, data = {}) {
   if (!pushToken) {
     console.log('No push token provided');
     return false;
@@ -71,29 +138,36 @@ export async function sendPushNotification(pushToken, title, body, data = {}) {
 }
 
 /**
- * Send push notification to a user by their user ID
- * Fetches the push token from InstantDB and sends notification
+ * Send localized push notification to a user by their user ID
+ * Fetches the push token and language preference from InstantDB
  * @param {string} userId - User ID
- * @param {string} title - Notification title
- * @param {string} body - Notification body
+ * @param {string} notificationType - Type of notification (newClaim, claimerApproved, taskMarkedComplete, taskAccepted)
+ * @param {object} params - Parameters for the message (userName, postTitle, rating)
  * @param {object} data - Additional data (e.g., postId, type)
  * @returns {Promise<boolean>} Success status
  */
-export async function sendPushNotificationToUser(userId, title, body, data = {}) {
+export async function sendPushNotificationToUser(userId, notificationType, params = {}, data = {}) {
   if (!userId) {
     console.log('No userId provided');
     return false;
   }
 
   try {
-    const pushToken = await getUserPushToken(userId);
+    const userInfo = await getUserPushTokenAndLanguage(userId);
 
-    if (!pushToken) {
+    if (!userInfo?.pushToken) {
       console.log(`No push token found for user ${userId}`);
       return false;
     }
 
-    return await sendPushNotification(pushToken, title, body, data);
+    // Get localized message based on user's language preference
+    const { title, body } = getNotificationMessage(
+      notificationType, 
+      userInfo.language || 'en', 
+      params
+    );
+
+    return await sendPushNotification(userInfo.pushToken, title, body, data);
   } catch (error) {
     console.error('Error sending push notification to user:', error);
     return false;

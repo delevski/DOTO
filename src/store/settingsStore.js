@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { I18nManager } from 'react-native';
 import { setLanguage as setI18nLanguage } from '../i18n';
+import { saveUserLanguage } from '../utils/notifications';
 
 const SETTINGS_KEY = '@doto_settings';
 
@@ -55,7 +56,7 @@ export const useSettingsStore = create((set, get) => ({
   },
 
   // Set language
-  setLanguage: async (lang) => {
+  setLanguage: async (lang, userId = null) => {
     set({ language: lang });
     
     // Sync with i18n module
@@ -65,6 +66,11 @@ export const useSettingsStore = create((set, get) => ({
     const isRTL = lang === 'he';
     I18nManager.allowRTL(isRTL);
     I18nManager.forceRTL(isRTL);
+    
+    // Save to InstantDB if user is logged in
+    if (userId) {
+      saveUserLanguage(userId, lang);
+    }
     
     await get().saveSettings();
   },

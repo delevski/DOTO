@@ -247,17 +247,42 @@ export default function PostDetails() {
     }
 
     try {
+      const now = Date.now();
       const newClaimer = {
         userId: user.id,
         userName: user.name,
         userAvatar: user.avatar || 'https://i.pravatar.cc/150?u=' + user.id,
-        claimedAt: Date.now()
+        claimedAt: now
       };
 
       db.transact(
         db.tx.posts[postId].update({
           claimers: [...claimers, newClaimer]
         })
+      );
+      
+      // Create in-app notification for the poster
+      const notificationId = id();
+      db.transact(
+        db.tx.notifications[notificationId].update({
+          id: notificationId,
+          userId: post.authorId,
+          postId: postId,
+          type: 'post_claimed',
+          message: `${user.name} wants to help with your task!`,
+          read: false,
+          timestamp: now,
+          postTitle: post.title || t('helpNeeded'),
+          createdAt: now
+        })
+      );
+      
+      // Send push notification to the poster (in their preferred language)
+      sendPushNotificationToUser(
+        post.authorId,
+        'newClaim',
+        { userName: user.name, postTitle: post.title || 'your task' },
+        { postId, type: 'post_claimed' }
       );
       
       // Update user's activity streak
@@ -330,6 +355,15 @@ export default function PostDetails() {
       );
       
       console.log('Notification created successfully');
+      
+      // Send push notification to the approved claimer (in their preferred language)
+      sendPushNotificationToUser(
+        claimerUserId,
+        'claimerApproved',
+        { postTitle: post.title || 'a task' },
+        { postId, type: 'claimer_approved' }
+      );
+      
       console.log('=== APPROVAL COMPLETE ===');
       
       setLocalSuccess('Claimer approved successfully!');
@@ -468,6 +502,8 @@ export default function PostDetails() {
     }
 
     try {
+      const now = Date.now();
+      
       await db.transact(
         db.tx.posts[postId].update({
           completedByClaimer: true
@@ -484,10 +520,18 @@ export default function PostDetails() {
           type: 'task_marked_complete',
           message: t('claimerMarkedComplete') || 'The helper has marked the task as complete',
           read: false,
-          timestamp: Date.now(),
+          timestamp: now,
           postTitle: post.title || t('helpNeeded'),
-          createdAt: Date.now()
+          createdAt: now
         })
+      );
+      
+      // Send push notification to the poster (in their preferred language)
+      sendPushNotificationToUser(
+        post.authorId,
+        'taskMarkedComplete',
+        { postTitle: post.title || 'your task' },
+        { postId, type: 'task_marked_complete' }
       );
       
       // Update user's activity streak
@@ -545,6 +589,14 @@ export default function PostDetails() {
           rating: selectedRating,
           createdAt: now
         })
+      );
+      
+      // Send push notification to the helper (in their preferred language)
+      sendPushNotificationToUser(
+        approvedClaimerId,
+        'taskAccepted',
+        { postTitle: post.title || 'completed', rating: selectedRating },
+        { postId, type: 'task_completed', rating: selectedRating }
       );
 
       // Update user's activity streak (author confirming)

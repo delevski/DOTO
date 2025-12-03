@@ -99,6 +99,51 @@ export async function getUserPushToken(userId) {
 }
 
 /**
+ * Get push token and language preference for a user from InstantDB
+ * @param {string} userId - User ID
+ * @returns {Promise<{pushToken: string|null, language: string}>} User info
+ */
+export async function getUserPushTokenAndLanguage(userId) {
+  if (!userId) return { pushToken: null, language: 'en' };
+
+  try {
+    const { data } = await db.query({
+      users: { $: { where: { id: userId } } }
+    });
+    
+    const user = data?.users?.[0];
+    return {
+      pushToken: user?.pushToken || null,
+      language: user?.language || 'en'
+    };
+  } catch (error) {
+    console.error('Error fetching user info:', error);
+    return { pushToken: null, language: 'en' };
+  }
+}
+
+/**
+ * Save user's language preference to InstantDB
+ * @param {string} userId - User ID
+ * @param {string} language - Language code (en/he)
+ */
+export async function saveUserLanguage(userId, language) {
+  if (!userId || !language) return;
+
+  try {
+    await db.transact(
+      db.tx.users[userId].update({
+        language: language,
+        languageUpdatedAt: Date.now()
+      })
+    );
+    console.log('User language saved:', language);
+  } catch (error) {
+    console.error('Error saving user language:', error);
+  }
+}
+
+/**
  * Set up notification listeners
  * @param {Function} onNotificationReceived - Callback when notification is received
  * @param {Function} onNotificationTapped - Callback when notification is tapped

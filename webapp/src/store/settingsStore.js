@@ -1,5 +1,22 @@
 import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
+import { db } from '../lib/instant';
+
+// Save user language to InstantDB
+async function saveUserLanguageToDb(userId, language) {
+  if (!userId || !language) return;
+  try {
+    await db.transact(
+      db.tx.users[userId].update({
+        language: language,
+        languageUpdatedAt: Date.now()
+      })
+    );
+    console.log('User language saved to InstantDB:', language);
+  } catch (error) {
+    console.error('Error saving user language to InstantDB:', error);
+  }
+}
 
 export const useSettingsStore = create(
   persist(
@@ -22,7 +39,7 @@ export const useSettingsStore = create(
         }
         set({ darkMode: newDarkMode });
       },
-      setLanguage: (lang) => {
+      setLanguage: (lang, userId = null) => {
         set({ language: lang });
         // Update HTML dir attribute for RTL languages
         if (typeof document !== 'undefined') {
@@ -31,6 +48,10 @@ export const useSettingsStore = create(
           } else {
             document.documentElement.setAttribute('dir', 'ltr');
           }
+        }
+        // Save to InstantDB if user is logged in
+        if (userId) {
+          saveUserLanguageToDb(userId, lang);
         }
       },
       // Initialize settings on load
