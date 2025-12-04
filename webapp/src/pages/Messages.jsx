@@ -130,34 +130,28 @@ export default function Messages() {
     return true;
   });
 
-  // Debug: Log conversations, messages, and user ID
+  // Debug: Log conversations, messages, and user ID (only in development and when data changes)
+  const prevDebugDataRef = useRef({ conversations: 0, messages: 0 });
   useEffect(() => {
-    if (allConversations.length > 0) {
-      console.log('=== MESSAGES DEBUG ===');
-      console.log('All conversations:', allConversations);
-      console.log('Current user ID:', user?.id, '(type:', typeof user?.id, ')');
-      console.log('Filtered conversations count:', conversations.length);
-      console.log('Conversations breakdown:', conversations.map(c => ({
-        id: c.id,
-        p1: c.participant1Id,
-        p2: c.participant2Id,
-        p1Name: c.participant1Name,
-        p2Name: c.participant2Name,
-        lastMessage: c.lastMessage,
-        lastMessageTime: c.lastMessageTime
-      })));
-    }
-    if (allMessages.length > 0) {
-      console.log('All messages count:', allMessages.length);
-      console.log('Filtered messages count:', filteredMessages.length);
-      console.log('Selected conversation ID:', selectedConversationId);
-      if (selectedConversationId) {
-        const convMessages = filteredMessages.filter(m => m.conversationId === selectedConversationId);
-        console.log('Messages for selected conversation:', convMessages.length);
+    // Only log if data actually changed to prevent excessive logging
+    const conversationsChanged = allConversations.length !== prevDebugDataRef.current.conversations;
+    const messagesChanged = allMessages.length !== prevDebugDataRef.current.messages;
+    
+    if (conversationsChanged || messagesChanged) {
+      if (process.env.NODE_ENV === 'development') {
+        console.log('=== MESSAGES DEBUG ===');
+        console.log('All conversations:', allConversations.length);
+        console.log('Filtered conversations count:', conversations.length);
+        console.log('All messages count:', allMessages.length);
+        console.log('Filtered messages count:', filteredMessages.length);
+        console.log('=== END DEBUG ===');
       }
+      prevDebugDataRef.current = {
+        conversations: allConversations.length,
+        messages: allMessages.length
+      };
     }
-    console.log('=== END DEBUG ===');
-  }, [allConversations, allMessages, filteredMessages, selectedConversationId, user?.id, conversations]);
+  }, [allConversations.length, allMessages.length, conversations.length, filteredMessages.length]);
 
   // Build a complete list of conversations by combining:
   // 1. Conversations from the conversations table

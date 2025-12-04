@@ -156,7 +156,7 @@ export default function PostDetailsScreen({ route, navigation }) {
       if (!claimer) return;
 
       const now = Date.now();
-      
+
       await db.transact(
         db.tx.posts[postId].update({
           approvedClaimerId: claimerUserId,

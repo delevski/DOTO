@@ -1,52 +1,65 @@
 import React from 'react';
-import { Platform, View, Text, StyleSheet } from 'react-native';
+import { View, Text, StyleSheet } from 'react-native';
 
-let MapView, Marker;
+// Placeholder Map component
+// react-native-maps requires additional native setup
+// For now, using a placeholder that shows location text
 
-if (Platform.OS !== 'web') {
-  const Maps = require('react-native-maps');
-  MapView = Maps.default;
-  Marker = Maps.Marker;
-}
-
-export default function Map({ children, style, ...props }) {
-  if (Platform.OS === 'web') {
-    return (
-      <View style={[style, styles.webMap]}>
-        <Text style={styles.webText}>Map is not fully supported on web yet.</Text>
-        <Text style={styles.subText}>Please use the mobile app for the full experience.</Text>
-      </View>
-    );
-  }
-
+export default function Map({ children, style, initialRegion, ...props }) {
   return (
-    <MapView style={style} {...props}>
+    <View style={[style, styles.mapContainer]}>
+      <View style={styles.mapPlaceholder}>
+        <Text style={styles.mapIcon}>🗺️</Text>
+        <Text style={styles.mapText}>Map View</Text>
+        {initialRegion && (
+          <Text style={styles.coordsText}>
+            {initialRegion.latitude?.toFixed(4)}, {initialRegion.longitude?.toFixed(4)}
+          </Text>
+        )}
+        <Text style={styles.subText}>
+          Map functionality available in full release
+        </Text>
+      </View>
       {children}
-    </MapView>
+    </View>
   );
 }
 
-export function MapMarker(props) {
-  if (Platform.OS === 'web') return null;
-  return <Marker {...props} />;
+export function MapMarker({ coordinate, title, description, ...props }) {
+  // Placeholder marker - renders nothing visible
+  // In production, would render actual map markers
+  return null;
 }
 
 const styles = StyleSheet.create({
-  webMap: {
+  mapContainer: {
     flex: 1,
-    backgroundColor: '#2A2A2A',
+    backgroundColor: '#E8E8E8',
+  },
+  mapPlaceholder: {
+    flex: 1,
+    backgroundColor: '#f0f0f0',
     justifyContent: 'center',
     alignItems: 'center',
+    borderRadius: 12,
   },
-  webText: {
-    color: '#FFFFFF',
+  mapIcon: {
+    fontSize: 48,
+    marginBottom: 12,
+  },
+  mapText: {
+    color: '#333333',
     fontSize: 18,
     fontWeight: 'bold',
+    marginBottom: 4,
+  },
+  coordsText: {
+    color: '#666666',
+    fontSize: 14,
     marginBottom: 8,
   },
   subText: {
-    color: '#CCCCCC',
-    fontSize: 14,
+    color: '#888888',
+    fontSize: 12,
   },
 });
-

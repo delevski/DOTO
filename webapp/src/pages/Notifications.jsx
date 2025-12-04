@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useRef } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { Bell, CheckCircle, Clock, ArrowRight, Check } from 'lucide-react';
 import { useAuthStore } from '../store/useStore';
@@ -26,17 +26,20 @@ export default function Notifications() {
     return notificationUserId === currentUserId;
   });
 
-  // Debug logging
+  // Debug logging (only in development and when data changes)
+  const prevNotificationsRef = useRef(0);
   useEffect(() => {
-    console.log('=== Notifications Page Debug ===');
-    console.log('Loading:', isLoading);
-    console.log('Error:', error);
-    console.log('All notifications in DB:', allNotifications.length);
-    console.log('All notifications data:', allNotifications);
-    console.log('Current user ID:', currentUserId);
-    console.log('Filtered notifications for user:', notifications);
-    console.log('================================');
-  }, [allNotifications, currentUserId, notifications, isLoading, error]);
+    // Only log if notifications count changed to prevent excessive logging
+    if (allNotifications.length !== prevNotificationsRef.current) {
+      if (process.env.NODE_ENV === 'development') {
+        console.log('=== Notifications Page Debug ===');
+        console.log('All notifications in DB:', allNotifications.length);
+        console.log('Filtered notifications for user:', notifications.length);
+        console.log('================================');
+      }
+      prevNotificationsRef.current = allNotifications.length;
+    }
+  }, [allNotifications.length, notifications.length]);
   const sortedNotifications = [...notifications].sort(
     (a, b) => (b.timestamp || b.createdAt || 0) - (a.timestamp || a.createdAt || 0)
   );

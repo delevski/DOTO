@@ -132,8 +132,8 @@ export default function Feed() {
   // Ref to store current postCoordinates to avoid dependency issues
   const postCoordinatesRef = React.useRef(postCoordinates);
   
-  // Update ref when postCoordinates changes
-  useEffect(() => {
+  // Update ref when postCoordinates changes (sync ref with state)
+  React.useEffect(() => {
     postCoordinatesRef.current = postCoordinates;
   }, [postCoordinates]);
 

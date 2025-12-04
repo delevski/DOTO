@@ -42,7 +42,6 @@
     "passwordMinLength": "At least 6 characters",
     "repeatPassword": "Repeat your password",
     "orContinueWith": "or continue with",
-    "tryDemoAccount": "Try Demo Account",
     "dontHaveAccount": "Don't have an account?",
     "alreadyHaveAccount": "Already have an account?",
     "verificationCode": "Verification Code",

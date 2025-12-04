@@ -14,7 +14,7 @@ import {
 import { useAuthStore } from '../store/authStore';
 import { useSettingsStore } from '../store/settingsStore';
 import { useRTL, useRTLStyles } from '../context/RTLContext';
-import { db, id } from '../lib/instant';
+import { db } from '../lib/instant';
 import { verifyPassword } from '../utils/password';
 import { colors, spacing, borderRadius, typography } from '../styles/theme';
 
@@ -118,43 +118,6 @@ export default function LoginScreen({ navigation }) {
       }
     } catch (err) {
       console.error('Login error:', err);
-      setError(t('errors.tryAgain'));
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  const handleDemoLogin = async () => {
-    setIsLoading(true);
-    
-    try {
-      // Check if demo user exists in database
-      const demoEmail = 'demo@doto.app';
-      let demoUser = allUsers.find(u => 
-        u.email?.toLowerCase() === demoEmail || u.emailLower === demoEmail
-      );
-
-      if (!demoUser) {
-        // Create demo user if not exists
-        const demoUserId = id();
-        demoUser = {
-          id: demoUserId,
-          name: 'Demo User',
-          email: demoEmail,
-          emailLower: demoEmail,
-          avatar: 'https://i.pravatar.cc/150?u=demo',
-          rating: 4.8,
-          bio: 'This is a demo account for testing DOTO',
-          createdAt: Date.now(),
-          authProvider: 'demo',
-        };
-
-        await db.transact(db.tx.users[demoUserId].update(demoUser));
-      }
-      
-      await login(demoUser);
-    } catch (err) {
-      console.error('Demo login error:', err);
       setError(t('errors.tryAgain'));
     } finally {
       setIsLoading(false);
@@ -332,19 +295,6 @@ export default function LoginScreen({ navigation }) {
                 </Text>
                 <View style={[styles.dividerLine, { backgroundColor: themeColors.border }]} />
               </View>
-
-              {/* Demo Login Button */}
-              <TouchableOpacity
-                style={[styles.demoButton, { borderColor: colors.primary, flexDirection: rtlStyles.row }]}
-                onPress={handleDemoLogin}
-                disabled={isLoading}
-                activeOpacity={0.8}
-              >
-                <Text style={styles.demoIcon}>⚡</Text>
-                <Text style={[styles.demoButtonText, { color: colors.primary }]}>
-                  {t('auth.tryDemoAccount')}
-                </Text>
-              </TouchableOpacity>
 
               {/* Social Buttons */}
               <View style={[styles.socialButtons, { flexDirection: rtlStyles.row }]}>
@@ -563,22 +513,6 @@ const styles = StyleSheet.create({
   dividerText: {
     paddingHorizontal: spacing.md,
     fontSize: 14,
-  },
-  demoButton: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 2,
-    borderRadius: 12,
-    paddingVertical: 14,
-    marginBottom: spacing.lg,
-    gap: spacing.sm,
-  },
-  demoIcon: {
-    fontSize: 18,
-  },
-  demoButtonText: {
-    fontSize: 16,
-    fontWeight: '600',
   },
   socialButtons: {
     gap: spacing.md,

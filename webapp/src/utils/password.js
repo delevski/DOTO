@@ -13,7 +13,8 @@ async function digestSHA256(text) {
 }
 
 /**
- * Hash a plain-text password using SHA-256.
+ * Hash a plain-text password using SHA-256 with salt.
+ * Uses the same salt as the mobile app for cross-platform compatibility.
  * @param {string} password
  * @returns {Promise<string>} Hex-encoded hash.
  */
@@ -21,7 +22,9 @@ export async function hashPassword(password) {
   if (!password) {
     throw new Error('Password is required for hashing.');
   }
-  return digestSHA256(password);
+  // Add salt prefix to match mobile app hashing
+  const saltedPassword = `doto_salt_${password}_secure`;
+  return digestSHA256(saltedPassword);
 }
 
 /**
@@ -34,7 +37,9 @@ export async function verifyPassword(candidate, existingHash) {
   if (!candidate || !existingHash) {
     return false;
   }
-  const candidateHash = await digestSHA256(candidate);
+  // Add salt prefix to match mobile app hashing
+  const saltedCandidate = `doto_salt_${candidate}_secure`;
+  const candidateHash = await digestSHA256(saltedCandidate);
   return candidateHash === existingHash;
 }
 

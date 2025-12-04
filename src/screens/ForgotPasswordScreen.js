@@ -115,13 +115,6 @@ export default function ForgotPasswordScreen({ navigation }) {
             </View>
           </View>
 
-          {codeSent && (
-            <View style={styles.demoCodeBox}>
-              <Text style={styles.demoCodeLabel}>📧 Demo Mode - Your Reset Code:</Text>
-              <Text style={styles.demoCodeText}>{generatedCode}</Text>
-            </View>
-          )}
-
           <TouchableOpacity
             onPress={handleSendCode}
             disabled={isLoading}
@@ -220,27 +213,6 @@ const styles = StyleSheet.create({
     paddingVertical: spacing.md,
     ...typography.body,
     color: colors.text,
-  },
-  demoCodeBox: {
-    backgroundColor: '#EFF6FF',
-    borderRadius: borderRadius.md,
-    borderWidth: 1,
-    borderColor: '#BFDBFE',
-    padding: spacing.md,
-    marginBottom: spacing.lg,
-    alignItems: 'center',
-  },
-  demoCodeLabel: {
-    ...typography.small,
-    color: '#1E40AF',
-    fontWeight: '600',
-    marginBottom: spacing.xs,
-  },
-  demoCodeText: {
-    fontSize: 28,
-    fontWeight: '800',
-    color: '#1E40AF',
-    letterSpacing: 4,
   },
   buttonWrapper: {
     borderRadius: borderRadius.md,
