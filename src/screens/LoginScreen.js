@@ -180,7 +180,8 @@ export default function LoginScreen({ navigation }) {
   };
 
   const handleVerifyCode = async () => {
-    const enteredCode = verificationCode.join('');
+    // Join code digits and trim any whitespace
+    const enteredCode = verificationCode.map(c => c.trim()).join('').trim();
     
     if (enteredCode.length !== 6) {
       setError(t('auth.enterFullCode') || 'Please enter the full 6-digit code');
@@ -191,18 +192,43 @@ export default function LoginScreen({ navigation }) {
     setError('');
 
     try {
+      const normalizedEmail = pendingUser?.email?.toLowerCase().trim() || email.trim().toLowerCase();
+      
+      // Verify with InstantDB
       await db.auth.signInWithMagicCode({ 
-        email: pendingUser?.email?.toLowerCase() || email.trim().toLowerCase(), 
+        email: normalizedEmail, 
         code: enteredCode 
       });
       
       // If successful, login the user
       if (pendingUser) {
         await login(pendingUser);
+      } else {
+        setError('Session expired. Please try again.');
+        return;
       }
     } catch (err) {
-      console.error('Error verifying magic code:', err);
-      setError(t('auth.invalidCode') || 'Invalid code. Please try again.');
+      // Get detailed error info
+      const rawError = err.body?.message || err.message || 'Unknown error';
+      
+      // Show more specific error message
+      let errorMessage = t('auth.invalidCode') || 'Invalid code. Please try again.';
+      
+      // Parse InstantDB error messages
+      if (rawError.toLowerCase().includes('expired')) {
+        errorMessage = 'Code expired. Please request a new one.';
+      } else if (rawError.toLowerCase().includes('invalid')) {
+        errorMessage = 'Invalid code. Please check and try again.';
+      } else if (rawError.toLowerCase().includes('used')) {
+        errorMessage = 'Code already used. Please request a new one.';
+      } else if (rawError.toLowerCase().includes('not found')) {
+        errorMessage = 'Email not found. Please check your email address.';
+      } else {
+        // Show the actual error for debugging
+        errorMessage = `Verification failed: ${rawError}`;
+      }
+      
+      setError(errorMessage);
       setVerificationCode(['', '', '', '', '', '']);
     } finally {
       setIsLoading(false);

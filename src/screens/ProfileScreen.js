@@ -24,10 +24,10 @@ function ProfileScreen({ navigation }) {
   const darkMode = useSettingsStore((state) => state.darkMode);
   const { t, isRTL } = useRTL();
   const rtlStyles = useRTLStyles();
-  
+
   // Track screen focus - only query when focused
   const [queryEnabled, setQueryEnabled] = useState(false);
-  
+
   // Track mounted state for cleanup
   const isMountedRef = useRef(true);
   
@@ -48,7 +48,7 @@ function ProfileScreen({ navigation }) {
 
   // Use the comprehensive useUserStats hook with focus-based query (same logic as webapp)
   const stats = useUserStats(user?.id, { enabled: queryEnabled });
-  
+    
   // Get all badges and calculate earned ones using shared badge logic
   const allBadges = useMemo(() => getAllBadges(), []);
   
@@ -168,8 +168,8 @@ function ProfileScreen({ navigation }) {
         <View style={[styles.sectionCard, { backgroundColor: themeColors.surface }]}>
           <View style={[styles.sectionHeader, { flexDirection: rtlStyles.row }]}>
             <Text style={[styles.sectionTitle, { color: themeColors.text }]}>
-              {t('profile.badges')}
-            </Text>
+            {t('profile.badges')}
+          </Text>
             <Text style={[styles.badgeCount, { color: themeColors.textSecondary }]}>
               {earnedBadgeIds.length} / {allBadges.length}
             </Text>

@@ -612,6 +612,7 @@ export default function Register() {
           updatedAt: timestamp,
         };
       } else {
+        // Create new user
         userId = id();
         userData = {
           id: userId,
@@ -749,7 +750,7 @@ export default function Register() {
           ...(trimmedPhone && { phone: trimmedPhone }),
         };
       } else {
-        // Create new user (always create new user when not from verification flow)
+        // Create new user
         userId = id();
         userData = {
           id: userId,

@@ -19,7 +19,7 @@ function MessagesScreen({ navigation }) {
   const user = useAuthStore((state) => state.user);
   const isAuthenticated = useAuthStore((state) => state.isAuthenticated);
   const darkMode = useSettingsStore((state) => state.darkMode);
-  
+
   // Track screen focus - only query when focused
   const [queryEnabled, setQueryEnabled] = useState(false);
   
@@ -66,8 +66,8 @@ function MessagesScreen({ navigation }) {
   // Filter conversations for current user - memoized
   const userConversations = useMemo(() => {
     return allConversations.filter(conv => 
-      conv.participant1Id === user?.id || conv.participant2Id === user?.id
-    ).sort((a, b) => (b.lastMessageTime || 0) - (a.lastMessageTime || 0));
+    conv.participant1Id === user?.id || conv.participant2Id === user?.id
+  ).sort((a, b) => (b.lastMessageTime || 0) - (a.lastMessageTime || 0));
   }, [allConversations, user?.id]);
 
   const themeColors = useMemo(() => ({

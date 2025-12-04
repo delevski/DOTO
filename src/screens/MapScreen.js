@@ -43,7 +43,7 @@ function MapScreen({ navigation }) {
   const geocodingInProgressRef = useRef(false);
   const geocodingTimeoutRef = useRef(null);
   const mountedRef = useRef(true);
-  
+
   // Only enable query when screen is focused
   useFocusEffect(
     useCallback(() => {
@@ -93,17 +93,17 @@ function MapScreen({ navigation }) {
       
       if (mountedRef.current) {
         setPosts(mapPosts);
-        setIsLoading(false);
-        setError(null);
+      setIsLoading(false);
+      setError(null);
       }
     } else if (dbError) {
       if (mountedRef.current) {
-        setError(dbError);
-        setIsLoading(false);
+      setError(dbError);
+      setIsLoading(false);
       }
     } else if (dbLoading) {
       if (mountedRef.current) {
-        setIsLoading(true);
+      setIsLoading(true);
       }
     }
   }, [data, dbError, dbLoading]);
@@ -118,7 +118,7 @@ function MapScreen({ navigation }) {
 
   const handleMarkerPress = useCallback((post) => {
     if (mountedRef.current) {
-      setSelectedPost(post);
+    setSelectedPost(post);
     }
   }, []);
 

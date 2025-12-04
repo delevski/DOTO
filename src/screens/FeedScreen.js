@@ -35,7 +35,7 @@ function FeedScreen({ navigation }) {
   
   const [activeTab, setActiveTab] = useState('nearby');
   const [refreshing, setRefreshing] = useState(false);
-  
+
   // Track mounted state for cleanup
   const isMountedRef = useRef(true);
   
@@ -357,10 +357,10 @@ function FeedScreen({ navigation }) {
         ) : posts.length === 0 ? (
         <View style={[styles.postsContainer, styles.centerContent]}>
             <Text style={styles.emptyIcon}>📋</Text>
-          <Text style={[styles.emptyText, { color: themeColors.textSecondary }]}>
-            {activeTab === 'myPosts' ? t('feed.noMyPosts') : 
+            <Text style={[styles.emptyText, { color: themeColors.textSecondary }]}>
+              {activeTab === 'myPosts' ? t('feed.noMyPosts') : 
              activeTab === 'myClaims' ? t('feed.noMyClaims') : 
-             t('feed.noPosts')}
+               t('feed.noPosts')}
             </Text>
             {activeTab === 'myPosts' && (
               <TouchableOpacity 

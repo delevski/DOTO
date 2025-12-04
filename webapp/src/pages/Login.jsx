@@ -391,6 +391,7 @@ export default function Login() {
           updatedAt: timestamp,
         };
       } else {
+        // Create new user
         userId = id();
         userData = {
           id: userId,
