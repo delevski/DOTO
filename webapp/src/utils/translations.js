@@ -245,6 +245,7 @@ export const translations = {
     
     // Map
     loadingMap: 'Loading map...',
+    loadingAddress: 'Loading address...',
     loadingMarkers: 'Preparing Map Locations',
     geocodingLocations: 'Finding locations on map...',
     processingLocations: 'Processing {current} of {total} locations',
@@ -353,6 +354,12 @@ export const translations = {
     verificationSessionExpired: 'Your verification session expired. Please try again.',
     failedToVerifyCode: 'Failed to verify code. Please try again.',
     failedToLogin: 'Failed to log in. Please try again.',
+    enterFullCode: 'Please enter the full 6-digit code',
+    codeSentTo: 'Code sent to',
+    resendCode: 'Resend Code',
+    resendingCode: 'Resending...',
+    codeSentAgain: 'Code sent again!',
+    pleaseWaitSeconds: 'Please wait {{seconds}} seconds',
   },
   he: {
     // Navigation
@@ -597,6 +604,7 @@ export const translations = {
     
     // Map
     loadingMap: 'טוען מפה...',
+    loadingAddress: 'טוען כתובת...',
     loadingMarkers: 'מכין מיקומי מפה',
     geocodingLocations: 'מוצא מיקומים במפה...',
     processingLocations: 'מעבד {current} מתוך {total} מיקומים',
@@ -705,6 +713,12 @@ export const translations = {
     verificationSessionExpired: 'פג תוקף תהליך האימות. אנא נסה שוב.',
     failedToVerifyCode: 'האימות נכשל. אנא נסה שוב.',
     failedToLogin: 'ההתחברות נכשלה. אנא נסה שוב.',
+    enterFullCode: 'אנא הזן את הקוד המלא בן 6 ספרות',
+    codeSentTo: 'קוד נשלח אל',
+    resendCode: 'שלח קוד מחדש',
+    resendingCode: 'שולח מחדש...',
+    codeSentAgain: 'הקוד נשלח שוב!',
+    pleaseWaitSeconds: 'אנא המתן {{seconds}} שניות',
   }
 };
 

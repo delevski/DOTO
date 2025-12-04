@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import {
   View,
   Text,
@@ -8,22 +8,29 @@ import {
   TouchableOpacity,
   ScrollView,
 } from 'react-native';
+import { useFocusEffect, useIsFocused } from '@react-navigation/native';
 import { useAuthStore } from '../store/authStore';
 import { useSettingsStore } from '../store/settingsStore';
 import { useRTL, useRTLStyles } from '../context/RTLContext';
 import { db } from '../lib/instant';
 import { colors, spacing, borderRadius, typography } from '../styles/theme';
 import Map from '../components/Map';
+import { filterValidPosts } from '../utils/postFilters';
 
-export default function MapScreen({ navigation }) {
+function MapScreen({ navigation }) {
   const user = useAuthStore((state) => state.user);
+  const isAuthenticated = useAuthStore((state) => state.isAuthenticated);
   const darkMode = useSettingsStore((state) => state.darkMode);
   const { t, isRTL } = useRTL();
   const rtlStyles = useRTLStyles();
   
+  // Track screen focus - only query when focused
+  const isFocused = useIsFocused();
+  
   const [posts, setPosts] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [queryEnabled, setQueryEnabled] = useState(false);
   const [region, setRegion] = useState({
     latitude: 31.7683, // Tel Aviv center
     longitude: 35.2137,
@@ -36,11 +43,19 @@ export default function MapScreen({ navigation }) {
   const geocodingInProgressRef = useRef(false);
   const geocodingTimeoutRef = useRef(null);
   const mountedRef = useRef(true);
+  
+  // Only enable query when screen is focused
+  useFocusEffect(
+    useCallback(() => {
+      setQueryEnabled(true);
+      return () => setQueryEnabled(false);
+    }, [])
+  );
 
-  // Fetch posts from InstantDB
-  const { isLoading: dbLoading, error: dbError, data } = db.useQuery({ 
-    posts: {}
-  });
+  // Fetch posts from InstantDB - only when authenticated AND focused
+  const { isLoading: dbLoading, error: dbError, data } = db.useQuery(
+    isAuthenticated && queryEnabled ? { posts: {} } : null
+  );
 
   useEffect(() => {
     mountedRef.current = true;
@@ -54,34 +69,69 @@ export default function MapScreen({ navigation }) {
   }, []);
 
   useEffect(() => {
+    if (!mountedRef.current) return;
+    
     if (data?.posts) {
-      const allPosts = data.posts.filter(post => post.location);
-      setPosts(allPosts);
-      setIsLoading(false);
-      setError(null);
+      // OPTIMIZED: Filter valid posts, keep only those with locations, limit to 100, strip large data
+      const MAX_MAP_POSTS = 100;
+      
+      // First filter out expired/archived posts
+      const validPosts = filterValidPosts(data.posts);
+      
+      // Then filter for map-specific requirements
+      const mapPosts = validPosts
+        .filter(post => post.location)
+        .slice(0, MAX_MAP_POSTS) // Limit to 100 posts max
+        .map(post => {
+          // Strip out photos, likedBy, claimers, and any other large arrays
+          const { photos, likedBy, claimers, ...minimalPost } = post;
+          return {
+            ...minimalPost,
+            description: minimalPost.description?.substring(0, 100), // Truncate description
+          };
+        });
+      
+      if (mountedRef.current) {
+        setPosts(mapPosts);
+        setIsLoading(false);
+        setError(null);
+      }
     } else if (dbError) {
-      setError(dbError);
-      setIsLoading(false);
+      if (mountedRef.current) {
+        setError(dbError);
+        setIsLoading(false);
+      }
     } else if (dbLoading) {
-      setIsLoading(true);
+      if (mountedRef.current) {
+        setIsLoading(true);
+      }
     }
   }, [data, dbError, dbLoading]);
 
-  const themeColors = {
+  const themeColors = useMemo(() => ({
     background: darkMode ? colors.backgroundDark : colors.background,
     surface: darkMode ? colors.surfaceDark : colors.surface,
     text: darkMode ? colors.textDark : colors.text,
     textSecondary: darkMode ? colors.textSecondaryDark : colors.textSecondary,
     border: darkMode ? colors.borderDark : colors.border,
-  };
+  }), [darkMode]);
 
-  const handleMarkerPress = (post) => {
-    setSelectedPost(post);
-  };
+  const handleMarkerPress = useCallback((post) => {
+    if (mountedRef.current) {
+      setSelectedPost(post);
+    }
+  }, []);
 
-  const handlePostPress = (postId) => {
+  const handlePostPress = useCallback((postId) => {
     navigation.navigate('PostDetails', { postId });
-  };
+  }, [navigation]);
+  
+  const handleRetry = useCallback(() => {
+    if (mountedRef.current) {
+      setError(null);
+      setIsLoading(true);
+    }
+  }, []);
 
   if (isLoading) {
     return (
@@ -109,10 +159,7 @@ export default function MapScreen({ navigation }) {
           </Text>
           <TouchableOpacity
             style={styles.retryButton}
-            onPress={() => {
-              setError(null);
-              setIsLoading(true);
-            }}
+            onPress={handleRetry}
           >
             <Text style={styles.retryButtonText}>{t('common.retry') || 'Retry'}</Text>
           </TouchableOpacity>
@@ -221,6 +268,9 @@ export default function MapScreen({ navigation }) {
     </View>
   );
 }
+
+// Export memoized component to prevent unnecessary re-renders
+export default React.memo(MapScreen);
 
 const styles = StyleSheet.create({
   container: {

@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
 import {
   View,
   Text,
@@ -9,19 +9,29 @@ import {
   ActivityIndicator,
   KeyboardAvoidingView,
   Platform,
-  Alert,
   Image,
+  Dimensions,
 } from 'react-native';
+
+const { width: SCREEN_WIDTH } = Dimensions.get('window');
+// Calculate responsive code input size: screen width - padding (40px each side) - card padding (40px) - gaps (5*6px)
+const CODE_CELL_SIZE = Math.min(48, (SCREEN_WIDTH - 80 - 40 - 30) / 6);
 import * as ImagePicker from 'expo-image-picker';
 import { useAuthStore } from '../store/authStore';
 import { useSettingsStore } from '../store/settingsStore';
+import { useRTL, useRTLStyles } from '../context/RTLContext';
+import { useDialog } from '../context/DialogContext';
 import { db, id } from '../lib/instant';
 import { hashPassword } from '../utils/password';
 import { colors, spacing, borderRadius, typography } from '../styles/theme';
+import Icon from '../components/Icon';
 
 export default function RegisterScreen({ navigation }) {
   const login = useAuthStore((state) => state.login);
   const darkMode = useSettingsStore((state) => state.darkMode);
+  const { t, isRTL } = useRTL();
+  const rtlStyles = useRTLStyles();
+  const { alert } = useDialog();
 
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
@@ -34,12 +44,42 @@ export default function RegisterScreen({ navigation }) {
   const [showVerification, setShowVerification] = useState(false);
   const [verificationCode, setVerificationCode] = useState(['', '', '', '', '', '']);
   const [pendingUser, setPendingUser] = useState(null);
+  const [resendCooldown, setResendCooldown] = useState(0);
+  const [isResending, setIsResending] = useState(false);
 
   const inputRefs = useRef([]);
+  const cooldownTimerRef = useRef(null);
 
   // Query all users to check for existing email
   const { data: usersData } = db.useQuery({ users: {} });
   const allUsers = usersData?.users || [];
+
+  // Cleanup timer on unmount
+  useEffect(() => {
+    return () => {
+      if (cooldownTimerRef.current) {
+        clearInterval(cooldownTimerRef.current);
+      }
+    };
+  }, []);
+
+  // Start cooldown timer
+  const startCooldown = useCallback((seconds = 60) => {
+    setResendCooldown(seconds);
+    if (cooldownTimerRef.current) {
+      clearInterval(cooldownTimerRef.current);
+    }
+    cooldownTimerRef.current = setInterval(() => {
+      setResendCooldown(prev => {
+        if (prev <= 1) {
+          clearInterval(cooldownTimerRef.current);
+          cooldownTimerRef.current = null;
+          return 0;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+  }, []);
 
   const themeColors = {
     background: darkMode ? colors.backgroundDark : colors.background,
@@ -53,7 +93,7 @@ export default function RegisterScreen({ navigation }) {
     try {
       const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
       if (status !== 'granted') {
-        Alert.alert('Permission needed', 'Please grant camera roll permissions to upload a photo.');
+        alert(t('errors.permissionNeeded'), t('errors.galleryPermission'));
         return;
       }
 
@@ -73,7 +113,7 @@ export default function RegisterScreen({ navigation }) {
       }
     } catch (err) {
       console.error('Image picker error:', err);
-      Alert.alert('Error', 'Failed to pick image');
+      alert(t('common.error'), t('errors.failedToPickImage'));
     }
   };
 
@@ -82,33 +122,33 @@ export default function RegisterScreen({ navigation }) {
 
     // Validation
     if (!name.trim()) {
-      setError('Please enter your name');
+      setError(t('validation.enterName'));
       return;
     }
 
     if (!email.trim()) {
-      setError('Please enter your email');
+      setError(t('validation.enterEmail'));
       return;
     }
 
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     if (!emailRegex.test(email.trim())) {
-      setError('Please enter a valid email address');
+      setError(t('validation.invalidEmail'));
       return;
     }
 
     if (!password) {
-      setError('Please enter a password');
+      setError(t('validation.enterPassword'));
       return;
     }
 
     if (password.length < 6) {
-      setError('Password must be at least 6 characters');
+      setError(t('validation.passwordTooShort'));
       return;
     }
 
     if (password !== confirmPassword) {
-      setError('Passwords do not match');
+      setError(t('validation.passwordsDoNotMatch'));
       return;
     }
 
@@ -124,7 +164,7 @@ export default function RegisterScreen({ navigation }) {
       );
 
       if (existingUser) {
-        setError('An account with this email already exists. Please login instead.');
+        setError(t('auth.emailExists'));
         setIsLoading(false);
         return;
       }
@@ -153,23 +193,17 @@ export default function RegisterScreen({ navigation }) {
       
       try {
         await db.auth.sendMagicCode({ email: normalizedEmail });
-        Alert.alert(
-          'Check Your Email',
-          'We sent a 6-digit verification code to your email.',
-          [{ text: 'OK' }]
+        startCooldown(60); // Start 60 second cooldown
+        alert(
+          t('auth.checkYourEmail'),
+          t('auth.magicCodeSent')
         );
       } catch (err) {
         console.error('Error sending magic code:', err);
         // Extract user-friendly error message from InstantDB response
-        let errorMessage = 'Failed to send verification code. Please try again.';
+        let errorMessage = t('errors.tryAgain');
         if (err.body?.message) {
           errorMessage = err.body.message;
-          // Handle specific InstantDB validation errors
-          if (err.body.message.includes('marked inactive')) {
-            errorMessage = 'This email domain is not supported. Please use a valid email address (e.g., Gmail, Yahoo, etc.).';
-          } else if (err.body.message.includes('validation-failed')) {
-            errorMessage = 'Invalid email address. Please use a valid email address.';
-          }
         } else if (err.message) {
           errorMessage = err.message;
         }
@@ -179,7 +213,7 @@ export default function RegisterScreen({ navigation }) {
       }
     } catch (err) {
       console.error('Registration error:', err);
-      setError('Failed to register. Please try again.');
+      setError(t('errors.tryAgain'));
     } finally {
       setIsLoading(false);
     }
@@ -192,14 +226,19 @@ export default function RegisterScreen({ navigation }) {
     newCode[index] = value;
     setVerificationCode(newCode);
 
-    if (value && index < 5) {
-      inputRefs.current[index + 1]?.focus();
+    // Move to next input (RTL-aware)
+    const nextIndex = isRTL ? index - 1 : index + 1;
+    if (value && nextIndex >= 0 && nextIndex < 6) {
+      inputRefs.current[nextIndex]?.focus();
     }
   };
 
   const handleCodeKeyDown = (index, key) => {
-    if (key === 'Backspace' && !verificationCode[index] && index > 0) {
-      inputRefs.current[index - 1]?.focus();
+    if (key === 'Backspace' && !verificationCode[index]) {
+      const prevIndex = isRTL ? index + 1 : index - 1;
+      if (prevIndex >= 0 && prevIndex < 6) {
+        inputRefs.current[prevIndex]?.focus();
+      }
     }
   };
 
@@ -207,7 +246,7 @@ export default function RegisterScreen({ navigation }) {
     const enteredCode = verificationCode.join('');
     
     if (enteredCode.length !== 6) {
-      setError('Please enter the full 6-digit code');
+      setError(t('auth.enterFullCode') || 'Please enter the full 6-digit code');
       return;
     }
 
@@ -226,7 +265,7 @@ export default function RegisterScreen({ navigation }) {
       await login(pendingUser);
     } catch (err) {
       console.error('Error verifying code:', err);
-      setError('Invalid code. Please try again.');
+      setError(t('auth.invalidCode'));
       setVerificationCode(['', '', '', '', '', '']);
       setIsLoading(false);
     }
@@ -237,6 +276,33 @@ export default function RegisterScreen({ navigation }) {
     setVerificationCode(['', '', '', '', '', '']);
     setPendingUser(null);
     setError('');
+    setResendCooldown(0);
+    if (cooldownTimerRef.current) {
+      clearInterval(cooldownTimerRef.current);
+      cooldownTimerRef.current = null;
+    }
+  };
+
+  const handleResendCode = async () => {
+    if (resendCooldown > 0 || isResending || !pendingUser) return;
+    
+    setIsResending(true);
+    setError('');
+    
+    try {
+      const normalizedEmail = pendingUser.email?.toLowerCase() || email.trim().toLowerCase();
+      await db.auth.sendMagicCode({ email: normalizedEmail });
+      startCooldown(60);
+      alert(
+        t('auth.codeSent'),
+        t('auth.newCodeSent')
+      );
+    } catch (err) {
+      console.error('Error resending code:', err);
+      setError(err.body?.message || t('errors.tryAgain'));
+    } finally {
+      setIsResending(false);
+    }
   };
 
   return (
@@ -253,7 +319,7 @@ export default function RegisterScreen({ navigation }) {
         <View style={styles.logoSection}>
           <Text style={styles.logo}>DOTO</Text>
           <Text style={[styles.tagline, { color: themeColors.textSecondary }]}>
-            Join our community
+            {t('auth.createAccountSubtitle')}
           </Text>
         </View>
 
@@ -261,11 +327,11 @@ export default function RegisterScreen({ navigation }) {
         <View style={[styles.card, { backgroundColor: themeColors.surface }]}>
           {!showVerification ? (
             <>
-              <Text style={[styles.title, { color: themeColors.text }]}>
-                Create Account
+              <Text style={[styles.title, { color: themeColors.text, textAlign: rtlStyles.textAlign }]}>
+                {t('auth.createAccount')}
               </Text>
-              <Text style={[styles.subtitle, { color: themeColors.textSecondary }]}>
-                Start helping others in your community
+              <Text style={[styles.subtitle, { color: themeColors.textSecondary, textAlign: rtlStyles.textAlign }]}>
+                {t('auth.createAccountSubtitle')}
               </Text>
 
               {error ? (
@@ -281,9 +347,9 @@ export default function RegisterScreen({ navigation }) {
                     <Image source={{ uri: avatar }} style={styles.avatarImage} />
                   ) : (
                     <View style={[styles.avatarPlaceholder, { borderColor: themeColors.border }]}>
-                      <Text style={styles.avatarIcon}>📷</Text>
+                      <Icon name="camera" size={28} color={colors.primary} />
                       <Text style={[styles.avatarText, { color: themeColors.textSecondary }]}>
-                        Add Photo
+                        {t('auth.addPhoto')}
                       </Text>
                     </View>
                   )}
@@ -292,14 +358,16 @@ export default function RegisterScreen({ navigation }) {
 
               {/* Name Input */}
               <View style={styles.inputGroup}>
-                <Text style={[styles.label, { color: themeColors.text }]}>
-                  Full Name
+                <Text style={[styles.label, { color: themeColors.text, textAlign: rtlStyles.textAlign }]}>
+                  {t('auth.fullName')}
                 </Text>
-                <View style={[styles.inputWrapper, { borderColor: themeColors.border }]}>
-                  <Text style={styles.inputIcon}>👤</Text>
+                <View style={[styles.inputWrapper, { borderColor: themeColors.border, flexDirection: rtlStyles.row }]}>
+                  <View style={styles.inputIconWrapper}>
+                    <Icon name="person" size={20} color={colors.primary} />
+                  </View>
                   <TextInput
-                    style={[styles.input, { color: themeColors.text }]}
-                    placeholder="John Doe"
+                    style={[styles.input, { color: themeColors.text, textAlign: rtlStyles.textAlign }]}
+                    placeholder={t('auth.namePlaceholder')}
                     placeholderTextColor={themeColors.textSecondary}
                     value={name}
                     onChangeText={setName}
@@ -311,14 +379,16 @@ export default function RegisterScreen({ navigation }) {
 
               {/* Email Input */}
               <View style={styles.inputGroup}>
-                <Text style={[styles.label, { color: themeColors.text }]}>
-                  Email Address
+                <Text style={[styles.label, { color: themeColors.text, textAlign: rtlStyles.textAlign }]}>
+                  {t('auth.email')}
                 </Text>
-                <View style={[styles.inputWrapper, { borderColor: themeColors.border }]}>
-                  <Text style={styles.inputIcon}>📧</Text>
+                <View style={[styles.inputWrapper, { borderColor: themeColors.border, flexDirection: rtlStyles.row }]}>
+                  <View style={styles.inputIconWrapper}>
+                    <Icon name="mail" size={20} color={colors.primary} />
+                  </View>
                   <TextInput
-                    style={[styles.input, { color: themeColors.text }]}
-                    placeholder="your.email@example.com"
+                    style={[styles.input, { color: themeColors.text, textAlign: rtlStyles.textAlign }]}
+                    placeholder={t('auth.emailPlaceholder')}
                     placeholderTextColor={themeColors.textSecondary}
                     value={email}
                     onChangeText={setEmail}
@@ -332,14 +402,16 @@ export default function RegisterScreen({ navigation }) {
 
               {/* Password Input */}
               <View style={styles.inputGroup}>
-                <Text style={[styles.label, { color: themeColors.text }]}>
-                  Password
+                <Text style={[styles.label, { color: themeColors.text, textAlign: rtlStyles.textAlign }]}>
+                  {t('auth.password')}
                 </Text>
-                <View style={[styles.inputWrapper, { borderColor: themeColors.border }]}>
-                  <Text style={styles.inputIcon}>🔒</Text>
+                <View style={[styles.inputWrapper, { borderColor: themeColors.border, flexDirection: rtlStyles.row }]}>
+                  <View style={styles.inputIconWrapper}>
+                    <Icon name="lock-closed" size={20} color={colors.primary} />
+                  </View>
                   <TextInput
-                    style={[styles.input, { color: themeColors.text }]}
-                    placeholder="At least 6 characters"
+                    style={[styles.input, { color: themeColors.text, textAlign: rtlStyles.textAlign }]}
+                    placeholder={t('auth.passwordMinLength')}
                     placeholderTextColor={themeColors.textSecondary}
                     value={password}
                     onChangeText={setPassword}
@@ -347,21 +419,23 @@ export default function RegisterScreen({ navigation }) {
                     editable={!isLoading}
                   />
                   <TouchableOpacity onPress={() => setShowPassword(!showPassword)}>
-                    <Text style={styles.inputIcon}>{showPassword ? '🙈' : '👁️'}</Text>
+                    <Icon name={showPassword ? 'eye-off' : 'eye'} size={20} color={themeColors.textSecondary} />
                   </TouchableOpacity>
                 </View>
               </View>
 
               {/* Confirm Password Input */}
               <View style={styles.inputGroup}>
-                <Text style={[styles.label, { color: themeColors.text }]}>
-                  Confirm Password
+                <Text style={[styles.label, { color: themeColors.text, textAlign: rtlStyles.textAlign }]}>
+                  {t('auth.confirmPassword')}
                 </Text>
-                <View style={[styles.inputWrapper, { borderColor: themeColors.border }]}>
-                  <Text style={styles.inputIcon}>🔒</Text>
+                <View style={[styles.inputWrapper, { borderColor: themeColors.border, flexDirection: rtlStyles.row }]}>
+                  <View style={styles.inputIconWrapper}>
+                    <Icon name="lock-closed" size={20} color={colors.primary} />
+                  </View>
                   <TextInput
-                    style={[styles.input, { color: themeColors.text }]}
-                    placeholder="Repeat your password"
+                    style={[styles.input, { color: themeColors.text, textAlign: rtlStyles.textAlign }]}
+                    placeholder={t('auth.repeatPassword')}
                     placeholderTextColor={themeColors.textSecondary}
                     value={confirmPassword}
                     onChangeText={setConfirmPassword}
@@ -381,7 +455,7 @@ export default function RegisterScreen({ navigation }) {
                 {isLoading ? (
                   <ActivityIndicator color="#fff" />
                 ) : (
-                  <Text style={styles.primaryButtonText}>Create Account</Text>
+                  <Text style={styles.primaryButtonText}>{t('auth.createAccount')}</Text>
                 )}
               </TouchableOpacity>
             </>
@@ -389,19 +463,19 @@ export default function RegisterScreen({ navigation }) {
             <>
               {/* Verification Screen */}
               <TouchableOpacity 
-                style={styles.backButton}
+                style={[styles.backButton, { alignSelf: isRTL ? 'flex-end' : 'flex-start' }]}
                 onPress={resetVerification}
               >
                 <Text style={[styles.backText, { color: themeColors.text }]}>
-                  ← Back
+                  {isRTL ? '→ ' : '← '}{t('common.back')}
                 </Text>
               </TouchableOpacity>
 
-              <Text style={[styles.title, { color: themeColors.text }]}>
-                Verify Your Email
+              <Text style={[styles.title, { color: themeColors.text, textAlign: rtlStyles.textAlign }]}>
+                {t('auth.enterVerificationCode')}
               </Text>
-              <Text style={[styles.subtitle, { color: themeColors.textSecondary }]}>
-                We sent a code to {pendingUser?.email}
+              <Text style={[styles.subtitle, { color: themeColors.textSecondary, textAlign: rtlStyles.textAlign }]}>
+                {t('auth.codeSentTo', { email: pendingUser?.email })}
               </Text>
 
               {error ? (
@@ -411,7 +485,7 @@ export default function RegisterScreen({ navigation }) {
               ) : null}
 
               {/* Code Input */}
-              <View style={styles.codeContainer}>
+              <View style={[styles.codeContainer, { flexDirection: rtlStyles.row }]}>
                 {verificationCode.map((digit, index) => (
                   <TextInput
                     key={index}
@@ -446,21 +520,47 @@ export default function RegisterScreen({ navigation }) {
                 {isLoading ? (
                   <ActivityIndicator color="#fff" />
                 ) : (
-                  <Text style={styles.primaryButtonText}>Verify & Create Account</Text>
+                  <Text style={styles.primaryButtonText}>{t('auth.verifyAndCreate')}</Text>
                 )}
               </TouchableOpacity>
+
+              {/* Resend Code Section */}
+              <View style={styles.resendContainer}>
+                <Text style={[styles.resendText, { color: themeColors.textSecondary }]}>
+                  {t('auth.didntReceiveCode') || "Didn't receive the code?"}
+                </Text>
+                {resendCooldown > 0 ? (
+                  <Text style={[styles.cooldownText, { color: themeColors.textSecondary }]}>
+                    {t('auth.resendIn') || 'Resend in'} {resendCooldown}s
+                  </Text>
+                ) : (
+                  <TouchableOpacity 
+                    onPress={handleResendCode}
+                    disabled={isResending}
+                    activeOpacity={0.7}
+                  >
+                    {isResending ? (
+                      <ActivityIndicator size="small" color={colors.primary} />
+                    ) : (
+                      <Text style={styles.resendLink}>
+                        {t('auth.resendCode') || 'Resend Code'}
+                      </Text>
+                    )}
+                  </TouchableOpacity>
+                )}
+              </View>
             </>
           )}
         </View>
 
         {/* Login Link */}
         {!showVerification && (
-          <View style={styles.loginContainer}>
+          <View style={[styles.loginContainer, { flexDirection: rtlStyles.row }]}>
             <Text style={[styles.loginText, { color: themeColors.textSecondary }]}>
-              Already have an account?{' '}
+              {t('auth.alreadyHaveAccount')}{' '}
             </Text>
             <TouchableOpacity onPress={() => navigation.navigate('Login')}>
-              <Text style={styles.loginLink}>Log In</Text>
+              <Text style={styles.loginLink}>{t('auth.login')}</Text>
             </TouchableOpacity>
           </View>
         )}
@@ -545,8 +645,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     backgroundColor: '#F9FAFB',
   },
-  avatarIcon: {
-    fontSize: 24,
+  avatarIconWrapper: {
     marginBottom: 4,
   },
   avatarText: {
@@ -570,8 +669,13 @@ const styles = StyleSheet.create({
     paddingVertical: spacing.sm,
     gap: spacing.sm,
   },
-  inputIcon: {
-    fontSize: 18,
+  inputIconWrapper: {
+    width: 36,
+    height: 36,
+    borderRadius: 8,
+    backgroundColor: 'rgba(220, 38, 38, 0.1)',
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   input: {
     flex: 1,
@@ -621,15 +725,17 @@ const styles = StyleSheet.create({
   codeContainer: {
     flexDirection: 'row',
     justifyContent: 'center',
-    gap: spacing.sm,
+    gap: Math.min(spacing.sm, 6),
     marginVertical: spacing.xl,
+    flexWrap: 'nowrap',
+    paddingHorizontal: spacing.xs,
   },
   codeInput: {
-    width: 48,
-    height: 56,
+    width: CODE_CELL_SIZE,
+    height: CODE_CELL_SIZE * 1.15,
     borderWidth: 2,
-    borderRadius: 12,
-    fontSize: 24,
+    borderRadius: 10,
+    fontSize: Math.min(24, CODE_CELL_SIZE * 0.5),
     fontWeight: '700',
     textAlign: 'center',
   },
@@ -649,5 +755,22 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: '#1D4ED8',
     letterSpacing: 4,
+  },
+  resendContainer: {
+    alignItems: 'center',
+    marginTop: spacing.xl,
+    gap: spacing.sm,
+  },
+  resendText: {
+    fontSize: 14,
+  },
+  cooldownText: {
+    fontSize: 14,
+    fontWeight: '500',
+  },
+  resendLink: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: colors.primary,
   },
 });

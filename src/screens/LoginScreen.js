@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
 import {
   View,
   Text,
@@ -9,20 +9,22 @@ import {
   ActivityIndicator,
   KeyboardAvoidingView,
   Platform,
-  Alert,
 } from 'react-native';
 import { useAuthStore } from '../store/authStore';
 import { useSettingsStore } from '../store/settingsStore';
 import { useRTL, useRTLStyles } from '../context/RTLContext';
+import { useDialog } from '../context/DialogContext';
 import { db } from '../lib/instant';
 import { verifyPassword } from '../utils/password';
 import { colors, spacing, borderRadius, typography } from '../styles/theme';
+import Icon from '../components/Icon';
 
 export default function LoginScreen({ navigation }) {
   const login = useAuthStore((state) => state.login);
   const darkMode = useSettingsStore((state) => state.darkMode);
   const { t, isRTL } = useRTL();
   const rtlStyles = useRTLStyles();
+  const { alert } = useDialog();
 
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -32,12 +34,42 @@ export default function LoginScreen({ navigation }) {
   const [showVerification, setShowVerification] = useState(false);
   const [verificationCode, setVerificationCode] = useState(['', '', '', '', '', '']);
   const [pendingUser, setPendingUser] = useState(null);
+  const [resendCooldown, setResendCooldown] = useState(0);
+  const [isResending, setIsResending] = useState(false);
 
   const inputRefs = useRef([]);
+  const cooldownTimerRef = useRef(null);
 
   // Query all users from InstantDB
   const { data: usersData, isLoading: isQueryLoading } = db.useQuery({ users: {} });
   const allUsers = usersData?.users || [];
+
+  // Cleanup timer on unmount
+  useEffect(() => {
+    return () => {
+      if (cooldownTimerRef.current) {
+        clearInterval(cooldownTimerRef.current);
+      }
+    };
+  }, []);
+
+  // Start cooldown timer
+  const startCooldown = useCallback((seconds = 60) => {
+    setResendCooldown(seconds);
+    if (cooldownTimerRef.current) {
+      clearInterval(cooldownTimerRef.current);
+    }
+    cooldownTimerRef.current = setInterval(() => {
+      setResendCooldown(prev => {
+        if (prev <= 1) {
+          clearInterval(cooldownTimerRef.current);
+          cooldownTimerRef.current = null;
+          return 0;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+  }, []);
 
   const themeColors = {
     background: darkMode ? colors.backgroundDark : colors.background,
@@ -105,10 +137,10 @@ export default function LoginScreen({ navigation }) {
       
       try {
         await db.auth.sendMagicCode({ email: normalizedEmail });
-        Alert.alert(
-          t('auth.checkYourEmail') || 'Check Your Email',
-          t('auth.magicCodeSent') || 'We sent a 6-digit verification code to your email.',
-          [{ text: t('common.ok') || 'OK' }]
+        startCooldown(60); // Start 60 second cooldown
+        alert(
+          t('auth.checkYourEmail'),
+          t('auth.magicCodeSent')
         );
       } catch (err) {
         console.error('Error sending magic code:', err);
@@ -182,6 +214,33 @@ export default function LoginScreen({ navigation }) {
     setVerificationCode(['', '', '', '', '', '']);
     setPendingUser(null);
     setError('');
+    setResendCooldown(0);
+    if (cooldownTimerRef.current) {
+      clearInterval(cooldownTimerRef.current);
+      cooldownTimerRef.current = null;
+    }
+  };
+
+  const handleResendCode = async () => {
+    if (resendCooldown > 0 || isResending || !pendingUser) return;
+    
+    setIsResending(true);
+    setError('');
+    
+    try {
+      const normalizedEmail = pendingUser.email?.toLowerCase() || email.trim().toLowerCase();
+      await db.auth.sendMagicCode({ email: normalizedEmail });
+      startCooldown(60);
+      alert(
+        t('auth.codeSent'),
+        t('auth.newCodeSent')
+      );
+    } catch (err) {
+      console.error('Error resending code:', err);
+      setError(err.body?.message || err.message || t('errors.tryAgain'));
+    } finally {
+      setIsResending(false);
+    }
   };
 
   if (isQueryLoading) {
@@ -209,7 +268,7 @@ export default function LoginScreen({ navigation }) {
         <View style={styles.logoSection}>
           <Text style={styles.logo}>DOTO</Text>
           <Text style={[styles.tagline, { color: themeColors.textSecondary }]}>
-            {isRTL ? 'עשה דבר אחד לאחרים' : 'Do One Thing Others'}
+            {t('profile.tagline')}
           </Text>
         </View>
 
@@ -236,7 +295,9 @@ export default function LoginScreen({ navigation }) {
                   {t('auth.email')}
                 </Text>
                 <View style={[styles.inputWrapper, { borderColor: themeColors.border, flexDirection: rtlStyles.row }]}>
-                  <Text style={styles.inputIcon}>📧</Text>
+                  <View style={styles.inputIconWrapper}>
+                    <Icon name="mail" size={20} color={colors.primary} />
+                  </View>
                   <TextInput
                     style={[styles.input, { color: themeColors.text, textAlign: rtlStyles.textAlign }]}
                     placeholder={t('auth.emailPlaceholder')}
@@ -257,7 +318,9 @@ export default function LoginScreen({ navigation }) {
                   {t('auth.password')}
                 </Text>
                 <View style={[styles.inputWrapper, { borderColor: themeColors.border, flexDirection: rtlStyles.row }]}>
-                  <Text style={styles.inputIcon}>🔒</Text>
+                  <View style={styles.inputIconWrapper}>
+                    <Icon name="lock-closed" size={20} color={colors.primary} />
+                  </View>
                   <TextInput
                     style={[styles.input, { color: themeColors.text, textAlign: rtlStyles.textAlign }]}
                     placeholder={t('auth.passwordPlaceholder')}
@@ -268,7 +331,7 @@ export default function LoginScreen({ navigation }) {
                     editable={!isLoading}
                   />
                   <TouchableOpacity onPress={() => setShowPassword(!showPassword)}>
-                    <Text style={styles.inputIcon}>{showPassword ? '🙈' : '👁️'}</Text>
+                    <Icon name={showPassword ? 'eye-off' : 'eye'} size={20} color={themeColors.textSecondary} />
                   </TouchableOpacity>
                 </View>
               </View>
@@ -302,7 +365,9 @@ export default function LoginScreen({ navigation }) {
                   style={[styles.socialButton, { borderColor: themeColors.border, flexDirection: rtlStyles.row }]}
                   activeOpacity={0.8}
                 >
-                  <Text style={[styles.socialIcon, { color: '#DB4437' }]}>G</Text>
+                  <View style={[styles.socialIconWrapper, { backgroundColor: 'rgba(219, 68, 55, 0.1)' }]}>
+                    <Icon name="logo-google" size={18} color="#DB4437" />
+                  </View>
                   <Text style={[styles.socialButtonText, { color: themeColors.text }]}>
                     {t('auth.google')}
                   </Text>
@@ -311,7 +376,9 @@ export default function LoginScreen({ navigation }) {
                   style={[styles.socialButton, { borderColor: themeColors.border, flexDirection: rtlStyles.row }]}
                   activeOpacity={0.8}
                 >
-                  <Text style={[styles.socialIcon, { color: '#4267B2' }]}>f</Text>
+                  <View style={[styles.socialIconWrapper, { backgroundColor: 'rgba(66, 103, 178, 0.1)' }]}>
+                    <Icon name="logo-facebook" size={18} color="#4267B2" />
+                  </View>
                   <Text style={[styles.socialButtonText, { color: themeColors.text }]}>
                     {t('auth.facebook')}
                   </Text>
@@ -382,6 +449,32 @@ export default function LoginScreen({ navigation }) {
                   <Text style={styles.primaryButtonText}>{t('auth.verifyCode')}</Text>
                 )}
               </TouchableOpacity>
+
+              {/* Resend Code Section */}
+              <View style={styles.resendContainer}>
+                <Text style={[styles.resendText, { color: themeColors.textSecondary }]}>
+                  {t('auth.didntReceiveCode') || "Didn't receive the code?"}
+                </Text>
+                {resendCooldown > 0 ? (
+                  <Text style={[styles.cooldownText, { color: themeColors.textSecondary }]}>
+                    {t('auth.resendIn') || 'Resend in'} {resendCooldown}s
+                  </Text>
+                ) : (
+                  <TouchableOpacity 
+                    onPress={handleResendCode}
+                    disabled={isResending}
+                    activeOpacity={0.7}
+                  >
+                    {isResending ? (
+                      <ActivityIndicator size="small" color={colors.primary} />
+                    ) : (
+                      <Text style={styles.resendLink}>
+                        {t('auth.resendCode') || 'Resend Code'}
+                      </Text>
+                    )}
+                  </TouchableOpacity>
+                )}
+              </View>
             </>
           )}
         </View>
@@ -474,8 +567,13 @@ const styles = StyleSheet.create({
     paddingVertical: spacing.sm,
     gap: spacing.sm,
   },
-  inputIcon: {
-    fontSize: 18,
+  inputIconWrapper: {
+    width: 36,
+    height: 36,
+    borderRadius: 8,
+    backgroundColor: 'rgba(220, 38, 38, 0.1)',
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   input: {
     flex: 1,
@@ -526,9 +624,12 @@ const styles = StyleSheet.create({
     paddingVertical: 14,
     gap: spacing.sm,
   },
-  socialIcon: {
-    fontSize: 18,
-    fontWeight: '700',
+  socialIconWrapper: {
+    width: 32,
+    height: 32,
+    borderRadius: 8,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   socialButtonText: {
     fontSize: 15,
@@ -583,5 +684,22 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: '#1D4ED8',
     letterSpacing: 4,
+  },
+  resendContainer: {
+    alignItems: 'center',
+    marginTop: spacing.xl,
+    gap: spacing.sm,
+  },
+  resendText: {
+    fontSize: 14,
+  },
+  cooldownText: {
+    fontSize: 14,
+    fontWeight: '500',
+  },
+  resendLink: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: colors.primary,
   },
 });

@@ -488,22 +488,59 @@ export default function Login() {
   };
 
   const handleCodeChange = (index, value) => {
-    if (value.length > 1) return; // Only allow single digit
+    // Handle paste event - if user pastes full code
+    if (value.length > 1) {
+      const pastedCode = value.replace(/\D/g, '').slice(0, 6);
+      if (pastedCode.length > 0) {
+        const newCode = [...verificationCode];
+        for (let i = 0; i < pastedCode.length && i < 6; i++) {
+          newCode[i] = pastedCode[i];
+        }
+        setVerificationCode(newCode);
+        // Focus appropriate input after paste
+        const focusIndex = Math.min(pastedCode.length, 5);
+        setTimeout(() => inputRefs.current[focusIndex]?.focus(), 0);
+      }
+      return;
+    }
+    
+    // Only allow digits
+    const digit = value.replace(/\D/g, '');
     
     const newCode = [...verificationCode];
-    newCode[index] = value;
+    newCode[index] = digit;
     setVerificationCode(newCode);
 
     // Auto-focus next input
-    if (value && index < 5) {
-      inputRefs.current[index + 1]?.focus();
+    if (digit && index < 5) {
+      setTimeout(() => inputRefs.current[index + 1]?.focus(), 0);
     }
   };
 
   const handleCodeKeyDown = (index, e) => {
-    if (e.key === 'Backspace' && !verificationCode[index] && index > 0) {
+    if (e.key === 'Backspace') {
+      if (!verificationCode[index] && index > 0) {
+        // Move to previous input if current is empty
+        inputRefs.current[index - 1]?.focus();
+      } else if (verificationCode[index]) {
+        // Clear current input and stay
+        const newCode = [...verificationCode];
+        newCode[index] = '';
+        setVerificationCode(newCode);
+      }
+      e.preventDefault();
+    } else if (e.key === 'ArrowLeft' && index > 0) {
       inputRefs.current[index - 1]?.focus();
+      e.preventDefault();
+    } else if (e.key === 'ArrowRight' && index < 5) {
+      inputRefs.current[index + 1]?.focus();
+      e.preventDefault();
     }
+  };
+
+  const handleCodeFocus = (index) => {
+    // Select content on focus for easier editing
+    inputRefs.current[index]?.select();
   };
 
   const handleVerifyCode = async (e) => {
@@ -705,12 +742,15 @@ export default function Login() {
                           ref={(el) => (inputRefs.current[index] = el)}
                           type="text"
                           inputMode="numeric"
-                          maxLength={1}
+                          pattern="[0-9]*"
+                          autoComplete={index === 0 ? "one-time-code" : "off"}
+                          maxLength={6}
                           value={digit}
                           onChange={(e) => handleCodeChange(index, e.target.value)}
                           onKeyDown={(e) => handleCodeKeyDown(index, e)}
-                          className="w-12 h-14 text-center text-2xl font-bold bg-gray-50 dark:bg-gray-700 border-2 border-gray-200 dark:border-gray-600 text-gray-900 dark:text-white rounded-xl focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-red-500 transition-all"
-                          style={{ textAlign: 'center' }}
+                          onFocus={() => handleCodeFocus(index)}
+                          className="w-12 h-14 text-center text-2xl font-bold bg-gray-50 dark:bg-gray-700 border-2 border-gray-200 dark:border-gray-600 text-gray-900 dark:text-white rounded-xl focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-red-500 transition-all caret-red-500"
+                          style={{ textAlign: 'center', caretColor: 'transparent' }}
                         />
                       ))}
                     </div>

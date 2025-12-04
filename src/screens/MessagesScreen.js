@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import {
   View,
   Text,
@@ -8,38 +8,77 @@ import {
   Image,
   ActivityIndicator,
 } from 'react-native';
+import { useFocusEffect } from '@react-navigation/native';
 import { useAuthStore } from '../store/authStore';
 import { useSettingsStore } from '../store/settingsStore';
 import { db } from '../lib/instant';
 import { colors, spacing, borderRadius } from '../styles/theme';
+import Icon from '../components/Icon';
 
-export default function MessagesScreen({ navigation }) {
+function MessagesScreen({ navigation }) {
   const user = useAuthStore((state) => state.user);
+  const isAuthenticated = useAuthStore((state) => state.isAuthenticated);
   const darkMode = useSettingsStore((state) => state.darkMode);
+  
+  // Track screen focus - only query when focused
+  const [queryEnabled, setQueryEnabled] = useState(false);
+  
+  // Track mounted state for cleanup
+  const isMountedRef = useRef(true);
+  
+  useEffect(() => {
+    isMountedRef.current = true;
+    return () => {
+      isMountedRef.current = false;
+    };
+  }, []);
+  
+  // Only enable query when screen is focused
+  useFocusEffect(
+    useCallback(() => {
+      setQueryEnabled(true);
+      return () => setQueryEnabled(false);
+    }, [])
+  );
 
-  // Fetch conversations from InstantDB
-  const { isLoading, data } = db.useQuery({ 
-    conversations: {},
-    messages: {}
-  });
+  // Fetch conversations from InstantDB - only when authenticated AND focused
+  const { isLoading, data } = db.useQuery(
+    isAuthenticated && queryEnabled ? { conversations: {}, messages: {} } : null
+  );
 
-  const allConversations = data?.conversations || [];
-  const allMessages = data?.messages || [];
+  // Safely extract data
+  const allConversations = useMemo(() => {
+    try {
+      return data?.conversations || [];
+    } catch (e) {
+      return [];
+    }
+  }, [data?.conversations]);
+  
+  const allMessages = useMemo(() => {
+    try {
+      return data?.messages || [];
+    } catch (e) {
+      return [];
+    }
+  }, [data?.messages]);
 
-  // Filter conversations for current user
-  const userConversations = allConversations.filter(conv => 
-    conv.participant1Id === user?.id || conv.participant2Id === user?.id
-  ).sort((a, b) => (b.lastMessageTime || 0) - (a.lastMessageTime || 0));
+  // Filter conversations for current user - memoized
+  const userConversations = useMemo(() => {
+    return allConversations.filter(conv => 
+      conv.participant1Id === user?.id || conv.participant2Id === user?.id
+    ).sort((a, b) => (b.lastMessageTime || 0) - (a.lastMessageTime || 0));
+  }, [allConversations, user?.id]);
 
-  const themeColors = {
+  const themeColors = useMemo(() => ({
     background: darkMode ? colors.backgroundDark : colors.background,
     surface: darkMode ? colors.surfaceDark : colors.surface,
     text: darkMode ? colors.textDark : colors.text,
     textSecondary: darkMode ? colors.textSecondaryDark : colors.textSecondary,
     border: darkMode ? colors.borderDark : colors.border,
-  };
+  }), [darkMode]);
 
-  const formatTime = (timestamp) => {
+  const formatTime = useCallback((timestamp) => {
     if (!timestamp) return '';
     const now = Date.now();
     const diff = now - timestamp;
@@ -52,9 +91,9 @@ export default function MessagesScreen({ navigation }) {
     
     const date = new Date(timestamp);
     return date.toLocaleDateString([], { month: 'short', day: 'numeric' });
-  };
+  }, []);
 
-  const getOtherParticipant = (conversation) => {
+  const getOtherParticipant = useCallback((conversation) => {
     if (conversation.participant1Id === user?.id) {
       return {
         id: conversation.participant2Id,
@@ -67,20 +106,22 @@ export default function MessagesScreen({ navigation }) {
       name: conversation.participant1Name,
       avatar: conversation.participant1Avatar,
     };
-  };
+  }, [user?.id]);
 
-  const getUnreadCount = (conversationId) => {
+  const getUnreadCount = useCallback((conversationId) => {
     return allMessages.filter(
       m => m.conversationId === conversationId && 
            m.senderId !== user?.id && 
            !m.read
     ).length;
-  };
+  }, [allMessages, user?.id]);
 
   if (!user) {
     return (
       <View style={[styles.container, styles.centerContent, { backgroundColor: themeColors.background }]}>
-        <Text style={styles.emptyIcon}>💬</Text>
+        <View style={styles.emptyIconContainer}>
+          <Icon name="chatbubbles" size={64} color={colors.primary} />
+        </View>
         <Text style={[styles.emptyTitle, { color: themeColors.text }]}>Login Required</Text>
         <Text style={[styles.emptyText, { color: themeColors.textSecondary }]}>
           Please login to view your messages
@@ -108,7 +149,9 @@ export default function MessagesScreen({ navigation }) {
         </View>
       ) : userConversations.length === 0 ? (
         <View style={styles.centerContent}>
-          <Text style={styles.emptyIcon}>💬</Text>
+          <View style={styles.emptyIconContainer}>
+            <Icon name="chatbubbles" size={64} color={colors.primary} />
+          </View>
           <Text style={[styles.emptyTitle, { color: themeColors.text }]}>No Messages Yet</Text>
           <Text style={[styles.emptyText, { color: themeColors.textSecondary }]}>
             Start a conversation by messaging someone from their post
@@ -172,6 +215,9 @@ export default function MessagesScreen({ navigation }) {
   );
 }
 
+// Export memoized component to prevent unnecessary re-renders
+export default React.memo(MessagesScreen);
+
 const styles = StyleSheet.create({
   container: {
     flex: 1,
@@ -200,8 +246,7 @@ const styles = StyleSheet.create({
     marginTop: spacing.lg,
     fontSize: 16,
   },
-  emptyIcon: {
-    fontSize: 64,
+  emptyIconContainer: {
     marginBottom: spacing.lg,
   },
   emptyTitle: {

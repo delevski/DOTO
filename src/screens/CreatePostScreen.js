@@ -7,15 +7,17 @@ import {
   TextInput,
   TouchableOpacity,
   Image,
-  Alert,
   ActivityIndicator,
 } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 import * as Location from 'expo-location';
 import { useAuthStore } from '../store/authStore';
 import { useSettingsStore } from '../store/settingsStore';
+import { useRTL } from '../context/RTLContext';
+import { useDialog } from '../context/DialogContext';
 import { db, id } from '../lib/instant';
 import { colors, spacing, borderRadius } from '../styles/theme';
+import { compressImage } from '../utils/imageCompression';
 
 const CATEGORIES = [
   { key: 'Moving', label: 'Moving', icon: '🚚' },
@@ -28,6 +30,8 @@ const CATEGORIES = [
 export default function CreatePostScreen({ navigation }) {
   const user = useAuthStore((state) => state.user);
   const darkMode = useSettingsStore((state) => state.darkMode);
+  const { t } = useRTL();
+  const { alert } = useDialog();
 
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
@@ -36,6 +40,7 @@ export default function CreatePostScreen({ navigation }) {
   const [photos, setPhotos] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
   const [isGettingLocation, setIsGettingLocation] = useState(false);
+  const [isCompressing, setIsCompressing] = useState(false);
 
   const themeColors = {
     background: darkMode ? colors.backgroundDark : colors.background,
@@ -49,27 +54,38 @@ export default function CreatePostScreen({ navigation }) {
     try {
       const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
       if (status !== 'granted') {
-        Alert.alert('Permission needed', 'Please grant camera roll permissions to upload photos.');
+        alert(t('errors.permissionNeeded'), t('errors.galleryPermission'));
         return;
       }
 
       const result = await ImagePicker.launchImageLibraryAsync({
         mediaTypes: ImagePicker.MediaTypeOptions.Images,
         allowsMultipleSelection: true,
-        quality: 0.5,
-        base64: true,
+        quality: 1, // Get full quality, we'll compress ourselves
       });
 
       if (!result.canceled && result.assets) {
-        const newPhotos = result.assets.map(asset => ({
-          uri: asset.uri,
-          base64: `data:image/jpeg;base64,${asset.base64}`,
-        }));
-        setPhotos([...photos, ...newPhotos].slice(0, 5)); // Max 5 photos
+        setIsCompressing(true);
+        try {
+          // Compress each image to reduce file size (target: 200-500KB)
+          const compressedPhotos = await Promise.all(
+            result.assets.map(async (asset) => {
+              const compressed = await compressImage(asset.uri);
+              return {
+                uri: compressed.uri,
+                base64: compressed.base64,
+              };
+            })
+          );
+          setPhotos([...photos, ...compressedPhotos].slice(0, 5)); // Max 5 photos
+        } finally {
+          setIsCompressing(false);
+        }
       }
     } catch (err) {
       console.error('Image picker error:', err);
-      Alert.alert('Error', 'Failed to pick images');
+      setIsCompressing(false);
+      alert(t('common.error'), t('errors.failedToPickImage'));
     }
   };
 
@@ -77,26 +93,33 @@ export default function CreatePostScreen({ navigation }) {
     try {
       const { status } = await ImagePicker.requestCameraPermissionsAsync();
       if (status !== 'granted') {
-        Alert.alert('Permission needed', 'Please grant camera permissions to take photos.');
+        alert(t('errors.permissionNeeded'), t('errors.cameraPermission'));
         return;
       }
 
       const result = await ImagePicker.launchCameraAsync({
-        quality: 0.5,
-        base64: true,
+        quality: 1, // Get full quality, we'll compress ourselves
       });
 
       if (!result.canceled && result.assets[0]) {
-        const asset = result.assets[0];
-        const newPhoto = {
-          uri: asset.uri,
-          base64: `data:image/jpeg;base64,${asset.base64}`,
-        };
-        setPhotos([...photos, newPhoto].slice(0, 5));
+        setIsCompressing(true);
+        try {
+          const asset = result.assets[0];
+          // Compress the image to reduce file size (target: 200-500KB)
+          const compressed = await compressImage(asset.uri);
+          const newPhoto = {
+            uri: compressed.uri,
+            base64: compressed.base64,
+          };
+          setPhotos([...photos, newPhoto].slice(0, 5));
+        } finally {
+          setIsCompressing(false);
+        }
       }
     } catch (err) {
       console.error('Camera error:', err);
-      Alert.alert('Error', 'Failed to take photo');
+      setIsCompressing(false);
+      alert(t('common.error'), t('errors.failedToTakePhoto'));
     }
   };
 
@@ -110,7 +133,7 @@ export default function CreatePostScreen({ navigation }) {
       
       const { status } = await Location.requestForegroundPermissionsAsync();
       if (status !== 'granted') {
-        Alert.alert('Permission needed', 'Please grant location permissions.');
+        alert(t('errors.permissionNeeded'), t('errors.locationPermission'));
         return;
       }
 
@@ -129,7 +152,7 @@ export default function CreatePostScreen({ navigation }) {
       }
     } catch (err) {
       console.error('Location error:', err);
-      Alert.alert('Error', 'Failed to get location');
+      alert(t('common.error'), t('errors.failedToGetLocation'));
     } finally {
       setIsGettingLocation(false);
     }
@@ -137,17 +160,17 @@ export default function CreatePostScreen({ navigation }) {
 
   const handleSubmit = async () => {
     if (!description.trim()) {
-      Alert.alert('Required', 'Please enter a description');
+      alert(t('common.required'), t('validation.enterDescription'));
       return;
     }
 
     if (!location.trim()) {
-      Alert.alert('Required', 'Please enter a location');
+      alert(t('common.required'), t('validation.enterLocation'));
       return;
     }
 
     if (!user) {
-      Alert.alert('Error', 'Please login to create a post');
+      alert(t('common.error'), t('auth.pleaseLoginToCreate'));
       return;
     }
 
@@ -157,7 +180,7 @@ export default function CreatePostScreen({ navigation }) {
       const postId = id();
       const postData = {
         id: postId,
-        title: title.trim() || 'Help Needed',
+        title: title.trim() || t('post.helpNeeded'),
         description: description.trim(),
         location: location.trim(),
         category: category,
@@ -177,12 +200,12 @@ export default function CreatePostScreen({ navigation }) {
 
       await db.transact(db.tx.posts[postId].update(postData));
       
-      Alert.alert('Success', 'Your post has been created!', [
-        { text: 'OK', onPress: () => navigation.navigate('Feed') }
+      alert(t('common.success'), t('post.postCreated'), [
+        { text: t('common.ok'), onPress: () => navigation.navigate('Feed') }
       ]);
     } catch (err) {
       console.error('Create post error:', err);
-      Alert.alert('Error', 'Failed to create post. Please try again.');
+      alert(t('common.error'), t('errors.failedToCreatePost'));
     } finally {
       setIsLoading(false);
     }
@@ -294,7 +317,15 @@ export default function CreatePostScreen({ navigation }) {
                   </TouchableOpacity>
                 </View>
               ))}
-              {photos.length < 5 && (
+              {isCompressing && (
+                <View style={styles.compressingContainer}>
+                  <ActivityIndicator size="small" color={colors.primary} />
+                  <Text style={[styles.compressingText, { color: themeColors.textSecondary }]}>
+                    Compressing...
+                  </Text>
+                </View>
+              )}
+              {photos.length < 5 && !isCompressing && (
                 <View style={styles.addPhotoButtons}>
                   <TouchableOpacity 
                     style={[styles.addPhotoButton, { borderColor: themeColors.border }]}
@@ -476,6 +507,16 @@ const styles = StyleSheet.create({
   },
   addPhotoText: {
     fontSize: 11,
+    fontWeight: '500',
+  },
+  compressingContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    paddingVertical: spacing.md,
+  },
+  compressingText: {
+    fontSize: 13,
     fontWeight: '500',
   },
   submitButton: {

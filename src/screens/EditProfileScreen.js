@@ -7,12 +7,13 @@ import {
   TextInput,
   TouchableOpacity,
   Image,
-  Alert,
   ActivityIndicator,
 } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 import { useAuthStore } from '../store/authStore';
 import { useSettingsStore } from '../store/settingsStore';
+import { useRTL } from '../context/RTLContext';
+import { useDialog } from '../context/DialogContext';
 import { db } from '../lib/instant';
 import { colors, spacing, borderRadius } from '../styles/theme';
 
@@ -20,6 +21,8 @@ export default function EditProfileScreen({ navigation }) {
   const user = useAuthStore((state) => state.user);
   const updateUser = useAuthStore((state) => state.updateUser);
   const darkMode = useSettingsStore((state) => state.darkMode);
+  const { t } = useRTL();
+  const { alert } = useDialog();
 
   const [name, setName] = useState(user?.name || '');
   const [bio, setBio] = useState(user?.bio || '');
@@ -38,7 +41,7 @@ export default function EditProfileScreen({ navigation }) {
     try {
       const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
       if (status !== 'granted') {
-        Alert.alert('Permission needed', 'Please grant camera roll permissions.');
+        alert(t('errors.permissionNeeded'), t('errors.galleryPermission'));
         return;
       }
 
@@ -57,13 +60,13 @@ export default function EditProfileScreen({ navigation }) {
       }
     } catch (err) {
       console.error('Image picker error:', err);
-      Alert.alert('Error', 'Failed to pick image');
+      alert(t('common.error'), t('errors.failedToPickImage'));
     }
   };
 
   const handleSave = async () => {
     if (!name.trim()) {
-      Alert.alert('Required', 'Please enter your name');
+      alert(t('common.required'), t('validation.enterName'));
       return;
     }
 
@@ -85,12 +88,12 @@ export default function EditProfileScreen({ navigation }) {
       // Update local state
       await updateUser(updates);
 
-      Alert.alert('Success', 'Profile updated successfully!', [
-        { text: 'OK', onPress: () => navigation.goBack() }
+      alert(t('common.success'), t('editProfile.profileUpdated'), [
+        { text: t('common.ok'), onPress: () => navigation.goBack() }
       ]);
     } catch (err) {
       console.error('Update profile error:', err);
-      Alert.alert('Error', 'Failed to update profile');
+      alert(t('common.error'), t('errors.failedToUpdateProfile'));
     } finally {
       setIsLoading(false);
     }

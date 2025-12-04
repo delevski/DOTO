@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useMemo } from 'react';
 import {
   View,
   Text,
@@ -17,20 +17,38 @@ import { db, id } from '../lib/instant';
 import { colors, spacing, borderRadius } from '../styles/theme';
 
 export default function ChatScreen({ route }) {
-  const { conversationId, userName, userAvatar, userId } = route.params;
+  const { conversationId, userName, userAvatar, userId } = route.params || {};
   const user = useAuthStore((state) => state.user);
+  const isAuthenticated = useAuthStore((state) => state.isAuthenticated);
   const darkMode = useSettingsStore((state) => state.darkMode);
   
   const [newMessage, setNewMessage] = useState('');
   const [isSending, setIsSending] = useState(false);
   const scrollViewRef = useRef(null);
+  const isMountedRef = useRef(true);
+  
+  useEffect(() => {
+    isMountedRef.current = true;
+    return () => {
+      isMountedRef.current = false;
+    };
+  }, []);
+
+  // Only query when authenticated and we have a conversationId
+  const shouldQuery = isAuthenticated && conversationId;
 
   // Fetch messages for this conversation
-  const { isLoading, data } = db.useQuery({ 
+  const { isLoading, data } = db.useQuery(shouldQuery ? { 
     messages: { $: { where: { conversationId } } }
-  });
+  } : null);
 
-  const messages = (data?.messages || []).sort((a, b) => (a.timestamp || 0) - (b.timestamp || 0));
+  const messages = useMemo(() => {
+    try {
+      return (data?.messages || []).sort((a, b) => (a.timestamp || 0) - (b.timestamp || 0));
+    } catch (e) {
+      return [];
+    }
+  }, [data?.messages]);
 
   const themeColors = {
     background: darkMode ? colors.backgroundDark : colors.background,

@@ -1,108 +1,145 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import {
   View,
   Text,
   StyleSheet,
   ScrollView,
   TouchableOpacity,
-  Image,
   TextInput,
   ActivityIndicator,
-  Alert,
   Modal,
+  Share,
 } from 'react-native';
 import { useAuthStore } from '../store/authStore';
 import { useSettingsStore } from '../store/settingsStore';
+import { useRTL, useRTLStyles } from '../context/RTLContext';
+import { useDialog } from '../context/DialogContext';
 import { db, id } from '../lib/instant';
 import { colors, spacing, borderRadius } from '../styles/theme';
 import { sendPushNotificationToUser } from '../utils/pushNotifications';
+import OptimizedImage, { OptimizedAvatar, OptimizedPostImage } from '../components/OptimizedImage';
 
-export default function PostDetailsScreen({ route, navigation }) {
-  const { postId } = route.params;
+function PostDetailsScreen({ route, navigation }) {
+  const { postId } = route.params || {};
   const user = useAuthStore((state) => state.user);
+  const isAuthenticated = useAuthStore((state) => state.isAuthenticated);
   const darkMode = useSettingsStore((state) => state.darkMode);
+  const { t, isRTL } = useRTL();
+  const rtlStyles = useRTLStyles();
+  const { alert } = useDialog();
   
   const [newComment, setNewComment] = useState('');
   const [showRatingModal, setShowRatingModal] = useState(false);
   const [selectedRating, setSelectedRating] = useState(0);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  
+  // Track mounted state for cleanup
+  const isMountedRef = useRef(true);
+  
+  useEffect(() => {
+    isMountedRef.current = true;
+    return () => {
+      isMountedRef.current = false;
+    };
+  }, []);
+
+  // Only query when we have a valid postId and authenticated
+  const shouldQuery = isAuthenticated && postId;
 
   // Fetch post and comments from InstantDB
-  const { isLoading, error, data } = db.useQuery({ 
+  const { isLoading, error, data } = db.useQuery(shouldQuery ? { 
     posts: { $: { where: { id: postId } } },
     comments: { $: { where: { postId: postId } } }
-  });
+  } : null);
   
-  const post = data?.posts?.[0];
-  const comments = (data?.comments || []).sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
+  // Safely extract data
+  const post = useMemo(() => {
+    try {
+      return data?.posts?.[0] || null;
+    } catch (e) {
+      return null;
+    }
+  }, [data?.posts]);
+  
+  const comments = useMemo(() => {
+    try {
+      return (data?.comments || []).sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
+    } catch (e) {
+      return [];
+    }
+  }, [data?.comments]);
 
-  const themeColors = {
+  const themeColors = useMemo(() => ({
     background: darkMode ? colors.backgroundDark : colors.background,
     surface: darkMode ? colors.surfaceDark : colors.surface,
     text: darkMode ? colors.textDark : colors.text,
     textSecondary: darkMode ? colors.textSecondaryDark : colors.textSecondary,
     border: darkMode ? colors.borderDark : colors.border,
-  };
+  }), [darkMode]);
 
-  if (isLoading) {
-    return (
-      <View style={[styles.container, styles.centerContent, { backgroundColor: themeColors.background }]}>
-        <ActivityIndicator size="large" color={colors.primary} />
-        <Text style={[styles.loadingText, { color: themeColors.textSecondary }]}>Loading post...</Text>
-      </View>
-    );
-  }
-
-  if (error || !post) {
-    return (
-      <View style={[styles.container, styles.centerContent, { backgroundColor: themeColors.background }]}>
-        <Text style={styles.errorIcon}>⚠️</Text>
-        <Text style={[styles.errorText, { color: colors.error }]}>Post not found</Text>
-        <TouchableOpacity style={styles.backButton} onPress={() => navigation.goBack()}>
-          <Text style={styles.backButtonText}>Go Back</Text>
-        </TouchableOpacity>
-      </View>
-    );
-  }
-
-  const claimers = post.claimers || [];
-  const approvedClaimerId = post.approvedClaimerId;
-  const isMyPost = post.authorId === user?.id;
+  // Derive values from post (use defaults when post is null during loading)
+  const claimers = post?.claimers || [];
+  const approvedClaimerId = post?.approvedClaimerId;
+  const isMyPost = post?.authorId === user?.id;
   const isClaimedByMe = approvedClaimerId === user?.id;
   const hasClaimed = user && claimers.some(c => c.userId === user.id);
-  const likedBy = post.likedBy || [];
+  const likedBy = post?.likedBy || [];
   const isLiked = user && likedBy.includes(user.id);
-  const likeCount = likedBy.length || post.likes || 0;
-  const completedByClaimer = post.completedByClaimer || false;
-  const completedByAuthor = post.completedByAuthor || false;
-  const isCompleted = post.isCompleted || false;
+  const likeCount = likedBy.length || post?.likes || 0;
+  const completedByClaimer = post?.completedByClaimer || false;
+  const completedByAuthor = post?.completedByAuthor || false;
+  const isCompleted = post?.isCompleted || false;
 
-  const formatTime = (timestamp) => {
+  // All useCallback hooks MUST be called before any early returns
+  const formatTime = useCallback((timestamp) => {
     if (!timestamp) return '';
     const now = Date.now();
     const diff = now - timestamp;
     const hours = Math.floor(diff / (1000 * 60 * 60));
     const days = Math.floor(hours / 24);
     
-    if (days > 0) return `${days}d ago`;
-    if (hours > 0) return `${hours}h ago`;
-    return 'Just now';
-  };
+    if (days > 0) return t('feed.daysAgo', { count: days }) || `${days}d ago`;
+    if (hours > 0) return t('feed.hoursAgo', { count: hours }) || `${hours}h ago`;
+    return t('feed.justNow') || 'Just now';
+  }, [t]);
 
-  const handleClaim = async () => {
+  // Helper to update user's activity streak
+  // Update user's last activity date - streak is calculated in useUserStats
+  const updateUserStreak = useCallback(async (userId) => {
+    if (!userId || !isMountedRef.current) return;
+    
+    try {
+      const today = new Date().toISOString().split('T')[0];
+      
+      // Just update the last activity date
+      // The useUserStats hook will calculate streaks from the activity history
+      await db.transact(
+        db.tx.users[userId].update({
+          lastActivityDate: today,
+        })
+      );
+    } catch (err) {
+      console.error('Error updating activity:', err);
+    }
+  }, []);
+
+  const handleClaim = useCallback(async () => {
     if (!user) {
-      Alert.alert('Login Required', 'Please login to claim tasks');
+      alert(t('auth.loginRequired'), t('auth.pleaseLogin'));
       return;
     }
 
     if (isMyPost) {
-      Alert.alert('Error', 'You cannot claim your own post');
+      alert(t('common.error'), t('postDetails.cannotClaimOwn'));
       return;
     }
 
     if (hasClaimed) {
-      Alert.alert('Already Claimed', 'You have already claimed this task');
+      alert(t('postDetails.alreadyClaimed'), t('postDetails.alreadyClaimedDesc'));
       return;
     }
+
+    setIsSubmitting(true);
 
     try {
       const now = Date.now();
@@ -130,7 +167,7 @@ export default function PostDetailsScreen({ route, navigation }) {
           message: `${user.name} wants to help with your task!`,
           read: false,
           timestamp: now,
-          postTitle: post.title || 'Help Needed',
+          postTitle: post.title || t('post.helpNeeded') || 'Help Needed',
           createdAt: now
         })
       );
@@ -143,18 +180,31 @@ export default function PostDetailsScreen({ route, navigation }) {
         { postId, type: 'post_claimed' }
       );
       
-      Alert.alert('Success', 'Task claimed! The poster will review your claim.');
+      // Update user's activity streak
+      updateUserStreak(user.id);
+      
+      if (isMountedRef.current) {
+        alert(t('common.success'), t('postDetails.claimSuccess'));
+      }
     } catch (err) {
       console.error('Claim error:', err);
-      Alert.alert('Error', 'Failed to claim task');
+      if (isMountedRef.current) {
+        alert(t('common.error'), t('errors.failedToClaimTask'));
+      }
+    } finally {
+      if (isMountedRef.current) {
+        setIsSubmitting(false);
+      }
     }
-  };
+  }, [user, isMyPost, hasClaimed, postId, claimers, post, t, updateUserStreak]);
 
-  const handleApproveClaimer = async (claimerUserId) => {
-    try {
+  const handleApproveClaimer = useCallback(async (claimerUserId) => {
       const claimer = claimers.find(c => c.userId === claimerUserId);
       if (!claimer) return;
 
+    setIsSubmitting(true);
+    
+    try {
       const now = Date.now();
 
       await db.transact(
@@ -177,7 +227,7 @@ export default function PostDetailsScreen({ route, navigation }) {
           message: `You were approved to help with "${post.title || 'a task'}"!`,
           read: false,
           timestamp: now,
-          postTitle: post.title || 'Help Needed',
+          postTitle: post.title || t('post.helpNeeded') || 'Help Needed',
           createdAt: now
         })
       );
@@ -190,16 +240,24 @@ export default function PostDetailsScreen({ route, navigation }) {
         { postId, type: 'claimer_approved' }
       );
       
-      Alert.alert('Success', `${claimer.userName} has been approved!`);
+      if (isMountedRef.current) {
+        alert(t('common.success'), `${claimer.userName} ${t('postDetails.hasBeenApproved')}`);
+      }
     } catch (err) {
       console.error('Approve error:', err);
-      Alert.alert('Error', 'Failed to approve claimer');
+      if (isMountedRef.current) {
+        alert(t('common.error'), t('errors.failedToApprove'));
+      }
+    } finally {
+      if (isMountedRef.current) {
+        setIsSubmitting(false);
+      }
     }
-  };
+  }, [claimers, postId, post, t]);
 
-  const handleLike = async () => {
+  const handleLike = useCallback(async () => {
     if (!user) {
-      Alert.alert('Login Required', 'Please login to like posts');
+      alert(t('auth.loginRequired'), t('auth.pleaseLogin'));
       return;
     }
 
@@ -222,11 +280,11 @@ export default function PostDetailsScreen({ route, navigation }) {
     } catch (err) {
       console.error('Like error:', err);
     }
-  };
+  }, [user, isLiked, postId, likedBy, post, t]);
 
-  const handleAddComment = async () => {
+  const handleAddComment = useCallback(async () => {
     if (!user) {
-      Alert.alert('Login Required', 'Please login to comment');
+      alert(t('auth.loginRequired'), t('auth.pleaseLogin'));
       return;
     }
 
@@ -248,14 +306,28 @@ export default function PostDetailsScreen({ route, navigation }) {
           comments: (post.comments || 0) + 1
         })
       );
+      if (isMountedRef.current) {
       setNewComment('');
+      }
+      
+      // Update user's activity streak
+      updateUserStreak(user.id);
     } catch (err) {
       console.error('Comment error:', err);
-      Alert.alert('Error', 'Failed to add comment');
+      if (isMountedRef.current) {
+        alert(t('common.error'), t('errors.failedToAddComment'));
+      }
     }
-  };
+  }, [user, newComment, postId, post, t, updateUserStreak, alert]);
 
-  const handleMarkComplete = async () => {
+  const handleMarkComplete = useCallback(async () => {
+    if (!isClaimedByMe) {
+      alert(t('common.error'), t('postDetails.onlyClaimerCanComplete'));
+      return;
+    }
+
+    setIsSubmitting(true);
+    
     try {
       const now = Date.now();
       
@@ -276,7 +348,7 @@ export default function PostDetailsScreen({ route, navigation }) {
           message: `The helper has marked "${post.title || 'your task'}" as complete!`,
           read: false,
           timestamp: now,
-          postTitle: post.title || 'Help Needed',
+          postTitle: post.title || t('post.helpNeeded') || 'Help Needed',
           createdAt: now
         })
       );
@@ -289,18 +361,31 @@ export default function PostDetailsScreen({ route, navigation }) {
         { postId, type: 'task_marked_complete' }
       );
       
-      Alert.alert('Success', 'Task marked as complete! Waiting for poster confirmation.');
+      // Update user's activity streak
+      updateUserStreak(user.id);
+      
+      if (isMountedRef.current) {
+        alert(t('common.success'), t('postDetails.markedComplete'));
+      }
     } catch (err) {
       console.error('Complete error:', err);
-      Alert.alert('Error', 'Failed to mark as complete');
+      if (isMountedRef.current) {
+        alert(t('common.error'), t('errors.failedToMarkComplete'));
+      }
+    } finally {
+      if (isMountedRef.current) {
+        setIsSubmitting(false);
+      }
     }
-  };
+  }, [isClaimedByMe, postId, post, t, user, updateUserStreak]);
 
-  const handleConfirmAndRate = async () => {
+  const handleConfirmAndRate = useCallback(async () => {
     if (selectedRating === 0) {
-      Alert.alert('Rating Required', 'Please select a rating');
+      alert(t('postDetails.ratingRequired'), t('postDetails.pleaseSelectRating'));
       return;
     }
+
+    setIsSubmitting(true);
 
     try {
       const now = Date.now();
@@ -325,7 +410,7 @@ export default function PostDetailsScreen({ route, navigation }) {
           message: `Task completed! You received a ${selectedRating}-star rating.`,
           read: false,
           timestamp: now,
-          postTitle: post.title || 'Help Needed',
+          postTitle: post.title || t('post.helpNeeded') || 'Help Needed',
           rating: selectedRating,
           createdAt: now
         })
@@ -339,13 +424,58 @@ export default function PostDetailsScreen({ route, navigation }) {
         { postId, type: 'task_completed', rating: selectedRating }
       );
       
+      // Update user's activity streak (author confirming)
+      updateUserStreak(user.id);
+      
+      if (isMountedRef.current) {
       setShowRatingModal(false);
-      Alert.alert('Success', 'Task completed and helper rated!');
+        setSelectedRating(0);
+        alert(t('common.success'), t('postDetails.taskCompletedRated'));
+      }
     } catch (err) {
       console.error('Rate error:', err);
-      Alert.alert('Error', 'Failed to complete task');
+      if (isMountedRef.current) {
+        alert(t('common.error'), t('errors.failedToCompleteTask'));
+      }
+    } finally {
+      if (isMountedRef.current) {
+        setIsSubmitting(false);
+      }
     }
-  };
+  }, [selectedRating, postId, approvedClaimerId, post, t, user, updateUserStreak]);
+
+  const handleShare = useCallback(async () => {
+    if (!post) return;
+    try {
+      await Share.share({
+        message: `${t('post.helpNeeded') || 'Help Needed'}: ${post.title || t('post.helpNeeded')}\n\n${post.description}\n\nOpen in DOTO app`,
+      });
+    } catch (err) {
+      console.error('Share error:', err);
+    }
+  }, [post, t]);
+
+  // Early returns AFTER all hooks have been called
+  if (isLoading) {
+    return (
+      <View style={[styles.container, styles.centerContent, { backgroundColor: themeColors.background }]}>
+        <ActivityIndicator size="large" color={colors.primary} />
+        <Text style={[styles.loadingText, { color: themeColors.textSecondary }]}>Loading post...</Text>
+      </View>
+    );
+  }
+
+  if (error || !post) {
+    return (
+      <View style={[styles.container, styles.centerContent, { backgroundColor: themeColors.background }]}>
+        <Text style={styles.errorIcon}>⚠️</Text>
+        <Text style={[styles.errorText, { color: colors.error }]}>Post not found</Text>
+        <TouchableOpacity style={styles.backButton} onPress={() => navigation.goBack()}>
+          <Text style={styles.backButtonText}>Go Back</Text>
+        </TouchableOpacity>
+      </View>
+    );
+  }
 
   return (
     <View style={[styles.container, { backgroundColor: themeColors.background }]}>
@@ -354,8 +484,10 @@ export default function PostDetailsScreen({ route, navigation }) {
         <View style={[styles.postCard, { backgroundColor: themeColors.surface }]}>
           {/* Author Header */}
           <View style={styles.authorRow}>
-            <Image 
-              source={{ uri: post.avatar || `https://i.pravatar.cc/150?u=${post.authorId}` }}
+            <OptimizedAvatar 
+              source={post.avatar}
+              fallbackId={post.authorId}
+              size={48}
               style={styles.authorAvatar}
             />
             <View style={styles.authorInfo}>
@@ -383,9 +515,9 @@ export default function PostDetailsScreen({ route, navigation }) {
           {post.photos && post.photos.length > 0 && (
             <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.photosScroll}>
               {post.photos.map((photo, index) => (
-                <Image 
+                <OptimizedPostImage 
                   key={index}
-                  source={{ uri: typeof photo === 'string' ? photo : photo.preview }}
+                  source={typeof photo === 'string' ? photo : photo.preview}
                   style={styles.postPhoto}
                 />
               ))}
@@ -412,9 +544,9 @@ export default function PostDetailsScreen({ route, navigation }) {
               <Text style={styles.actionIcon}>💬</Text>
               <Text style={[styles.actionText, { color: themeColors.textSecondary }]}>{comments.length}</Text>
             </TouchableOpacity>
-            <TouchableOpacity style={styles.actionButton}>
+            <TouchableOpacity style={styles.actionButton} onPress={handleShare}>
               <Text style={styles.actionIcon}>↗️</Text>
-              <Text style={[styles.actionText, { color: themeColors.textSecondary }]}>Share</Text>
+              <Text style={[styles.actionText, { color: themeColors.textSecondary }]}>{t('common.share') || 'Share'}</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -478,8 +610,10 @@ export default function PostDetailsScreen({ route, navigation }) {
                     <Text style={styles.claimersTitle}>Choose a Claimer ({claimers.length})</Text>
                     {claimers.map((claimer) => (
                       <View key={claimer.userId} style={styles.claimerItem}>
-                        <Image 
-                          source={{ uri: claimer.userAvatar }}
+                        <OptimizedAvatar 
+                          source={claimer.userAvatar}
+                          fallbackId={claimer.userId}
+                          size={40}
                           style={styles.claimerAvatar}
                         />
                         <Text style={styles.claimerName}>{claimer.userName}</Text>
@@ -518,7 +652,7 @@ export default function PostDetailsScreen({ route, navigation }) {
           {/* Add Comment */}
           {user && (
             <View style={styles.addCommentRow}>
-              <Image source={{ uri: user.avatar }} style={styles.commentAvatar} />
+              <OptimizedAvatar source={user.avatar} fallbackId={user.id} size={36} style={styles.commentAvatar} />
               <TextInput
                 style={[styles.commentInput, { color: themeColors.text, borderColor: themeColors.border }]}
                 placeholder="Write a comment..."
@@ -541,8 +675,10 @@ export default function PostDetailsScreen({ route, navigation }) {
           ) : (
             comments.map((comment) => (
               <View key={comment.id} style={styles.commentItem}>
-                <Image 
-                  source={{ uri: comment.avatar || `https://i.pravatar.cc/150?u=${comment.authorId}` }}
+                <OptimizedAvatar 
+                  source={comment.avatar}
+                  fallbackId={comment.authorId}
+                  size={36}
                   style={styles.commentAvatar}
                 />
                 <View style={styles.commentContent}>
@@ -603,6 +739,9 @@ export default function PostDetailsScreen({ route, navigation }) {
     </View>
   );
 }
+
+// Export memoized component to prevent unnecessary re-renders
+export default React.memo(PostDetailsScreen);
 
 const styles = StyleSheet.create({
   container: {

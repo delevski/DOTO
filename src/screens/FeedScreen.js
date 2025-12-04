@@ -1,39 +1,72 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect, useRef, useCallback } from 'react';
 import {
   View,
   Text,
   StyleSheet,
+  FlatList,
   ScrollView,
   TouchableOpacity,
-  Image,
   RefreshControl,
   ActivityIndicator,
   Share,
-  Alert,
 } from 'react-native';
+import { useFocusEffect } from '@react-navigation/native';
 import { useAuthStore } from '../store/authStore';
 import { useSettingsStore } from '../store/settingsStore';
 import { useRTL, useRTLStyles } from '../context/RTLContext';
+import { useDialog } from '../context/DialogContext';
 import { db } from '../lib/instant';
 import { colors, spacing, borderRadius, typography, shadows } from '../styles/theme';
+import Icon from '../components/Icon';
+import { useFilteredPosts } from '../hooks/useFilteredPosts';
+import OptimizedImage, { OptimizedAvatar, OptimizedPostImage } from '../components/OptimizedImage';
 
-export default function FeedScreen({ navigation }) {
+// Maximum number of posts to render initially (for memory optimization)
+const INITIAL_RENDER_COUNT = 10;
+const MAX_RENDER_PER_BATCH = 5;
+
+function FeedScreen({ navigation }) {
   const user = useAuthStore((state) => state.user);
+  const isAuthenticated = useAuthStore((state) => state.isAuthenticated);
   const darkMode = useSettingsStore((state) => state.darkMode);
   const { t, isRTL } = useRTL();
   const rtlStyles = useRTLStyles();
+  const { alert } = useDialog();
   
   const [activeTab, setActiveTab] = useState('nearby');
   const [refreshing, setRefreshing] = useState(false);
+  
+  // Track mounted state for cleanup
+  const isMountedRef = useRef(true);
+  
+  useEffect(() => {
+    isMountedRef.current = true;
+    return () => {
+      isMountedRef.current = false;
+    };
+  }, []);
 
-  // Fetch posts and comments from real InstantDB
-  const { isLoading, error, data } = db.useQuery({ 
-    posts: {},
+  // Use the optimized filtered posts hook - fetches only relevant data for the active tab
+  const { 
+    posts, 
+    isLoading, 
+    error, 
+    refresh: refreshPosts,
+  } = useFilteredPosts(activeTab, { enabled: isAuthenticated });
+  
+  // Fetch comments separately (lightweight query)
+  const { data: commentsData } = db.useQuery(isAuthenticated ? { 
     comments: {}
-  });
-
-  const allPosts = data?.posts || [];
-  const allComments = data?.comments || [];
+  } : null);
+  
+  const allComments = useMemo(() => {
+    try {
+      return commentsData?.comments || [];
+    } catch (e) {
+      console.warn('FeedScreen: Error reading comments', e);
+      return [];
+    }
+  }, [commentsData?.comments]);
 
   const themeColors = {
     background: darkMode ? colors.backgroundDark : colors.background,
@@ -52,29 +85,6 @@ export default function FeedScreen({ navigation }) {
     return counts;
   }, [allComments]);
 
-  // Filter and sort posts based on active tab
-  const posts = useMemo(() => {
-    let filtered = [...allPosts];
-
-    switch (activeTab) {
-      case 'myPosts':
-        filtered = filtered.filter(post => post.authorId === user?.id);
-        break;
-      case 'myClaim':
-        filtered = filtered.filter(post => post.approvedClaimerId === user?.id);
-        break;
-      case 'nearby':
-      default:
-        filtered = filtered.filter(post => !post.approvedClaimerId);
-        break;
-    }
-
-    // Sort by timestamp (newest first)
-    filtered.sort((a, b) => (b.timestamp || b.createdAt || 0) - (a.timestamp || a.createdAt || 0));
-    
-    return filtered;
-  }, [allPosts, activeTab, user?.id]);
-
   const formatTime = (timestamp) => {
     if (!timestamp) return '';
     const now = Date.now();
@@ -87,9 +97,9 @@ export default function FeedScreen({ navigation }) {
     return t('feed.justNow');
   };
 
-  const handleLike = async (post) => {
+  const handleLike = useCallback(async (post) => {
     if (!user) {
-      Alert.alert(t('auth.loginRequired'), t('auth.pleaseLogin'));
+      alert(t('auth.loginRequired'), t('auth.pleaseLogin'));
       return;
     }
 
@@ -113,12 +123,13 @@ export default function FeedScreen({ navigation }) {
         );
       }
     } catch (err) {
+      if (!isMountedRef.current) return;
       console.error('Like error:', err);
-      Alert.alert(t('common.error'), t('errors.tryAgain'));
+      alert(t('common.error'), t('errors.tryAgain'));
     }
-  };
+  }, [user, t, alert]);
 
-  const handleShare = async (post) => {
+  const handleShare = useCallback(async (post) => {
     try {
       await Share.share({
         message: `${t('post.helpNeeded')}: ${post.title || t('post.helpNeeded')}\n\n${post.description}`,
@@ -126,19 +137,25 @@ export default function FeedScreen({ navigation }) {
     } catch (error) {
       console.error('Share error:', error);
     }
-  };
+  }, [t]);
 
-  const onRefresh = async () => {
+  const onRefresh = useCallback(async () => {
     setRefreshing(true);
+    // Refresh the posts cache
+    refreshPosts();
     // InstantDB auto-refreshes, but we simulate a delay for UX
-    setTimeout(() => setRefreshing(false), 1000);
-  };
+    setTimeout(() => {
+      if (isMountedRef.current) {
+        setRefreshing(false);
+      }
+    }, 1000);
+  }, [refreshPosts]);
 
   const tabs = [
     { key: 'nearby', label: t('feed.nearby') },
     { key: 'friends', label: t('feed.friends') },
     { key: 'myPosts', label: t('feed.myPosts') },
-    { key: 'myClaim', label: t('feed.myClaims') },
+    { key: 'myClaims', label: t('feed.myClaims') },
   ];
 
   const renderPostCard = (post) => {
@@ -166,9 +183,11 @@ export default function FeedScreen({ navigation }) {
       >
         {/* Header */}
         <View style={[styles.postHeader, { flexDirection: rtlStyles.row }]}>
-          <Image 
-            source={{ uri: post.avatar || `https://i.pravatar.cc/150?u=${post.authorId}` }}
-            style={[styles.avatar, isRTL ? { marginLeft: spacing.md, marginRight: 0 } : { marginRight: spacing.md }]}
+          <OptimizedAvatar 
+            source={post.avatar}
+            fallbackId={post.authorId}
+            size={44}
+            style={isRTL ? { marginLeft: spacing.md, marginRight: 0 } : { marginRight: spacing.md }}
           />
           <View style={[styles.headerInfo, { alignItems: isRTL ? 'flex-end' : 'flex-start' }]}>
             <Text style={[styles.authorName, { color: themeColors.text }]}>
@@ -200,25 +219,10 @@ export default function FeedScreen({ navigation }) {
           {post.description}
         </Text>
 
-        {/* Photos */}
-        {post.photos && post.photos.length > 0 && (
-          <View style={[styles.photosContainer, { flexDirection: rtlStyles.row }]}>
-            {post.photos.slice(0, 3).map((photo, index) => (
-              <Image 
-                key={index}
-                source={{ uri: typeof photo === 'string' ? photo : photo.preview }}
-                style={[
-                  styles.postPhoto,
-                  post.photos.length === 1 && styles.singlePhoto,
-                  post.photos.length === 2 && styles.doublePhoto,
-                ]}
-              />
-            ))}
-            {post.photos.length > 3 && (
-              <View style={styles.morePhotos}>
-                <Text style={styles.morePhotosText}>+{post.photos.length - 3}</Text>
-              </View>
-            )}
+        {/* Photos - Show photo count indicator if post has photos */}
+        {post.photosCount > 0 && (
+          <View style={styles.photosIndicator}>
+            <Text style={styles.photosIndicatorText}>📷 {post.photosCount} {post.photosCount === 1 ? 'photo' : 'photos'}</Text>
           </View>
         )}
 
@@ -232,20 +236,14 @@ export default function FeedScreen({ navigation }) {
           </View>
         )}
 
-        {/* Claimers */}
-        {claimers.length > 0 && !isApproved && (
+        {/* Claimers - Show count from stripped data */}
+        {(post.claimersCount > 0 || claimers.length > 0) && !isApproved && (
           <View style={[styles.claimersRow, { flexDirection: rtlStyles.row }]}>
-            <View style={[styles.claimerAvatars, { flexDirection: rtlStyles.row }]}>
-              {claimers.slice(0, 4).map((claimer, index) => (
-                <Image
-                  key={claimer.userId}
-                  source={{ uri: claimer.userAvatar || `https://i.pravatar.cc/150?u=${claimer.userId}` }}
-                  style={[styles.claimerAvatar, { marginLeft: index > 0 ? -8 : 0 }]}
-                />
-              ))}
+            <View style={styles.claimersIconContainer}>
+              <Text style={styles.claimersIcon}>👥</Text>
             </View>
             <Text style={[styles.claimersText, { color: themeColors.textSecondary }]}>
-              {claimers.length} {claimers.length === 1 ? t('feed.claimer') : t('feed.claimers')}
+              {post.claimersCount || claimers.length} {(post.claimersCount || claimers.length) === 1 ? t('feed.claimer') : t('feed.claimers')}
             </Text>
           </View>
         )}
@@ -306,7 +304,7 @@ export default function FeedScreen({ navigation }) {
           style={styles.filterButton}
           onPress={() => navigation.navigate('Settings')}
         >
-          <Text style={styles.filterIcon}>⚙️</Text>
+          <Icon name="settings" size={22} color={colors.primary} />
         </TouchableOpacity>
       </View>
 
@@ -338,24 +336,16 @@ export default function FeedScreen({ navigation }) {
         </ScrollView>
       </View>
 
-      {/* Posts List */}
-      <ScrollView
-        style={styles.postsContainer}
-        contentContainerStyle={styles.postsContent}
-        refreshControl={
-          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={[colors.primary]} />
-        }
-        showsVerticalScrollIndicator={false}
-      >
+      {/* Posts List - Using FlatList for better memory management */}
         {isLoading ? (
-          <View style={styles.centerContent}>
+        <View style={[styles.postsContainer, styles.centerContent]}>
             <ActivityIndicator size="large" color={colors.primary} />
             <Text style={[styles.loadingText, { color: themeColors.textSecondary }]}>
               {t('feed.loadingPosts')}
             </Text>
           </View>
         ) : error ? (
-          <View style={styles.centerContent}>
+        <View style={[styles.postsContainer, styles.centerContent]}>
             <Text style={styles.errorIcon}>⚠️</Text>
             <Text style={[styles.errorText, { color: colors.error }]}>
               {t('feed.errorLoading')}
@@ -365,12 +355,12 @@ export default function FeedScreen({ navigation }) {
             </Text>
           </View>
         ) : posts.length === 0 ? (
-          <View style={styles.centerContent}>
+        <View style={[styles.postsContainer, styles.centerContent]}>
             <Text style={styles.emptyIcon}>📋</Text>
-            <Text style={[styles.emptyText, { color: themeColors.textSecondary }]}>
-              {activeTab === 'myPosts' ? t('feed.noMyPosts') : 
-               activeTab === 'myClaim' ? t('feed.noMyClaims') : 
-               t('feed.noPosts')}
+          <Text style={[styles.emptyText, { color: themeColors.textSecondary }]}>
+            {activeTab === 'myPosts' ? t('feed.noMyPosts') : 
+             activeTab === 'myClaims' ? t('feed.noMyClaims') : 
+             t('feed.noPosts')}
             </Text>
             {activeTab === 'myPosts' && (
               <TouchableOpacity 
@@ -382,12 +372,34 @@ export default function FeedScreen({ navigation }) {
             )}
           </View>
         ) : (
-          posts.map(renderPostCard)
-        )}
-      </ScrollView>
+        <FlatList
+          data={posts}
+          keyExtractor={(item) => item.id}
+          renderItem={({ item }) => renderPostCard(item)}
+          contentContainerStyle={styles.postsContent}
+          refreshControl={
+            <RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={[colors.primary]} />
+          }
+          showsVerticalScrollIndicator={false}
+          // Memory optimization settings
+          initialNumToRender={INITIAL_RENDER_COUNT}
+          maxToRenderPerBatch={MAX_RENDER_PER_BATCH}
+          windowSize={5}
+          removeClippedSubviews={true}
+          // Prevent re-renders
+          getItemLayout={(data, index) => ({
+            length: 350, // Approximate item height
+            offset: 350 * index,
+            index,
+          })}
+        />
+      )}
     </View>
   );
 }
+
+// Export memoized component to prevent unnecessary re-renders
+export default React.memo(FeedScreen);
 
 const styles = StyleSheet.create({
   container: {
@@ -412,10 +424,7 @@ const styles = StyleSheet.create({
   filterButton: {
     padding: spacing.sm,
     borderRadius: borderRadius.lg,
-    backgroundColor: '#F3F4F6',
-  },
-  filterIcon: {
-    fontSize: 20,
+    backgroundColor: 'rgba(220, 38, 38, 0.1)',
   },
   tabsContainer: {
     borderBottomWidth: 1,
@@ -552,38 +561,20 @@ const styles = StyleSheet.create({
     lineHeight: 22,
     marginBottom: spacing.md,
   },
-  photosContainer: {
-    gap: spacing.sm,
-    marginBottom: spacing.md,
-    borderRadius: 12,
-    overflow: 'hidden',
-  },
-  postPhoto: {
-    flex: 1,
-    height: 120,
-    borderRadius: 8,
-  },
-  singlePhoto: {
-    height: 180,
-  },
-  doublePhoto: {
-    height: 140,
-  },
-  morePhotos: {
-    position: 'absolute',
-    right: 0,
-    bottom: 0,
-    width: '33%',
-    height: 120,
-    backgroundColor: 'rgba(0,0,0,0.5)',
-    justifyContent: 'center',
+  photosIndicator: {
+    flexDirection: 'row',
     alignItems: 'center',
+    backgroundColor: '#F3F4F6',
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
     borderRadius: 8,
+    alignSelf: 'flex-start',
+    marginBottom: spacing.md,
   },
-  morePhotosText: {
-    color: '#fff',
-    fontWeight: '700',
-    fontSize: 18,
+  photosIndicatorText: {
+    fontSize: 13,
+    color: '#6B7280',
+    fontWeight: '500',
   },
   locationRow: {
     alignItems: 'center',
@@ -606,13 +597,13 @@ const styles = StyleSheet.create({
     gap: spacing.sm,
     marginBottom: spacing.md,
   },
-  claimerAvatars: {},
-  claimerAvatar: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
-    borderWidth: 2,
-    borderColor: '#fff',
+  claimersIconContainer: {
+    backgroundColor: '#F0F9FF',
+    padding: spacing.xs,
+    borderRadius: 8,
+  },
+  claimersIcon: {
+    fontSize: 16,
   },
   claimersText: {
     fontSize: 13,

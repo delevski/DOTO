@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react';
+import React, { useState, useMemo, useCallback, useEffect, useRef } from 'react';
 import {
   View,
   Text,
@@ -8,63 +8,74 @@ import {
   Image,
   ActivityIndicator,
 } from 'react-native';
+import { useFocusEffect } from '@react-navigation/native';
 import { useAuthStore } from '../store/authStore';
 import { useSettingsStore } from '../store/settingsStore';
 import { useRTL, useRTLStyles } from '../context/RTLContext';
-import { db } from '../lib/instant';
 import { colors, spacing, borderRadius } from '../styles/theme';
+import { useUserStats } from '../hooks/useUserStats';
+import { getAllBadges, getUserEarnedBadges } from '../utils/badges';
+import { clearPostsCache } from '../hooks/useFilteredPosts';
+import Icon from '../components/Icon';
 
-export default function ProfileScreen({ navigation }) {
+function ProfileScreen({ navigation }) {
   const user = useAuthStore((state) => state.user);
   const logout = useAuthStore((state) => state.logout);
   const darkMode = useSettingsStore((state) => state.darkMode);
   const { t, isRTL } = useRTL();
   const rtlStyles = useRTLStyles();
+  
+  // Track screen focus - only query when focused
+  const [queryEnabled, setQueryEnabled] = useState(false);
+  
+  // Track mounted state for cleanup
+  const isMountedRef = useRef(true);
+  
+  useEffect(() => {
+    isMountedRef.current = true;
+    return () => {
+      isMountedRef.current = false;
+    };
+  }, []);
+  
+  // Only enable query when screen is focused
+  useFocusEffect(
+    useCallback(() => {
+      setQueryEnabled(true);
+      return () => setQueryEnabled(false);
+    }, [])
+  );
 
-  // Fetch user stats from InstantDB
-  const { isLoading, data } = db.useQuery({ 
-    posts: {},
-  });
+  // Use the comprehensive useUserStats hook with focus-based query (same logic as webapp)
+  const stats = useUserStats(user?.id, { enabled: queryEnabled });
+  
+  // Get all badges and calculate earned ones using shared badge logic
+  const allBadges = useMemo(() => getAllBadges(), []);
+  
+  const earnedBadgeIds = useMemo(() => {
+    if (stats.isLoading) return [];
+    return getUserEarnedBadges(stats);
+  }, [stats]);
 
-  const allPosts = data?.posts || [];
-
-  // Calculate stats
-  const stats = useMemo(() => {
-    if (!user) return { postsCreated: 0, tasksCompleted: 0, avgRating: 0 };
-
-    const postsCreated = allPosts.filter(p => p.authorId === user.id).length;
-    const tasksCompleted = allPosts.filter(p => p.approvedClaimerId === user.id && p.isCompleted).length;
-    
-    // Calculate average rating from completed tasks
-    const completedWithRating = allPosts.filter(
-      p => p.approvedClaimerId === user.id && p.helperRating
-    );
-    const avgRating = completedWithRating.length > 0
-      ? (completedWithRating.reduce((sum, p) => sum + p.helperRating, 0) / completedWithRating.length).toFixed(1)
-      : 0;
-
-    return { postsCreated, tasksCompleted, avgRating };
-  }, [allPosts, user]);
-
-  const themeColors = {
+  const themeColors = useMemo(() => ({
     background: darkMode ? colors.backgroundDark : colors.background,
     surface: darkMode ? colors.surfaceDark : colors.surface,
     text: darkMode ? colors.textDark : colors.text,
     textSecondary: darkMode ? colors.textSecondaryDark : colors.textSecondary,
     border: darkMode ? colors.borderDark : colors.border,
-  };
+  }), [darkMode]);
 
-  const BADGES = [
-    { id: 'first_post', name: t('profile.badgeNames.firstPost'), icon: '✍️', description: t('profile.badgeDescriptions.firstPost') },
-    { id: 'first_claim', name: t('profile.badgeNames.firstClaim'), icon: '🤝', description: t('profile.badgeDescriptions.firstClaim') },
-    { id: 'five_posts', name: t('profile.badgeNames.fivePosts'), icon: '📝', description: t('profile.badgeDescriptions.fivePosts') },
-    { id: 'super_helper', name: t('profile.badgeNames.superHelper'), icon: '🦸', description: t('profile.badgeDescriptions.superHelper') },
-    { id: 'community_hero', name: t('profile.badgeNames.communityHero'), icon: '🏆', description: t('profile.badgeDescriptions.communityHero') },
-  ];
+  // Format points with commas
+  const formatPoints = useCallback((points) => {
+    return points.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+  }, []);
 
-  const handleLogout = async () => {
+  const handleLogout = useCallback(async () => {
+    // Clear the posts cache before logging out
+    clearPostsCache();
+    // Logout
     await logout();
-  };
+  }, [logout]);
 
   if (!user) {
     return (
@@ -73,6 +84,18 @@ export default function ProfileScreen({ navigation }) {
         <Text style={[styles.emptyTitle, { color: themeColors.text }]}>{t('profile.notLoggedIn')}</Text>
         <Text style={[styles.emptyText, { color: themeColors.textSecondary }]}>
           {t('profile.pleaseLoginToView')}
+        </Text>
+      </View>
+    );
+  }
+
+  // Loading state
+  if (stats.isLoading) {
+    return (
+      <View style={[styles.container, styles.centerContent, { backgroundColor: themeColors.background }]}>
+        <ActivityIndicator size="large" color={colors.primary} />
+        <Text style={[styles.loadingText, { color: themeColors.textSecondary }]}>
+          {t('common.loading') || 'Loading...'}
         </Text>
       </View>
     );
@@ -102,12 +125,12 @@ export default function ProfileScreen({ navigation }) {
           </TouchableOpacity>
         </View>
 
-        {/* Stats */}
+        {/* Stats Card - Enhanced with points and streak */}
         <View style={[styles.statsCard, { backgroundColor: colors.primary }]}>
           <Text style={[styles.statsTitle, { textAlign: 'center' }]}>{t('profile.yourImpact')}</Text>
           <View style={[styles.statsRow, { flexDirection: rtlStyles.row }]}>
             <View style={styles.statItem}>
-              <Text style={styles.statValue}>{stats.avgRating || '-'}</Text>
+              <Text style={styles.statValue}>{stats.averageRating || '-'}</Text>
               <Text style={styles.statLabel}>{t('profile.rating')} ⭐</Text>
             </View>
             <View style={styles.statDivider} />
@@ -121,22 +144,45 @@ export default function ProfileScreen({ navigation }) {
               <Text style={styles.statLabel}>{t('profile.completed')}</Text>
             </View>
           </View>
+          
+          {/* Points and Streak Row */}
+          <View style={[styles.statsRowSecondary, { flexDirection: rtlStyles.row }]}>
+            <View style={styles.statItemSecondary}>
+              <Text style={styles.statValueSecondary}>{formatPoints(stats.totalPoints)}</Text>
+              <Text style={styles.statLabelSecondary}>{t('profile.points') || 'Points'}</Text>
+            </View>
+            {stats.currentStreak > 0 && (
+              <View style={styles.statItemSecondary}>
+                <Text style={styles.statValueSecondary}>🔥 {stats.currentStreak}</Text>
+                <Text style={styles.statLabelSecondary}>{t('profile.streak') || 'Day Streak'}</Text>
+              </View>
+            )}
+            <View style={styles.statItemSecondary}>
+              <Text style={styles.statValueSecondary}>{earnedBadgeIds.length}</Text>
+              <Text style={styles.statLabelSecondary}>{t('profile.badgesEarned') || 'Badges'}</Text>
+            </View>
+          </View>
         </View>
 
-        {/* Badges */}
+        {/* Badges - Using shared badge system */}
         <View style={[styles.sectionCard, { backgroundColor: themeColors.surface }]}>
-          <Text style={[styles.sectionTitle, { color: themeColors.text, textAlign: rtlStyles.textAlign }]}>
-            {t('profile.badges')}
-          </Text>
-          <View style={[styles.badgesGrid, { flexDirection: rtlStyles.row }]}>
-            {BADGES.map((badge) => {
-              const earned = user.earnedBadges?.includes(badge.id);
+          <View style={[styles.sectionHeader, { flexDirection: rtlStyles.row }]}>
+            <Text style={[styles.sectionTitle, { color: themeColors.text }]}>
+              {t('profile.badges')}
+            </Text>
+            <Text style={[styles.badgeCount, { color: themeColors.textSecondary }]}>
+              {earnedBadgeIds.length} / {allBadges.length}
+            </Text>
+          </View>
+          <View style={styles.badgesGrid}>
+            {allBadges.map((badge) => {
+              const earned = earnedBadgeIds.includes(badge.id);
               return (
                 <View 
                   key={badge.id}
                   style={[
                     styles.badgeItem,
-                    !earned && styles.badgeItemLocked
+                    earned ? { backgroundColor: badge.color + '20' } : styles.badgeItemLocked
                   ]}
                 >
                   <Text style={[styles.badgeIcon, !earned && styles.badgeIconLocked]}>
@@ -164,27 +210,39 @@ export default function ProfileScreen({ navigation }) {
             style={[styles.actionItem, { borderBottomColor: themeColors.border, flexDirection: rtlStyles.row }]}
             onPress={() => navigation.navigate('Settings')}
           >
-            <Text style={styles.actionIcon}>⚙️</Text>
+            <View style={styles.actionIcon}>
+              <Icon name="settings" size={22} color={colors.primary} />
+            </View>
             <Text style={[styles.actionLabel, { color: themeColors.text }]}>{t('profile.settings')}</Text>
-            <Text style={[styles.actionArrow, { color: themeColors.textSecondary, transform: isRTL ? [{ scaleX: -1 }] : [] }]}>›</Text>
+            <View style={[styles.actionArrow, { transform: isRTL ? [{ scaleX: -1 }] : [] }]}>
+              <Icon name="chevron-forward" size={20} color={themeColors.textSecondary} />
+            </View>
           </TouchableOpacity>
 
           <TouchableOpacity 
             style={[styles.actionItem, { borderBottomColor: themeColors.border, flexDirection: rtlStyles.row }]}
             onPress={() => navigation.navigate('Feed', { screen: 'myPosts' })}
           >
-            <Text style={styles.actionIcon}>📋</Text>
+            <View style={styles.actionIcon}>
+              <Icon name="document-text" size={22} color={colors.primary} />
+            </View>
             <Text style={[styles.actionLabel, { color: themeColors.text }]}>{t('profile.myPosts')}</Text>
-            <Text style={[styles.actionArrow, { color: themeColors.textSecondary, transform: isRTL ? [{ scaleX: -1 }] : [] }]}>›</Text>
+            <View style={[styles.actionArrow, { transform: isRTL ? [{ scaleX: -1 }] : [] }]}>
+              <Icon name="chevron-forward" size={20} color={themeColors.textSecondary} />
+            </View>
           </TouchableOpacity>
 
           <TouchableOpacity 
             style={[styles.actionItem, { borderBottomWidth: 0, flexDirection: rtlStyles.row }]}
             onPress={handleLogout}
           >
-            <Text style={styles.actionIcon}>🚪</Text>
+            <View style={styles.actionIcon}>
+              <Icon name="log-out" size={22} color={colors.error} />
+            </View>
             <Text style={[styles.actionLabel, { color: colors.error }]}>{t('auth.logout')}</Text>
-            <Text style={[styles.actionArrow, { color: themeColors.textSecondary, transform: isRTL ? [{ scaleX: -1 }] : [] }]}>›</Text>
+            <View style={[styles.actionArrow, { transform: isRTL ? [{ scaleX: -1 }] : [] }]}>
+              <Icon name="chevron-forward" size={20} color={themeColors.textSecondary} />
+            </View>
           </TouchableOpacity>
         </View>
 
@@ -201,6 +259,9 @@ export default function ProfileScreen({ navigation }) {
     </View>
   );
 }
+
+// Export memoized component to prevent unnecessary re-renders
+export default React.memo(ProfileScreen);
 
 const styles = StyleSheet.create({
   container: {
@@ -298,6 +359,39 @@ const styles = StyleSheet.create({
     width: 1,
     backgroundColor: 'rgba(255,255,255,0.3)',
   },
+  statsRowSecondary: {
+    justifyContent: 'space-around',
+    marginTop: spacing.lg,
+    paddingTop: spacing.lg,
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(255,255,255,0.2)',
+  },
+  statItemSecondary: {
+    alignItems: 'center',
+    flex: 1,
+  },
+  statValueSecondary: {
+    color: '#fff',
+    fontSize: 18,
+    fontWeight: '600',
+  },
+  statLabelSecondary: {
+    color: 'rgba(255,255,255,0.7)',
+    fontSize: 11,
+    marginTop: 2,
+  },
+  sectionHeader: {
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: spacing.lg,
+  },
+  badgeCount: {
+    fontSize: 14,
+  },
+  loadingText: {
+    marginTop: spacing.lg,
+    fontSize: 16,
+  },
   sectionCard: {
     borderRadius: 20,
     padding: spacing.xl,
@@ -306,11 +400,11 @@ const styles = StyleSheet.create({
   sectionTitle: {
     fontSize: 18,
     fontWeight: '700',
-    marginBottom: spacing.lg,
   },
   badgesGrid: {
+    flexDirection: 'row',
     flexWrap: 'wrap',
-    gap: spacing.md,
+    gap: spacing.sm,
   },
   badgeItem: {
     alignItems: 'center',
@@ -341,7 +435,12 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
   },
   actionIcon: {
-    fontSize: 22,
+    width: 40,
+    height: 40,
+    borderRadius: 10,
+    backgroundColor: 'rgba(220, 38, 38, 0.1)',
+    justifyContent: 'center',
+    alignItems: 'center',
     marginHorizontal: spacing.md,
   },
   actionLabel: {
@@ -350,7 +449,8 @@ const styles = StyleSheet.create({
     fontWeight: '500',
   },
   actionArrow: {
-    fontSize: 24,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   appInfo: {
     alignItems: 'center',

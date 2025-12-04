@@ -7,21 +7,24 @@ import {
   StyleSheet,
   KeyboardAvoidingView,
   Platform,
-  Alert,
   ActivityIndicator,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import Icon from '../components/Icon';
 import { colors, spacing, borderRadius, typography, shadows } from '../styles/theme';
+import { useDialog } from '../context/DialogContext';
+import { useRTL } from '../context/RTLContext';
 import { db } from '../lib/instant';
 import { generateVerificationCode } from '../utils/password';
-import { t } from '../utils/translations';
 
 export default function ForgotPasswordScreen({ navigation }) {
   const [email, setEmail] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [codeSent, setCodeSent] = useState(false);
   const [generatedCode, setGeneratedCode] = useState('');
+  
+  const { alert } = useDialog();
+  const { t } = useRTL();
 
   // Query all users
   const { data: usersData } = db.useQuery({ users: {} });
@@ -29,13 +32,13 @@ export default function ForgotPasswordScreen({ navigation }) {
 
   const handleSendCode = async () => {
     if (!email.trim()) {
-      Alert.alert(t('error'), t('pleaseEnterEmail'));
+      alert(t('common.error'), t('auth.pleaseEnterEmail'));
       return;
     }
 
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     if (!emailRegex.test(email.trim())) {
-      Alert.alert(t('error'), t('pleaseEnterValidEmail'));
+      alert(t('common.error'), t('auth.pleaseEnterValidEmail'));
       return;
     }
 
@@ -49,7 +52,7 @@ export default function ForgotPasswordScreen({ navigation }) {
       );
 
       if (!userRecord) {
-        Alert.alert(t('error'), t('accountNotFound'));
+        alert(t('common.error'), t('auth.accountNotFound'));
         setIsLoading(false);
         return;
       }
@@ -59,15 +62,14 @@ export default function ForgotPasswordScreen({ navigation }) {
       setCodeSent(true);
 
       // In production, send email with code
-      Alert.alert(
-        'Reset Code Sent',
-        `Your password reset code is: ${code}\n\n(In production, this would be sent to your email)`,
-        [{ text: 'OK' }]
+      alert(
+        t('auth.resetCodeSent'),
+        `Your password reset code is: ${code}\n\n(In production, this would be sent to your email)`
       );
 
     } catch (err) {
       console.error('Error:', err);
-      Alert.alert(t('error'), 'Failed to send reset code. Please try again.');
+      alert(t('common.error'), t('errors.failedToSendResetCode'));
     } finally {
       setIsLoading(false);
     }
@@ -87,7 +89,7 @@ export default function ForgotPasswordScreen({ navigation }) {
         >
           <Icon name="arrow-back" size={24} color={colors.white} />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>{t('forgotPassword')}</Text>
+        <Text style={styles.headerTitle}>{t('auth.forgotPassword')}</Text>
         <Text style={styles.headerSubtitle}>
           Enter your email and we'll send you a reset code
         </Text>
@@ -99,7 +101,7 @@ export default function ForgotPasswordScreen({ navigation }) {
       >
         <View style={styles.card}>
           <View style={styles.inputGroup}>
-            <Text style={styles.label}>{t('emailAddress')}</Text>
+            <Text style={styles.label}>{t('auth.email')}</Text>
             <View style={styles.inputWrapper}>
               <Icon name="mail-outline" size={20} color={colors.textSecondary} style={styles.inputIcon} />
               <TextInput

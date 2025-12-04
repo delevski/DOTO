@@ -5,9 +5,12 @@ import React, { useEffect, useState, useRef } from 'react';
 import { View, Text, StyleSheet, ActivityIndicator, I18nManager, Platform } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import * as Notifications from 'expo-notifications';
+import * as Updates from 'expo-updates';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useAuthStore } from './src/store/authStore';
 import { useSettingsStore } from './src/store/settingsStore';
 import { RTLProvider } from './src/context/RTLContext';
+import { DialogProvider } from './src/context/DialogContext';
 import AppNavigator from './src/navigation/AppNavigator';
 import { colors } from './src/styles/theme';
 import { 
@@ -59,6 +62,8 @@ class ErrorBoundary extends React.Component {
 // App Initializer Component
 function AppInitializer({ children }) {
   const [isReady, setIsReady] = useState(false);
+  const [needsRestart, setNeedsRestart] = useState(false);
+  const [isRestarting, setIsRestarting] = useState(false);
   const initAuth = useAuthStore((state) => state.initAuth);
   const initSettings = useSettingsStore((state) => state.initSettings);
   const isAuthLoading = useAuthStore((state) => state.isLoading);
@@ -70,6 +75,39 @@ function AppInitializer({ children }) {
   useEffect(() => {
     const initialize = async () => {
       try {
+        // First check for RTL mismatch BEFORE loading other settings
+        const storedSettings = await AsyncStorage.getItem('@doto_settings');
+        if (storedSettings) {
+          const { language: storedLang } = JSON.parse(storedSettings);
+          const shouldBeRTL = storedLang === 'he';
+          
+          // If there's a mismatch between native RTL and expected RTL
+          if (I18nManager.isRTL !== shouldBeRTL) {
+            console.log('RTL mismatch detected:', { 
+              nativeRTL: I18nManager.isRTL, 
+              shouldBeRTL,
+              storedLang 
+            });
+            
+            // Force RTL setting for next restart
+            I18nManager.allowRTL(shouldBeRTL);
+            I18nManager.forceRTL(shouldBeRTL);
+            
+            // Try to auto-reload the app
+            setIsRestarting(true);
+            try {
+              await Updates.reloadAsync();
+            } catch (reloadError) {
+              // If auto-reload fails (e.g., in dev mode), show manual restart prompt
+              console.log('Auto-reload not available:', reloadError.message);
+              setIsRestarting(false);
+              setNeedsRestart(true);
+              setIsReady(true);
+              return;
+            }
+          }
+        }
+        
         await Promise.all([
           initAuth(),
           initSettings(),
@@ -127,7 +165,7 @@ function AppInitializer({ children }) {
     };
   }, []);
 
-  // Apply RTL based on language
+  // Apply RTL based on language (for runtime language changes)
   useEffect(() => {
     const isRTL = language === 'he';
     if (I18nManager.isRTL !== isRTL) {
@@ -135,6 +173,35 @@ function AppInitializer({ children }) {
       I18nManager.forceRTL(isRTL);
     }
   }, [language]);
+
+  // Show restarting screen
+  if (isRestarting) {
+    return (
+      <View style={[styles.loadingContainer, darkMode && styles.loadingContainerDark]}>
+        <Text style={styles.logo}>DOTO</Text>
+        <ActivityIndicator size="large" color={colors.primary} />
+        <Text style={[styles.loadingText, darkMode && styles.loadingTextDark]}>
+          מפעיל מחדש... / Restarting...
+        </Text>
+      </View>
+    );
+  }
+
+  // Show restart prompt if auto-reload failed
+  if (needsRestart) {
+    return (
+      <View style={[styles.loadingContainer, darkMode && styles.loadingContainerDark]}>
+        <Text style={styles.logo}>DOTO</Text>
+        <Text style={[styles.restartTitle, darkMode && styles.loadingTextDark]}>
+          נדרש רענון / Restart Required
+        </Text>
+        <Text style={[styles.restartText, darkMode && styles.loadingTextDark]}>
+          אנא סגור ופתח מחדש את האפליקציה{'\n'}
+          Please close and reopen the app
+        </Text>
+      </View>
+    );
+  }
 
   if (!isReady || isAuthLoading || isSettingsLoading) {
     return (
@@ -158,10 +225,12 @@ export default function App() {
   return (
     <ErrorBoundary>
       <RTLProvider>
-        <StatusBar style={darkMode ? 'light' : 'dark'} />
-        <AppInitializer>
-          <AppNavigator />
-        </AppInitializer>
+        <DialogProvider>
+          <StatusBar style={darkMode ? 'light' : 'dark'} />
+          <AppInitializer>
+            <AppNavigator />
+          </AppInitializer>
+        </DialogProvider>
       </RTLProvider>
     </ErrorBoundary>
   );
@@ -190,6 +259,21 @@ const styles = StyleSheet.create({
   },
   loadingTextDark: {
     color: colors.textSecondaryDark,
+  },
+  restartTitle: {
+    fontSize: 20,
+    fontWeight: '600',
+    color: colors.text,
+    marginTop: 20,
+    marginBottom: 12,
+    textAlign: 'center',
+  },
+  restartText: {
+    fontSize: 14,
+    color: colors.textSecondary,
+    textAlign: 'center',
+    paddingHorizontal: 40,
+    lineHeight: 22,
   },
   errorContainer: {
     flex: 1,

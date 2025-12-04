@@ -78,13 +78,45 @@ button.button-center-text * {
 
 /* Force center alignment for verification code inputs */
 input[inputmode="numeric"],
-input[maxlength="1"] {
+input[maxlength="1"],
+input[maxlength="6"][pattern="[0-9]*"] {
   text-align: center !important;
+  -webkit-text-security: none;
+  -moz-appearance: textfield;
 }
 
 [dir="rtl"] input[inputmode="numeric"],
-[dir="rtl"] input[maxlength="1"] {
+[dir="rtl"] input[maxlength="1"],
+[dir="rtl"] input[maxlength="6"][pattern="[0-9]*"] {
   text-align: center !important;
+}
+
+/* Mobile-friendly verification code inputs */
+input[pattern="[0-9]*"][inputmode="numeric"] {
+  -webkit-appearance: none;
+  -moz-appearance: textfield;
+  appearance: none;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0;
+  touch-action: manipulation;
+  user-select: text;
+  -webkit-user-select: text;
+}
+
+/* Hide spinner for number-like inputs */
+input[inputmode="numeric"]::-webkit-outer-spin-button,
+input[inputmode="numeric"]::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+/* Improve touch target size on mobile */
+@media (max-width: 640px) {
+  input[pattern="[0-9]*"][inputmode="numeric"] {
+    min-height: 56px;
+    min-width: 48px;
+    font-size: 24px;
+  }
 }
 
 /* ============================================
