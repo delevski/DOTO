@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -16,6 +16,8 @@ import { useRTL } from '../context/RTLContext';
 import { useDialog } from '../context/DialogContext';
 import { db } from '../lib/instant';
 import { colors, spacing, borderRadius } from '../styles/theme';
+import { compressImage } from '../utils/imageCompression';
+import { useUserProfileSync } from '../hooks/useUserProfileSync';
 
 export default function EditProfileScreen({ navigation }) {
   const user = useAuthStore((state) => state.user);
@@ -24,10 +26,22 @@ export default function EditProfileScreen({ navigation }) {
   const { t } = useRTL();
   const { alert } = useDialog();
 
+  // Sync user profile from InstantDB (picks up changes made from web app)
+  useUserProfileSync();
+
   const [name, setName] = useState(user?.name || '');
   const [bio, setBio] = useState(user?.bio || '');
   const [avatar, setAvatar] = useState(user?.avatar || '');
   const [isLoading, setIsLoading] = useState(false);
+  
+  // Update form when user data changes (from sync)
+  useEffect(() => {
+    if (user) {
+      setName(user.name || '');
+      setBio(user.bio || '');
+      setAvatar(user.avatar || '');
+    }
+  }, [user?.updatedAt]); // Only re-run when updatedAt changes (indicates sync)
 
   const themeColors = {
     background: darkMode ? colors.backgroundDark : colors.background,
@@ -49,14 +63,24 @@ export default function EditProfileScreen({ navigation }) {
         mediaTypes: ImagePicker.MediaTypeOptions.Images,
         allowsEditing: true,
         aspect: [1, 1],
-        quality: 0.5,
-        base64: true,
+        quality: 0.8,
       });
 
       if (!result.canceled && result.assets[0]) {
         const asset = result.assets[0];
-        const base64Image = `data:image/jpeg;base64,${asset.base64}`;
-        setAvatar(base64Image);
+        // Compress the image to a small size for profile avatars
+        try {
+          const compressed = await compressImage(asset.uri, { 
+            maxWidth: 400, 
+            quality: 0.7,
+            maxFileSize: 200 * 1024, // 200KB max for avatars
+          });
+          setAvatar(compressed.base64);
+          console.log('Avatar compressed successfully');
+        } catch (compressErr) {
+          console.error('Image compression error:', compressErr);
+          alert(t('common.error'), t('errors.failedToPickImage'));
+        }
       }
     } catch (err) {
       console.error('Image picker error:', err);

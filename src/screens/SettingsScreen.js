@@ -10,17 +10,19 @@ import {
   TextInput,
   ActivityIndicator,
   Platform,
+  Alert as RNAlert,
 } from 'react-native';
 import * as Notifications from 'expo-notifications';
 import { useAuthStore } from '../store/authStore';
 import { useSettingsStore } from '../store/settingsStore';
 import { useRTL, useRTLStyles } from '../context/RTLContext';
 import { useDialog } from '../context/DialogContext';
+import { setLanguage as setRTLanguage } from '../i18n';
 import { colors, spacing, borderRadius } from '../styles/theme';
 import Icon from '../components/Icon';
 import { db } from '../lib/instant';
 import { hashPassword, verifyPassword } from '../utils/password';
-import { registerForPushNotificationsAsync } from '../utils/notifications';
+import { registerForPushNotificationsAsync, savePushTokenToUser } from '../utils/notifications';
 
 export default function SettingsScreen({ navigation }) {
   const user = useAuthStore((state) => state.user);
@@ -28,11 +30,9 @@ export default function SettingsScreen({ navigation }) {
   const logout = useAuthStore((state) => state.logout);
   const updateUser = useAuthStore((state) => state.updateUser);
   const darkMode = useSettingsStore((state) => state.darkMode);
-  const language = useSettingsStore((state) => state.language);
   const setDarkMode = useSettingsStore((state) => state.setDarkMode);
-  const setLanguage = useSettingsStore((state) => state.setLanguage);
   
-  const { t, isRTL } = useRTL();
+  const { t, isRTL, language, setLanguage } = useRTL();
   const rtlStyles = useRTLStyles();
   const { alert } = useDialog();
   
@@ -96,74 +96,63 @@ export default function SettingsScreen({ navigation }) {
     );
   };
 
-  const handleLanguageChange = () => {
-    const newLang = language === 'en' ? 'he' : 'en';
-    setLanguage(newLang, user?.id);
-    
-    // Show alert about potential restart needed for full RTL support
-    if (newLang === 'he') {
-      alert(
-        'שפה שונתה',
-        'ייתכן שתצטרך להפעיל מחדש את האפליקציה כדי לראות את כל השינויים.'
-      );
-    }
-  };
 
-  // Debug: Test push notifications
+  // Debug: Test push notifications - SIMPLIFIED
   const testPushNotifications = async () => {
+    let info = '';
+    
     try {
-      // Check current permission status
-      const { status: existingStatus } = await Notifications.getPermissionsAsync();
-      console.log('Current notification permission status:', existingStatus);
+      info += '1. Checking permissions...\n';
+      const { status } = await Notifications.getPermissionsAsync();
+      info += `   Status: ${status}\n`;
       
-      let finalStatus = existingStatus;
-      
-      // Request permission if not granted
-      if (existingStatus !== 'granted') {
-        const { status } = await Notifications.requestPermissionsAsync();
-        finalStatus = status;
-        console.log('New permission status after request:', finalStatus);
+      if (status !== 'granted') {
+        const { status: newStatus } = await Notifications.requestPermissionsAsync();
+        info += `   After request: ${newStatus}\n`;
+        if (newStatus !== 'granted') {
+          RNAlert.alert('Permission Denied', info);
+          return;
+        }
       }
       
-      if (finalStatus !== 'granted') {
-        alert(
-          t('errors.permissionDenied'),
-          `Notification permission status: ${finalStatus}\n\nPlease enable notifications in your device settings:\nSettings → Apps → DOTO → Notifications`
-        );
-        return;
+      info += '2. Getting FCM token...\n';
+      try {
+        const fcm = await Notifications.getDevicePushTokenAsync();
+        info += `   FCM: ${fcm?.data ? 'GOT IT!' : 'NONE'}\n`;
+        if (fcm?.data) {
+          info += `   Token: ${String(fcm.data).slice(0, 40)}...\n`;
+          
+          // Save to DB
+          if (user?.id) {
+            info += '3. Saving to DB...\n';
+            await db.transact(
+              db.tx.users[user.id].update({
+                pushToken: `ExponentPushToken[${fcm.data}]`,
+                pushTokenUpdatedAt: Date.now()
+              })
+            );
+            info += '   SAVED!\n';
+          }
+          
+          // Send local notification
+          info += '4. Sending test notification...\n';
+          await Notifications.scheduleNotificationAsync({
+            content: {
+              title: '🎉 Success!',
+              body: 'Push notifications work!',
+            },
+            trigger: { seconds: 2 },
+          });
+          info += '   SENT! Check in 2 seconds.\n';
+        }
+      } catch (fcmErr) {
+        info += `   FCM Error: ${fcmErr.message}\n`;
       }
       
-      // Get push token
-      const token = await registerForPushNotificationsAsync();
-      console.log('Push token result:', token);
+      RNAlert.alert('Push Test Result', info);
       
-      if (token) {
-        // Schedule a local test notification
-        await Notifications.scheduleNotificationAsync({
-          content: {
-            title: "🎉 Test Notification",
-            body: "Push notifications are working on your G-24!",
-            data: { test: true },
-          },
-          trigger: { seconds: 2 },
-        });
-        
-        alert(
-          t('common.success'),
-          `Push token: ${token.substring(0, 30)}...\n\nA test notification will appear in 2 seconds!`
-        );
-      } else {
-        alert(
-          t('common.error'),
-          'Could not get push token. Check:\n\n1. Are you using Expo Go or a development build?\n2. Is the device connected to internet?\n3. Check console logs for errors.'
-        );
-      }
-    } catch (error) {
-      console.error('Test notification error:', error);
-      alert(
-        t('common.error'),
-        `Failed to test notifications:\n${error.message}`
-      );
+    } catch (err) {
+      RNAlert.alert('Error', `${info}\n\nERROR: ${err.message}`);
     }
   };
 
@@ -288,9 +277,8 @@ export default function SettingsScreen({ navigation }) {
             />
           </View>
 
-          <TouchableOpacity 
+          <View 
             style={[styles.settingItem, { borderBottomWidth: 0, flexDirection: rtlStyles.row }]}
-            onPress={handleLanguageChange}
           >
             <View style={[styles.settingInfo, { flexDirection: rtlStyles.row }]}>
               <View style={styles.settingIcon}>
@@ -335,7 +323,7 @@ export default function SettingsScreen({ navigation }) {
                 </Text>
               </TouchableOpacity>
             </View>
-          </TouchableOpacity>
+          </View>
         </View>
 
         {/* Account Section */}

@@ -18,6 +18,19 @@ import { db } from '../lib/instant';
 import { verifyPassword } from '../utils/password';
 import { colors, spacing, borderRadius, typography } from '../styles/theme';
 import Icon from '../components/Icon';
+import {
+  useGoogleAuth,
+  useFacebookAuth,
+  fetchGoogleUserProfile,
+  fetchGoogleContacts,
+  fetchFacebookUserProfile,
+  fetchFacebookFriends,
+  findOrCreateSocialUser,
+  isGoogleConfigured,
+  isFacebookConfigured,
+  isRunningInExpoGo,
+  getFacebookAuthDebugInfo,
+} from '../lib/socialAuth';
 
 export default function LoginScreen({ navigation }) {
   const login = useAuthStore((state) => state.login);
@@ -40,9 +53,34 @@ export default function LoginScreen({ navigation }) {
   const inputRefs = useRef([]);
   const cooldownTimerRef = useRef(null);
 
+  // Social login state
+  const [isSocialLoading, setIsSocialLoading] = useState(false);
+  const [socialLoadingType, setSocialLoadingType] = useState(null); // 'google' | 'facebook'
+
+  // Social auth hooks
+  const { request: googleRequest, response: googleResponse, promptAsync: googlePromptAsync } = useGoogleAuth();
+  const { promptAsync: facebookPromptAsync } = useFacebookAuth();
+
   // Query all users from InstantDB
   const { data: usersData, isLoading: isQueryLoading } = db.useQuery({ users: {} });
   const allUsers = usersData?.users || [];
+
+  // Handle Google OAuth response
+  useEffect(() => {
+    if (googleResponse?.type === 'success') {
+      handleGoogleLoginSuccess(googleResponse.authentication.accessToken);
+    } else if (googleResponse?.type === 'error') {
+      setError(t('auth.googleLoginFailed'));
+      setIsSocialLoading(false);
+      setSocialLoadingType(null);
+    } else if (googleResponse?.type === 'dismiss') {
+      setIsSocialLoading(false);
+      setSocialLoadingType(null);
+    }
+  }, [googleResponse]);
+
+  // Note: Facebook OAuth response is now handled directly in handleFacebookLogin
+  // since we're using the native Facebook SDK which returns results immediately
 
   // Cleanup timer on unmount
   useEffect(() => {
@@ -184,7 +222,7 @@ export default function LoginScreen({ navigation }) {
     const enteredCode = verificationCode.map(c => c.trim()).join('').trim();
     
     if (enteredCode.length !== 6) {
-      setError(t('auth.enterFullCode') || 'Please enter the full 6-digit code');
+      setError(t('auth.enterFullCode'));
       return;
     }
 
@@ -204,7 +242,7 @@ export default function LoginScreen({ navigation }) {
       if (pendingUser) {
         await login(pendingUser);
       } else {
-        setError('Session expired. Please try again.');
+        setError(t('auth.sessionExpired'));
         return;
       }
     } catch (err) {
@@ -212,20 +250,20 @@ export default function LoginScreen({ navigation }) {
       const rawError = err.body?.message || err.message || 'Unknown error';
       
       // Show more specific error message
-      let errorMessage = t('auth.invalidCode') || 'Invalid code. Please try again.';
+      let errorMessage = t('auth.invalidCode');
       
       // Parse InstantDB error messages
       if (rawError.toLowerCase().includes('expired')) {
-        errorMessage = 'Code expired. Please request a new one.';
+        errorMessage = t('auth.codeExpired');
       } else if (rawError.toLowerCase().includes('invalid')) {
-        errorMessage = 'Invalid code. Please check and try again.';
+        errorMessage = t('auth.codeInvalid');
       } else if (rawError.toLowerCase().includes('used')) {
-        errorMessage = 'Code already used. Please request a new one.';
+        errorMessage = t('auth.codeAlreadyUsed');
       } else if (rawError.toLowerCase().includes('not found')) {
-        errorMessage = 'Email not found. Please check your email address.';
+        errorMessage = t('auth.emailNotFound');
       } else {
         // Show the actual error for debugging
-        errorMessage = `Verification failed: ${rawError}`;
+        errorMessage = `${t('auth.verificationFailed')}: ${rawError}`;
       }
       
       setError(errorMessage);
@@ -266,6 +304,136 @@ export default function LoginScreen({ navigation }) {
       setError(err.body?.message || err.message || t('errors.tryAgain'));
     } finally {
       setIsResending(false);
+    }
+  };
+
+  // Handle Google login button press
+  const handleGoogleLogin = async () => {
+    if (!isGoogleConfigured()) {
+      alert(
+        t('auth.notConfigured'),
+        t('auth.googleNotConfigured')
+      );
+      return;
+    }
+    
+    setError('');
+    setIsSocialLoading(true);
+    setSocialLoadingType('google');
+    
+    try {
+      await googlePromptAsync();
+    } catch (err) {
+      console.error('Google login error:', err);
+      setError(t('auth.googleLoginFailed'));
+      setIsSocialLoading(false);
+      setSocialLoadingType(null);
+    }
+  };
+
+  // Handle successful Google login
+  const handleGoogleLoginSuccess = async (accessToken) => {
+    try {
+      // Fetch Google user profile
+      const profile = await fetchGoogleUserProfile(accessToken);
+      
+      // Fetch Google contacts for friends feature
+      const contacts = await fetchGoogleContacts(accessToken);
+      
+      // Find or create user in InstantDB
+      const user = await findOrCreateSocialUser(profile, contacts, allUsers);
+      
+      // Login the user
+      await login(user);
+      
+      alert(
+        t('auth.welcomeBack'),
+        t('auth.loginSuccess')
+      );
+    } catch (err) {
+      console.error('Google login success handler error:', err);
+      setError(t('auth.googleLoginFailed'));
+    } finally {
+      setIsSocialLoading(false);
+      setSocialLoadingType(null);
+    }
+  };
+
+  // Handle Facebook login button press
+  const handleFacebookLogin = async () => {
+    if (!isFacebookConfigured()) {
+      alert(
+        t('auth.notConfigured'),
+        t('auth.facebookNotConfigured')
+      );
+      return;
+    }
+    
+    // Log debug info for troubleshooting
+    if (__DEV__) {
+      console.log('Facebook Auth Debug Info:', getFacebookAuthDebugInfo());
+    }
+    
+    setError('');
+    setIsSocialLoading(true);
+    setSocialLoadingType('facebook');
+    
+    try {
+      // Use native Facebook SDK - this will open Facebook app if installed
+      const result = await facebookPromptAsync();
+      
+      // Log the result for debugging
+      if (__DEV__) {
+        console.log('Facebook native login result:', result);
+      }
+      
+      // Handle result from native Facebook SDK
+      if (result?.type === 'success' && result.accessToken) {
+        // Native SDK returns accessToken directly
+        await handleFacebookLoginSuccess(result.accessToken);
+      } else if (result?.type === 'cancel') {
+        // User cancelled
+        setIsSocialLoading(false);
+        setSocialLoadingType(null);
+      } else if (result?.type === 'error') {
+        setError(result.error || t('auth.facebookLoginFailed'));
+        setIsSocialLoading(false);
+        setSocialLoadingType(null);
+      }
+    } catch (err) {
+      console.error('Facebook login error:', err);
+      const errorMessage = err.message || t('auth.facebookLoginFailed');
+      setError(errorMessage);
+      setIsSocialLoading(false);
+      setSocialLoadingType(null);
+    }
+  };
+
+  // Handle successful Facebook login
+  const handleFacebookLoginSuccess = async (accessToken) => {
+    try {
+      // Fetch Facebook user profile
+      const profile = await fetchFacebookUserProfile(accessToken);
+      
+      // Fetch Facebook friends who also use the app
+      const friends = await fetchFacebookFriends(accessToken);
+      
+      // Find or create user in InstantDB
+      const user = await findOrCreateSocialUser(profile, friends, allUsers);
+      
+      // Login the user
+      await login(user);
+      
+      alert(
+        t('auth.welcomeBack'),
+        t('auth.loginSuccess')
+      );
+    } catch (err) {
+      console.error('Facebook login success handler error:', err);
+      setError(t('auth.facebookLoginFailed'));
+    } finally {
+      setIsSocialLoading(false);
+      setSocialLoadingType(null);
     }
   };
 
@@ -388,26 +556,50 @@ export default function LoginScreen({ navigation }) {
               {/* Social Buttons */}
               <View style={[styles.socialButtons, { flexDirection: rtlStyles.row }]}>
                 <TouchableOpacity 
-                  style={[styles.socialButton, { borderColor: themeColors.border, flexDirection: rtlStyles.row }]}
+                  style={[
+                    styles.socialButton, 
+                    { borderColor: themeColors.border, flexDirection: rtlStyles.row },
+                    (isSocialLoading && socialLoadingType === 'google') && styles.buttonDisabled
+                  ]}
+                  onPress={handleGoogleLogin}
+                  disabled={isSocialLoading || isLoading}
                   activeOpacity={0.8}
                 >
-                  <View style={[styles.socialIconWrapper, { backgroundColor: 'rgba(219, 68, 55, 0.1)' }]}>
-                    <Icon name="logo-google" size={18} color="#DB4437" />
-                  </View>
-                  <Text style={[styles.socialButtonText, { color: themeColors.text }]}>
-                    {t('auth.google')}
-                  </Text>
+                  {isSocialLoading && socialLoadingType === 'google' ? (
+                    <ActivityIndicator size="small" color="#DB4437" />
+                  ) : (
+                    <>
+                      <View style={[styles.socialIconWrapper, { backgroundColor: 'rgba(219, 68, 55, 0.1)' }]}>
+                        <Icon name="logo-google" size={18} color="#DB4437" />
+                      </View>
+                      <Text style={[styles.socialButtonText, { color: themeColors.text }]}>
+                        {t('auth.google')}
+                      </Text>
+                    </>
+                  )}
                 </TouchableOpacity>
                 <TouchableOpacity 
-                  style={[styles.socialButton, { borderColor: themeColors.border, flexDirection: rtlStyles.row }]}
+                  style={[
+                    styles.socialButton, 
+                    { borderColor: themeColors.border, flexDirection: rtlStyles.row },
+                    (isSocialLoading && socialLoadingType === 'facebook') && styles.buttonDisabled
+                  ]}
+                  onPress={handleFacebookLogin}
+                  disabled={isSocialLoading || isLoading}
                   activeOpacity={0.8}
                 >
-                  <View style={[styles.socialIconWrapper, { backgroundColor: 'rgba(66, 103, 178, 0.1)' }]}>
-                    <Icon name="logo-facebook" size={18} color="#4267B2" />
-                  </View>
-                  <Text style={[styles.socialButtonText, { color: themeColors.text }]}>
-                    {t('auth.facebook')}
-                  </Text>
+                  {isSocialLoading && socialLoadingType === 'facebook' ? (
+                    <ActivityIndicator size="small" color="#4267B2" />
+                  ) : (
+                    <>
+                      <View style={[styles.socialIconWrapper, { backgroundColor: 'rgba(66, 103, 178, 0.1)' }]}>
+                        <Icon name="logo-facebook" size={18} color="#4267B2" />
+                      </View>
+                      <Text style={[styles.socialButtonText, { color: themeColors.text }]}>
+                        {t('auth.facebook')}
+                      </Text>
+                    </>
+                  )}
                 </TouchableOpacity>
               </View>
             </>
@@ -479,11 +671,11 @@ export default function LoginScreen({ navigation }) {
               {/* Resend Code Section */}
               <View style={styles.resendContainer}>
                 <Text style={[styles.resendText, { color: themeColors.textSecondary }]}>
-                  {t('auth.didntReceiveCode') || "Didn't receive the code?"}
+                  {t('auth.didntReceiveCode')}
                 </Text>
                 {resendCooldown > 0 ? (
                   <Text style={[styles.cooldownText, { color: themeColors.textSecondary }]}>
-                    {t('auth.resendIn') || 'Resend in'} {resendCooldown}s
+                    {t('auth.resendIn')} {resendCooldown}s
                   </Text>
                 ) : (
                   <TouchableOpacity 
@@ -495,7 +687,7 @@ export default function LoginScreen({ navigation }) {
                       <ActivityIndicator size="small" color={colors.primary} />
                     ) : (
                       <Text style={styles.resendLink}>
-                        {t('auth.resendCode') || 'Resend Code'}
+                        {t('auth.resendCode')}
                       </Text>
                     )}
                   </TouchableOpacity>

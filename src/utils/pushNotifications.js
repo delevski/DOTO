@@ -17,6 +17,22 @@ const notificationMessages = {
       title: 'Great Job!',
       body: (postTitle, rating) => `Task "${postTitle}" is done! You received ${rating} stars.`,
     },
+    newMessage: {
+      title: 'New Message!',
+      body: (userName) => `${userName} sent you a message`,
+    },
+    postLiked: {
+      title: 'Someone Liked Your Post!',
+      body: (userName, postTitle) => `${userName} liked "${postTitle}"`,
+    },
+    newComment: {
+      title: 'New Comment!',
+      body: (userName, postTitle) => `${userName} commented on "${postTitle}"`,
+    },
+    newRating: {
+      title: 'You Got Rated!',
+      body: (userName, rating) => `${userName} gave you ${rating} stars!`,
+    },
   },
   he: {
     newClaim: {
@@ -34,6 +50,22 @@ const notificationMessages = {
     taskAccepted: {
       title: 'עבודה מצוינת!',
       body: (postTitle, rating) => `המשימה "${postTitle}" הושלמה! קיבלת ${rating} כוכבים.`,
+    },
+    newMessage: {
+      title: 'הודעה חדשה!',
+      body: (userName) => `${userName} שלח/ה לך הודעה`,
+    },
+    postLiked: {
+      title: 'מישהו אהב את הפוסט שלך!',
+      body: (userName, postTitle) => `${userName} אהב/ה את "${postTitle}"`,
+    },
+    newComment: {
+      title: 'תגובה חדשה!',
+      body: (userName, postTitle) => `${userName} הגיב/ה על "${postTitle}"`,
+    },
+    newRating: {
+      title: 'קיבלת דירוג!',
+      body: (userName, rating) => `${userName} נתן/ה לך ${rating} כוכבים!`,
     },
   },
 };
@@ -121,18 +153,33 @@ export async function sendPushNotification(pushToken, title, body, data = {}) {
  * @returns {Promise<boolean>} Success status
  */
 export async function sendPushNotificationToUser(userId, notificationType, params = {}, data = {}) {
+  console.log('=== sendPushNotificationToUser START ===');
+  console.log('Target userId:', userId);
+  console.log('Notification type:', notificationType);
+  console.log('Params:', params);
+  
   if (!userId) {
-    console.log('No userId provided');
+    console.log('ERROR: No userId provided');
     return false;
   }
 
   try {
     // Import here to avoid circular dependencies
-    const { getUserPushTokenAndLanguage } = await import('./notifications');
+    const notificationsModule = await import('./notifications');
+    const getUserPushTokenAndLanguage = notificationsModule.getUserPushTokenAndLanguage;
+    
+    console.log('Fetching push token for user...');
     const userInfo = await getUserPushTokenAndLanguage(userId);
+    
+    console.log('User info retrieved:', {
+      hasToken: !!userInfo?.pushToken,
+      tokenPreview: userInfo?.pushToken ? userInfo.pushToken.substring(0, 30) + '...' : 'NONE',
+      language: userInfo?.language
+    });
 
     if (!userInfo?.pushToken) {
-      console.log(`No push token found for user ${userId}`);
+      console.log(`ERROR: No push token found for user ${userId}`);
+      console.log('The user needs to have the app open at least once to register for push notifications');
       return false;
     }
 
@@ -142,10 +189,15 @@ export async function sendPushNotificationToUser(userId, notificationType, param
       userInfo.language || 'en', 
       params
     );
+    
+    console.log('Sending notification with:', { title, body });
 
-    return await sendPushNotification(userInfo.pushToken, title, body, data);
+    const result = await sendPushNotification(userInfo.pushToken, title, body, data);
+    console.log('=== sendPushNotificationToUser END ===');
+    console.log('Result:', result);
+    return result;
   } catch (error) {
-    console.error('Error sending push notification to user:', error);
+    console.error('ERROR in sendPushNotificationToUser:', error);
     return false;
   }
 }

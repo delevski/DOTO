@@ -1,4 +1,4 @@
-import React, { createRef, useEffect } from 'react';
+import React, { createRef, useEffect, useMemo } from 'react';
 import { NavigationContainer, useNavigation } from '@react-navigation/native';
 import { createStackNavigator } from '@react-navigation/stack';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
@@ -8,7 +8,7 @@ import { useAuthStore } from '../store/authStore';
 import { useSettingsStore } from '../store/settingsStore';
 import { colors } from '../styles/theme';
 import Icon from '../components/Icon';
-import { clearInstantDBCache } from '../lib/instant';
+import { clearInstantDBCache, db } from '../lib/instant';
 
 // Auth Screens
 import LoginScreen from '../screens/LoginScreen';
@@ -26,6 +26,7 @@ import PostDetailsScreen from '../screens/PostDetailsScreen';
 import ChatScreen from '../screens/ChatScreen';
 import SettingsScreen from '../screens/SettingsScreen';
 import EditProfileScreen from '../screens/EditProfileScreen';
+import NotificationsScreen from '../screens/NotificationsScreen';
 
 const Stack = createStackNavigator();
 const Tab = createBottomTabNavigator();
@@ -304,6 +305,14 @@ function MainStack() {
         component={EditProfileScreen}
         options={{ 
           title: 'Edit Profile',
+          headerBackTitle: 'Back',
+        }}
+      />
+      <Stack.Screen 
+        name="Notifications" 
+        component={NotificationsScreen}
+        options={{ 
+          title: 'Notifications',
           headerBackTitle: 'Back',
         }}
       />

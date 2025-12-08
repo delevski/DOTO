@@ -5,19 +5,21 @@ import {
   StyleSheet,
   ScrollView,
   TouchableOpacity,
+  Image,
   TextInput,
   ActivityIndicator,
+  Alert,
   Modal,
   Share,
 } from 'react-native';
 import { useAuthStore } from '../store/authStore';
 import { useSettingsStore } from '../store/settingsStore';
 import { useRTL, useRTLStyles } from '../context/RTLContext';
-import { useDialog } from '../context/DialogContext';
 import { db, id } from '../lib/instant';
 import { colors, spacing, borderRadius } from '../styles/theme';
 import { sendPushNotificationToUser } from '../utils/pushNotifications';
-import OptimizedImage, { OptimizedAvatar, OptimizedPostImage } from '../components/OptimizedImage';
+import Icon from '../components/Icon';
+import ClaimerSelectionModal from '../components/ClaimerSelectionModal';
 
 function PostDetailsScreen({ route, navigation }) {
   const { postId } = route.params || {};
@@ -26,12 +28,12 @@ function PostDetailsScreen({ route, navigation }) {
   const darkMode = useSettingsStore((state) => state.darkMode);
   const { t, isRTL } = useRTL();
   const rtlStyles = useRTLStyles();
-  const { alert } = useDialog();
   
   const [newComment, setNewComment] = useState('');
   const [showRatingModal, setShowRatingModal] = useState(false);
   const [selectedRating, setSelectedRating] = useState(0);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [showClaimerModal, setShowClaimerModal] = useState(false);
   
   // Track mounted state for cleanup
   const isMountedRef = useRef(true);
@@ -125,22 +127,22 @@ function PostDetailsScreen({ route, navigation }) {
 
   const handleClaim = useCallback(async () => {
     if (!user) {
-      alert(t('auth.loginRequired'), t('auth.pleaseLogin'));
+      Alert.alert(t('auth.loginRequired') || 'Login Required', t('auth.pleaseLoginToClaim') || 'Please login to claim tasks');
       return;
     }
 
     if (isMyPost) {
-      alert(t('common.error'), t('postDetails.cannotClaimOwn'));
+      Alert.alert(t('common.error') || 'Error', t('postDetails.cannotClaimOwn') || 'You cannot claim your own post');
       return;
     }
 
     if (hasClaimed) {
-      alert(t('postDetails.alreadyClaimed'), t('postDetails.alreadyClaimedDesc'));
+      Alert.alert(t('postDetails.alreadyClaimed') || 'Already Claimed', t('postDetails.alreadyClaimedDesc') || 'You have already claimed this task');
       return;
     }
 
     setIsSubmitting(true);
-
+    
     try {
       const now = Date.now();
       const newClaimer = {
@@ -173,7 +175,7 @@ function PostDetailsScreen({ route, navigation }) {
       );
       
       // Send push notification to the poster (in their preferred language)
-      sendPushNotificationToUser(
+      await sendPushNotificationToUser(
         post.authorId,
         'newClaim',
         { userName: user.name, postTitle: post.title || 'your task' },
@@ -184,12 +186,12 @@ function PostDetailsScreen({ route, navigation }) {
       updateUserStreak(user.id);
       
       if (isMountedRef.current) {
-        alert(t('common.success'), t('postDetails.claimSuccess'));
+        Alert.alert(t('common.success') || 'Success', t('postDetails.claimSuccess') || 'Task claimed! The poster will review your claim.');
       }
     } catch (err) {
       console.error('Claim error:', err);
       if (isMountedRef.current) {
-        alert(t('common.error'), t('errors.failedToClaimTask'));
+        Alert.alert(t('common.error') || 'Error', t('errors.tryAgain') || 'Failed to claim task');
       }
     } finally {
       if (isMountedRef.current) {
@@ -199,17 +201,20 @@ function PostDetailsScreen({ route, navigation }) {
   }, [user, isMyPost, hasClaimed, postId, claimers, post, t, updateUserStreak]);
 
   const handleApproveClaimer = useCallback(async (claimerUserId) => {
-      const claimer = claimers.find(c => c.userId === claimerUserId);
-      if (!claimer) return;
+    const claimer = claimers.find(c => c.userId === claimerUserId);
+    if (!claimer) return;
 
     setIsSubmitting(true);
     
     try {
       const now = Date.now();
 
+      // Update post with approved claimer info (match web app fields)
       await db.transact(
         db.tx.posts[postId].update({
           approvedClaimerId: claimerUserId,
+          claimedBy: claimerUserId,  // For compatibility with web app
+          claimedByName: claimer.userName,  // For compatibility with web app
           approvedClaimerName: claimer.userName,
           approvedClaimerAvatar: claimer.userAvatar,
           approvedAt: now
@@ -233,20 +238,30 @@ function PostDetailsScreen({ route, navigation }) {
       );
       
       // Send push notification to the approved claimer (in their preferred language)
-      sendPushNotificationToUser(
+      console.log('=== SENDING PUSH NOTIFICATION ===');
+      console.log('To user ID:', claimerUserId);
+      console.log('Type: claimerApproved');
+      
+      const pushResult = await sendPushNotificationToUser(
         claimerUserId,
         'claimerApproved',
         { postTitle: post.title || 'a task' },
         { postId, type: 'claimer_approved' }
       );
       
+      console.log('Push notification result:', pushResult);
+      
       if (isMountedRef.current) {
-        alert(t('common.success'), `${claimer.userName} ${t('postDetails.hasBeenApproved')}`);
+        const pushStatus = pushResult ? '✅ Push sent!' : '❌ No push token';
+        Alert.alert(
+          t('common.success') || 'Success', 
+          `${claimer.userName} ${t('postDetails.hasBeenApproved') || 'has been approved!'}\n\n${pushStatus}`
+        );
       }
     } catch (err) {
       console.error('Approve error:', err);
       if (isMountedRef.current) {
-        alert(t('common.error'), t('errors.failedToApprove'));
+        Alert.alert(t('common.error') || 'Error', t('errors.tryAgain') || 'Failed to approve claimer');
       }
     } finally {
       if (isMountedRef.current) {
@@ -257,12 +272,16 @@ function PostDetailsScreen({ route, navigation }) {
 
   const handleLike = useCallback(async () => {
     if (!user) {
-      alert(t('auth.loginRequired'), t('auth.pleaseLogin'));
+      Alert.alert(t('auth.loginRequired') || 'Login Required', t('auth.pleaseLogin') || 'Please login to like posts');
       return;
     }
 
     try {
-      if (isLiked) {
+      // Check if user already liked (double-check to prevent race conditions)
+      const alreadyLiked = likedBy.includes(user.id);
+      
+      if (alreadyLiked) {
+        // Unlike: Remove user from likedBy array
         await db.transact(
           db.tx.posts[postId].update({
             likedBy: likedBy.filter(uid => uid !== user.id),
@@ -270,21 +289,53 @@ function PostDetailsScreen({ route, navigation }) {
           })
         );
       } else {
+        // Like: Add user to likedBy array (ensure no duplicates)
+        const newLikedBy = [...new Set([...likedBy, user.id])];
+        const now = Date.now();
+        
         await db.transact(
           db.tx.posts[postId].update({
-            likedBy: [...likedBy, user.id],
-            likes: (post.likes || 0) + 1
+            likedBy: newLikedBy,
+            likes: newLikedBy.length
           })
         );
+        
+        // Send push notification to post author (only when liking, not unliking)
+        // Don't notify if user is liking their own post
+        if (post?.authorId && post.authorId !== user.id) {
+          // Create in-app notification
+          const notificationId = id();
+          await db.transact(
+            db.tx.notifications[notificationId].update({
+              id: notificationId,
+              userId: post.authorId,
+              postId: postId,
+              type: 'post_liked',
+              message: `${user.name} liked your post`,
+              read: false,
+              timestamp: now,
+              postTitle: post.title || 'your post',
+              createdAt: now
+            })
+          );
+          
+          // Send push notification
+          await sendPushNotificationToUser(
+            post.authorId,
+            'postLiked',
+            { userName: user.name, postTitle: post.title || 'your post' },
+            { postId, type: 'post_liked' }
+          );
+        }
       }
     } catch (err) {
       console.error('Like error:', err);
     }
-  }, [user, isLiked, postId, likedBy, post, t]);
+  }, [user, postId, likedBy, post, t]);
 
   const handleAddComment = useCallback(async () => {
     if (!user) {
-      alert(t('auth.loginRequired'), t('auth.pleaseLogin'));
+      Alert.alert(t('auth.loginRequired') || 'Login Required', t('auth.pleaseLogin') || 'Please login to comment');
       return;
     }
 
@@ -292,6 +343,8 @@ function PostDetailsScreen({ route, navigation }) {
 
     try {
       const commentId = id();
+      const now = Date.now();
+      
       await db.transact(
         db.tx.comments[commentId].update({
           id: commentId,
@@ -300,14 +353,42 @@ function PostDetailsScreen({ route, navigation }) {
           author: user.name,
           avatar: user.avatar,
           text: newComment.trim(),
-          timestamp: Date.now(),
+          timestamp: now,
         }),
         db.tx.posts[postId].update({
           comments: (post.comments || 0) + 1
         })
       );
+      
+      // Send push notification to post author (don't notify if commenting on own post)
+      if (post?.authorId && post.authorId !== user.id) {
+        // Create in-app notification
+        const notificationId = id();
+        await db.transact(
+          db.tx.notifications[notificationId].update({
+            id: notificationId,
+            userId: post.authorId,
+            postId: postId,
+            type: 'new_comment',
+            message: `${user.name} commented on your post`,
+            read: false,
+            timestamp: now,
+            postTitle: post.title || 'your post',
+            createdAt: now
+          })
+        );
+        
+        // Send push notification
+        await sendPushNotificationToUser(
+          post.authorId,
+          'newComment',
+          { userName: user.name, postTitle: post.title || 'your post' },
+          { postId, type: 'new_comment' }
+        );
+      }
+      
       if (isMountedRef.current) {
-      setNewComment('');
+        setNewComment('');
       }
       
       // Update user's activity streak
@@ -315,14 +396,14 @@ function PostDetailsScreen({ route, navigation }) {
     } catch (err) {
       console.error('Comment error:', err);
       if (isMountedRef.current) {
-        alert(t('common.error'), t('errors.failedToAddComment'));
+        Alert.alert(t('common.error') || 'Error', t('errors.tryAgain') || 'Failed to add comment');
       }
     }
-  }, [user, newComment, postId, post, t, updateUserStreak, alert]);
+  }, [user, newComment, postId, post, t, updateUserStreak]);
 
   const handleMarkComplete = useCallback(async () => {
     if (!isClaimedByMe) {
-      alert(t('common.error'), t('postDetails.onlyClaimerCanComplete'));
+      Alert.alert(t('common.error') || 'Error', t('postDetails.onlyClaimerCanComplete') || 'Only the approved claimer can mark this task as complete');
       return;
     }
 
@@ -354,7 +435,7 @@ function PostDetailsScreen({ route, navigation }) {
       );
       
       // Send push notification to the poster (in their preferred language)
-      sendPushNotificationToUser(
+      await sendPushNotificationToUser(
         post.authorId,
         'taskMarkedComplete',
         { postTitle: post.title || 'your task' },
@@ -365,12 +446,12 @@ function PostDetailsScreen({ route, navigation }) {
       updateUserStreak(user.id);
       
       if (isMountedRef.current) {
-        alert(t('common.success'), t('postDetails.markedComplete'));
+        Alert.alert(t('common.success') || 'Success', t('postDetails.markedComplete') || 'Task marked as complete! Waiting for poster confirmation.');
       }
     } catch (err) {
       console.error('Complete error:', err);
       if (isMountedRef.current) {
-        alert(t('common.error'), t('errors.failedToMarkComplete'));
+        Alert.alert(t('common.error') || 'Error', t('errors.tryAgain') || 'Failed to mark as complete');
       }
     } finally {
       if (isMountedRef.current) {
@@ -381,12 +462,12 @@ function PostDetailsScreen({ route, navigation }) {
 
   const handleConfirmAndRate = useCallback(async () => {
     if (selectedRating === 0) {
-      alert(t('postDetails.ratingRequired'), t('postDetails.pleaseSelectRating'));
+      Alert.alert(t('postDetails.ratingRequired') || 'Rating Required', t('postDetails.pleaseSelectRating') || 'Please select a rating');
       return;
     }
 
     setIsSubmitting(true);
-
+    
     try {
       const now = Date.now();
       
@@ -417,7 +498,7 @@ function PostDetailsScreen({ route, navigation }) {
       );
       
       // Send push notification to the helper (in their preferred language)
-      sendPushNotificationToUser(
+      await sendPushNotificationToUser(
         approvedClaimerId,
         'taskAccepted',
         { postTitle: post.title || 'completed', rating: selectedRating },
@@ -428,14 +509,14 @@ function PostDetailsScreen({ route, navigation }) {
       updateUserStreak(user.id);
       
       if (isMountedRef.current) {
-      setShowRatingModal(false);
+        setShowRatingModal(false);
         setSelectedRating(0);
-        alert(t('common.success'), t('postDetails.taskCompletedRated'));
+        Alert.alert(t('common.success') || 'Success', t('postDetails.taskCompletedAndRated') || 'Task completed and helper rated!');
       }
     } catch (err) {
       console.error('Rate error:', err);
       if (isMountedRef.current) {
-        alert(t('common.error'), t('errors.failedToCompleteTask'));
+        Alert.alert(t('common.error') || 'Error', t('errors.tryAgain') || 'Failed to complete task');
       }
     } finally {
       if (isMountedRef.current) {
@@ -460,7 +541,7 @@ function PostDetailsScreen({ route, navigation }) {
     return (
       <View style={[styles.container, styles.centerContent, { backgroundColor: themeColors.background }]}>
         <ActivityIndicator size="large" color={colors.primary} />
-        <Text style={[styles.loadingText, { color: themeColors.textSecondary }]}>Loading post...</Text>
+        <Text style={[styles.loadingText, { color: themeColors.textSecondary }]}>{t('postDetails.loadingPost') || 'Loading post...'}</Text>
       </View>
     );
   }
@@ -468,10 +549,10 @@ function PostDetailsScreen({ route, navigation }) {
   if (error || !post) {
     return (
       <View style={[styles.container, styles.centerContent, { backgroundColor: themeColors.background }]}>
-        <Text style={styles.errorIcon}>⚠️</Text>
-        <Text style={[styles.errorText, { color: colors.error }]}>Post not found</Text>
+        <Icon name="alert-circle-outline" size={48} color={colors.error} />
+        <Text style={[styles.errorText, { color: colors.error }]}>{t('postDetails.postNotFound') || 'Post not found'}</Text>
         <TouchableOpacity style={styles.backButton} onPress={() => navigation.goBack()}>
-          <Text style={styles.backButtonText}>Go Back</Text>
+          <Text style={styles.backButtonText}>{t('common.back') || 'Go Back'}</Text>
         </TouchableOpacity>
       </View>
     );
@@ -484,10 +565,8 @@ function PostDetailsScreen({ route, navigation }) {
         <View style={[styles.postCard, { backgroundColor: themeColors.surface }]}>
           {/* Author Header */}
           <View style={styles.authorRow}>
-            <OptimizedAvatar 
-              source={post.avatar}
-              fallbackId={post.authorId}
-              size={48}
+            <Image 
+              source={{ uri: post.avatar || `https://i.pravatar.cc/150?u=${post.authorId}` }}
               style={styles.authorAvatar}
             />
             <View style={styles.authorInfo}>
@@ -505,7 +584,7 @@ function PostDetailsScreen({ route, navigation }) {
 
           {/* Post Content */}
           <Text style={[styles.postTitle, { color: themeColors.text }]}>
-            {post.title || 'Help Needed'}
+            {post.title || t('post.helpNeeded')}
           </Text>
           <Text style={[styles.postDescription, { color: themeColors.textSecondary }]}>
             {post.description}
@@ -515,9 +594,9 @@ function PostDetailsScreen({ route, navigation }) {
           {post.photos && post.photos.length > 0 && (
             <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.photosScroll}>
               {post.photos.map((photo, index) => (
-                <OptimizedPostImage 
+                <Image 
                   key={index}
-                  source={typeof photo === 'string' ? photo : photo.preview}
+                  source={{ uri: typeof photo === 'string' ? photo : photo.preview }}
                   style={styles.postPhoto}
                 />
               ))}
@@ -526,8 +605,8 @@ function PostDetailsScreen({ route, navigation }) {
 
           {/* Location */}
           {post.location && (
-            <View style={styles.locationRow}>
-              <Text style={styles.locationIcon}>📍</Text>
+            <View style={[styles.locationRow, { flexDirection: rtlStyles.row }]}>
+              <Icon name="location-outline" size={16} color={colors.primary} />
               <Text style={[styles.locationText, { color: themeColors.textSecondary }]}>
                 {post.location}
               </Text>
@@ -535,18 +614,18 @@ function PostDetailsScreen({ route, navigation }) {
           )}
 
           {/* Actions */}
-          <View style={[styles.actionsRow, { borderTopColor: themeColors.border }]}>
-            <TouchableOpacity style={styles.actionButton} onPress={handleLike}>
-              <Text style={styles.actionIcon}>{isLiked ? '❤️' : '🤍'}</Text>
-              <Text style={[styles.actionText, { color: themeColors.textSecondary }]}>{likeCount}</Text>
+          <View style={[styles.actionsRow, { borderTopColor: themeColors.border, flexDirection: rtlStyles.row }]}>
+            <TouchableOpacity style={[styles.actionButton, { flexDirection: rtlStyles.row }]} onPress={handleLike}>
+              <Icon name={isLiked ? 'heart' : 'heart-outline'} size={22} color={isLiked ? colors.primary : themeColors.textSecondary} />
+              <Text style={[styles.actionText, { color: isLiked ? colors.primary : themeColors.textSecondary }]}>{likeCount}</Text>
             </TouchableOpacity>
-            <TouchableOpacity style={styles.actionButton}>
-              <Text style={styles.actionIcon}>💬</Text>
+            <TouchableOpacity style={[styles.actionButton, { flexDirection: rtlStyles.row }]}>
+              <Icon name="chatbubble-outline" size={22} color={themeColors.textSecondary} />
               <Text style={[styles.actionText, { color: themeColors.textSecondary }]}>{comments.length}</Text>
             </TouchableOpacity>
-            <TouchableOpacity style={styles.actionButton} onPress={handleShare}>
-              <Text style={styles.actionIcon}>↗️</Text>
-              <Text style={[styles.actionText, { color: themeColors.textSecondary }]}>{t('common.share') || 'Share'}</Text>
+            <TouchableOpacity style={[styles.actionButton, { flexDirection: rtlStyles.row }]} onPress={handleShare}>
+              <Icon name="share-outline" size={22} color={themeColors.textSecondary} style={isRTL ? { transform: [{ scaleX: -1 }] } : null} />
+              <Text style={[styles.actionText, { color: themeColors.textSecondary }]}>{t('common.share')}</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -557,86 +636,132 @@ function PostDetailsScreen({ route, navigation }) {
         }]}>
           {isCompleted ? (
             <>
-              <Text style={styles.claimTitle}>✅ Task Completed</Text>
+              <View style={[styles.claimTitleRow, { flexDirection: rtlStyles.row }]}>
+                <Icon name="checkmark-circle" size={24} color="#fff" />
+                <Text style={styles.claimTitle}>{t('postDetails.taskCompleted')}</Text>
+              </View>
               <Text style={styles.claimSubtitle}>
-                {isClaimedByMe ? 'Great job! You completed this task.' : 'This task has been completed.'}
+                {isClaimedByMe ? t('postDetails.youCompletedTask') : t('postDetails.taskHasBeenCompleted')}
               </Text>
               {post.helperRating && (
-                <View style={styles.ratingDisplay}>
-                  <Text style={styles.ratingLabel}>Helper Rating:</Text>
-                  <Text style={styles.ratingStars}>{'⭐'.repeat(post.helperRating)}</Text>
+                <View style={[styles.ratingDisplay, { flexDirection: rtlStyles.row }]}>
+                  <Text style={styles.ratingLabel}>{t('postDetails.helperRating')}</Text>
+                  <View style={styles.ratingStarsRow}>
+                    {[1, 2, 3, 4, 5].map((star) => (
+                      <Icon key={star} name={star <= post.helperRating ? 'star' : 'star-outline'} size={18} color="#FCD34D" />
+                    ))}
+                  </View>
                 </View>
               )}
             </>
           ) : approvedClaimerId ? (
             <>
-              <Text style={styles.claimTitle}>✓ Claimer Approved</Text>
+              <View style={[styles.claimTitleRow, { flexDirection: rtlStyles.row }]}>
+                <Icon name="checkmark" size={24} color="#fff" />
+                <Text style={styles.claimTitle}>{t('postDetails.claimerApproved')}</Text>
+              </View>
               {isClaimedByMe ? (
                 <>
-                  <Text style={styles.claimSubtitle}>You are the approved helper!</Text>
+                  <Text style={styles.claimSubtitle}>{t('postDetails.youAreApprovedHelper')}</Text>
                   {!completedByClaimer ? (
                     <TouchableOpacity style={styles.completeButton} onPress={handleMarkComplete}>
-                      <Text style={styles.completeButtonText}>Mark as Complete</Text>
+                      <Text style={styles.completeButtonText}>{t('postDetails.markAsComplete')}</Text>
                     </TouchableOpacity>
                   ) : (
-                    <Text style={styles.waitingText}>Waiting for poster to confirm...</Text>
+                    <Text style={styles.waitingText}>{t('postDetails.waitingForConfirmation')}</Text>
                   )}
                 </>
               ) : isMyPost ? (
                 <>
                   <Text style={styles.claimSubtitle}>
-                    {post.approvedClaimerName || 'Someone'} is helping
+                    {t('postDetails.isHelping', { name: post.approvedClaimerName || t('common.unknown') })}
                   </Text>
                   {completedByClaimer && !completedByAuthor && (
                     <TouchableOpacity style={styles.completeButton} onPress={() => setShowRatingModal(true)}>
-                      <Text style={styles.completeButtonText}>Confirm & Rate Helper</Text>
+                      <Text style={styles.completeButtonText}>{t('postDetails.confirmAndRate')}</Text>
                     </TouchableOpacity>
                   )}
                 </>
               ) : (
                 <Text style={styles.claimSubtitle}>
-                  {post.approvedClaimerName || 'Someone'} is helping with this task
+                  {t('postDetails.isHelpingWithTask', { name: post.approvedClaimerName || t('common.unknown') })}
                 </Text>
               )}
             </>
           ) : (
             <>
-              <Text style={styles.claimTitle}>Claim This Task</Text>
-              <Text style={styles.claimSubtitle}>Help {post.author} and earn rewards!</Text>
+              <Text style={styles.claimTitle}>{t('postDetails.claimThisTask')}</Text>
+              <Text style={styles.claimSubtitle}>{t('postDetails.helpAndEarn', { name: post.author })}</Text>
               
               {isMyPost ? (
                 claimers.length > 0 ? (
                   <View style={styles.claimersSection}>
-                    <Text style={styles.claimersTitle}>Choose a Claimer ({claimers.length})</Text>
-                    {claimers.map((claimer) => (
-                      <View key={claimer.userId} style={styles.claimerItem}>
-                        <OptimizedAvatar 
-                          source={claimer.userAvatar}
-                          fallbackId={claimer.userId}
-                          size={40}
-                          style={styles.claimerAvatar}
+                    <Text style={styles.claimersTitle}>{t('postDetails.chooseAClaimer', { count: claimers.length })}</Text>
+                    
+                    {/* Claimer avatars preview */}
+                    <View style={styles.claimersPreview}>
+                      {claimers.slice(0, 4).map((claimer, index) => (
+                        <Image 
+                          key={claimer.userId}
+                          source={{ uri: claimer.userAvatar || `https://i.pravatar.cc/150?u=${claimer.userId}` }}
+                          style={[
+                            styles.claimerPreviewAvatar,
+                            { marginLeft: index > 0 ? -10 : 0, zIndex: claimers.length - index }
+                          ]}
                         />
-                        <Text style={styles.claimerName}>{claimer.userName}</Text>
-                        <TouchableOpacity 
-                          style={styles.approveButton}
-                          onPress={() => handleApproveClaimer(claimer.userId)}
-                        >
-                          <Text style={styles.approveButtonText}>Approve</Text>
-                        </TouchableOpacity>
-                      </View>
-                    ))}
+                      ))}
+                      {claimers.length > 4 && (
+                        <View style={[styles.claimerPreviewMore, { marginLeft: -10 }]}>
+                          <Text style={styles.claimerPreviewMoreText}>+{claimers.length - 4}</Text>
+                        </View>
+                      )}
+                    </View>
+                    
+                    {/* Claimer Cards with Approve Buttons - Web App Style */}
+                    <View style={styles.claimerCardsContainer}>
+                      {claimers.map((claimer, idx) => {
+                        const claimTime = claimer.claimedAt ? new Date(claimer.claimedAt) : new Date();
+                        const timeAgo = Math.floor((Date.now() - claimTime.getTime()) / (1000 * 60 * 60));
+                        const timeDisplay = timeAgo < 1 ? t('feed.justNow') : timeAgo < 24 ? `${timeAgo}h ago` : `${Math.floor(timeAgo / 24)}d ago`;
+                        
+                        return (
+                          <View 
+                            key={claimer.userId || idx}
+                            style={styles.claimerCardWeb}
+                          >
+                            <Image 
+                              source={{ uri: claimer.userAvatar || `https://i.pravatar.cc/150?u=${claimer.userId}` }}
+                              style={styles.claimerCardAvatar}
+                            />
+                            <View style={styles.claimerCardInfo}>
+                              <Text style={styles.claimerCardName}>{claimer.userName || 'Helper'}</Text>
+                              <Text style={styles.claimerCardTime}>{timeDisplay}</Text>
+                            </View>
+                            <TouchableOpacity 
+                              style={styles.approveButtonWeb}
+                              onPress={() => handleApproveClaimer(claimer.userId)}
+                            >
+                              <Text style={styles.approveButtonTextWeb}>{t('post.approve')}</Text>
+                            </TouchableOpacity>
+                          </View>
+                        );
+                      })}
+                    </View>
                   </View>
                 ) : (
-                  <Text style={styles.noClaimersText}>No claimers yet. Wait for someone to claim your task.</Text>
+                  <Text style={styles.noClaimersText}>{t('postDetails.noClaimersYet')}</Text>
                 )
               ) : hasClaimed ? (
                 <View style={styles.claimedBadge}>
-                  <Text style={styles.claimedText}>✓ You've claimed this task</Text>
-                  <Text style={styles.claimedSubtext}>Waiting for approval</Text>
+                  <View style={[styles.claimedTextRow, { flexDirection: rtlStyles.row }]}>
+                    <Icon name="checkmark" size={18} color="#fff" />
+                    <Text style={styles.claimedText}>{t('postDetails.youClaimedTask')}</Text>
+                  </View>
+                  <Text style={styles.claimedSubtext}>{t('postDetails.waitingForApproval')}</Text>
                 </View>
               ) : (
                 <TouchableOpacity style={styles.claimButton} onPress={handleClaim}>
-                  <Text style={styles.claimButtonText}>Claim Now</Text>
+                  <Text style={styles.claimButtonText}>{t('postDetails.claimNow')}</Text>
                 </TouchableOpacity>
               )}
             </>
@@ -646,23 +771,23 @@ function PostDetailsScreen({ route, navigation }) {
         {/* Comments Section */}
         <View style={[styles.commentsCard, { backgroundColor: themeColors.surface }]}>
           <Text style={[styles.commentsTitle, { color: themeColors.text }]}>
-            Comments ({comments.length})
+            {t('postDetails.comments')} ({comments.length})
           </Text>
 
           {/* Add Comment */}
           {user && (
-            <View style={styles.addCommentRow}>
-              <OptimizedAvatar source={user.avatar} fallbackId={user.id} size={36} style={styles.commentAvatar} />
+            <View style={[styles.addCommentRow, { flexDirection: rtlStyles.row }]}>
+              <Image source={{ uri: user.avatar || `https://i.pravatar.cc/150?u=${user.id}` }} style={styles.commentAvatar} />
               <TextInput
-                style={[styles.commentInput, { color: themeColors.text, borderColor: themeColors.border }]}
-                placeholder="Write a comment..."
+                style={[styles.commentInput, { color: themeColors.text, borderColor: themeColors.border, textAlign: rtlStyles.textAlign }]}
+                placeholder={t('postDetails.writeComment')}
                 placeholderTextColor={themeColors.textSecondary}
                 value={newComment}
                 onChangeText={setNewComment}
                 onSubmitEditing={handleAddComment}
               />
               <TouchableOpacity style={styles.sendButton} onPress={handleAddComment}>
-                <Text style={styles.sendIcon}>📤</Text>
+                <Icon name="send" size={20} color={colors.primary} />
               </TouchableOpacity>
             </View>
           )}
@@ -670,15 +795,13 @@ function PostDetailsScreen({ route, navigation }) {
           {/* Comments List */}
           {comments.length === 0 ? (
             <Text style={[styles.noCommentsText, { color: themeColors.textSecondary }]}>
-              No comments yet. Be the first to comment!
+              {t('postDetails.noComments')}
             </Text>
           ) : (
             comments.map((comment) => (
               <View key={comment.id} style={styles.commentItem}>
-                <OptimizedAvatar 
-                  source={comment.avatar}
-                  fallbackId={comment.authorId}
-                  size={36}
+                <Image 
+                  source={{ uri: comment.avatar || `https://i.pravatar.cc/150?u=${comment.authorId}` }}
                   style={styles.commentAvatar}
                 />
                 <View style={styles.commentContent}>
@@ -704,38 +827,48 @@ function PostDetailsScreen({ route, navigation }) {
       <Modal visible={showRatingModal} transparent animationType="fade">
         <View style={styles.modalOverlay}>
           <View style={[styles.modalContent, { backgroundColor: themeColors.surface }]}>
-            <Text style={[styles.modalTitle, { color: themeColors.text }]}>Rate the Helper</Text>
+            <Text style={[styles.modalTitle, { color: themeColors.text }]}>{t('postDetails.rateHelper')}</Text>
             <Text style={[styles.modalSubtitle, { color: themeColors.textSecondary }]}>
-              How was your experience?
+              {t('postDetails.howWasExperience')}
             </Text>
             
             <View style={styles.starsRow}>
               {[1, 2, 3, 4, 5].map((star) => (
-                <TouchableOpacity key={star} onPress={() => setSelectedRating(star)}>
-                  <Text style={styles.starIcon}>
-                    {star <= selectedRating ? '⭐' : '☆'}
-                  </Text>
+                <TouchableOpacity key={star} onPress={() => setSelectedRating(star)} style={styles.starButton}>
+                  <Icon 
+                    name={star <= selectedRating ? 'star' : 'star-outline'} 
+                    size={36} 
+                    color={star <= selectedRating ? '#FCD34D' : themeColors.textSecondary} 
+                  />
                 </TouchableOpacity>
               ))}
             </View>
 
-            <View style={styles.modalButtons}>
+            <View style={[styles.modalButtons, { flexDirection: rtlStyles.row }]}>
               <TouchableOpacity 
                 style={[styles.modalButton, styles.cancelButton]}
                 onPress={() => setShowRatingModal(false)}
               >
-                <Text style={styles.cancelButtonText}>Cancel</Text>
+                <Text style={styles.cancelButtonText}>{t('common.cancel') || 'Cancel'}</Text>
               </TouchableOpacity>
               <TouchableOpacity 
-                style={[styles.modalButton, styles.submitButton]}
+                style={[styles.modalButton, styles.submitRatingButton]}
                 onPress={handleConfirmAndRate}
               >
-                <Text style={styles.submitButtonText}>Submit Rating</Text>
+                <Text style={styles.submitButtonText}>{t('postDetails.submitRating')}</Text>
               </TouchableOpacity>
             </View>
           </View>
         </View>
       </Modal>
+
+      {/* Claimer Selection Modal */}
+      <ClaimerSelectionModal
+        visible={showClaimerModal}
+        onClose={() => setShowClaimerModal(false)}
+        post={post}
+        onApproveClaimer={handleApproveClaimer}
+      />
     </View>
   );
 }
@@ -757,9 +890,6 @@ const styles = StyleSheet.create({
   loadingText: {
     marginTop: spacing.lg,
     fontSize: 16,
-  },
-  errorIcon: {
-    fontSize: 48,
   },
   errorText: {
     marginTop: spacing.lg,
@@ -835,13 +965,14 @@ const styles = StyleSheet.create({
     marginRight: spacing.sm,
   },
   locationRow: {
-    flexDirection: 'row',
     alignItems: 'center',
     gap: spacing.xs,
     marginBottom: spacing.lg,
-  },
-  locationIcon: {
-    fontSize: 16,
+    backgroundColor: '#FEF2F2',
+    paddingHorizontal: spacing.sm,
+    paddingVertical: spacing.xs,
+    borderRadius: 8,
+    alignSelf: 'flex-start',
   },
   locationText: {
     fontSize: 14,
@@ -853,12 +984,8 @@ const styles = StyleSheet.create({
     gap: spacing.xl,
   },
   actionButton: {
-    flexDirection: 'row',
     alignItems: 'center',
     gap: spacing.xs,
-  },
-  actionIcon: {
-    fontSize: 20,
   },
   actionText: {
     fontSize: 14,
@@ -869,11 +996,15 @@ const styles = StyleSheet.create({
     padding: spacing.xl,
     marginBottom: spacing.lg,
   },
+  claimTitleRow: {
+    alignItems: 'center',
+    gap: spacing.sm,
+    marginBottom: spacing.sm,
+  },
   claimTitle: {
     color: '#fff',
     fontSize: 22,
     fontWeight: '700',
-    marginBottom: spacing.sm,
   },
   claimSubtitle: {
     color: 'rgba(255,255,255,0.9)',
@@ -896,6 +1027,11 @@ const styles = StyleSheet.create({
     padding: spacing.lg,
     borderRadius: 12,
     alignItems: 'center',
+  },
+  claimedTextRow: {
+    alignItems: 'center',
+    gap: spacing.xs,
+    marginBottom: spacing.xs,
   },
   claimedText: {
     color: '#fff',
@@ -920,6 +1056,45 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '600',
     marginBottom: spacing.md,
+  },
+  claimersPreview: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: spacing.md,
+  },
+  claimerPreviewAvatar: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    borderWidth: 2,
+    borderColor: 'rgba(255,255,255,0.3)',
+  },
+  claimerPreviewMore: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: 'rgba(255,255,255,0.2)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  claimerPreviewMoreText: {
+    color: '#fff',
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  viewClaimersButton: {
+    backgroundColor: '#fff',
+    paddingVertical: 14,
+    borderRadius: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: spacing.sm,
+  },
+  viewClaimersButtonText: {
+    color: colors.primary,
+    fontSize: 15,
+    fontWeight: '600',
   },
   claimerItem: {
     flexDirection: 'row',
@@ -969,7 +1144,6 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
   ratingDisplay: {
-    flexDirection: 'row',
     alignItems: 'center',
     gap: spacing.sm,
     marginTop: spacing.sm,
@@ -978,8 +1152,9 @@ const styles = StyleSheet.create({
     color: 'rgba(255,255,255,0.9)',
     fontSize: 14,
   },
-  ratingStars: {
-    fontSize: 18,
+  ratingStarsRow: {
+    flexDirection: 'row',
+    gap: 2,
   },
   commentsCard: {
     borderRadius: 16,
@@ -1011,9 +1186,6 @@ const styles = StyleSheet.create({
   },
   sendButton: {
     padding: spacing.sm,
-  },
-  sendIcon: {
-    fontSize: 20,
   },
   noCommentsText: {
     textAlign: 'center',
@@ -1069,11 +1241,11 @@ const styles = StyleSheet.create({
   },
   starsRow: {
     flexDirection: 'row',
-    gap: spacing.md,
+    gap: spacing.sm,
     marginBottom: spacing.xl,
   },
-  starIcon: {
-    fontSize: 36,
+  starButton: {
+    padding: spacing.xs,
   },
   modalButtons: {
     flexDirection: 'row',
@@ -1094,12 +1266,56 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '600',
   },
-  submitButton: {
+  submitRatingButton: {
     backgroundColor: '#059669',
   },
   submitButtonText: {
     color: '#fff',
     fontSize: 16,
     fontWeight: '600',
+  },
+  // Web App Style Claimer Cards
+  claimerCardsContainer: {
+    marginTop: spacing.md,
+  },
+  claimerCardWeb: {
+    backgroundColor: 'rgba(255,255,255,0.15)',
+    borderRadius: 12,
+    padding: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 10,
+  },
+  claimerCardAvatar: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    borderWidth: 2,
+    borderColor: 'rgba(255,255,255,0.3)',
+  },
+  claimerCardInfo: {
+    flex: 1,
+    marginLeft: 12,
+  },
+  claimerCardName: {
+    color: '#fff',
+    fontSize: 15,
+    fontWeight: '600',
+  },
+  claimerCardTime: {
+    color: 'rgba(255,255,255,0.7)',
+    fontSize: 12,
+    marginTop: 2,
+  },
+  approveButtonWeb: {
+    backgroundColor: '#fff',
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: 10,
+  },
+  approveButtonTextWeb: {
+    color: colors.primary,
+    fontSize: 14,
+    fontWeight: '700',
   },
 });

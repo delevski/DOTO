@@ -8,6 +8,7 @@
  * - Only queries when screen is focused
  * - Per-tab caching with TTL
  * - Location-based filtering for nearby tab
+ * - Social friends filtering for friends tab
  * - Strips large data from list view
  */
 
@@ -111,6 +112,12 @@ export function useFilteredPosts(activeTab, options = {}) {
         };
       
       case 'friends':
+        // Fetch all posts and users - we'll filter client-side by friends
+        return {
+          posts: {},
+          users: {},
+        };
+      
       case 'nearby':
       default:
         // Fetch all posts - we'll filter client-side
@@ -123,11 +130,22 @@ export function useFilteredPosts(activeTab, options = {}) {
   // Fetch data from InstantDB
   const { data, isLoading: queryLoading, error: queryError } = db.useQuery(query);
   
+  // Get user's social friends list
+  const socialFriends = useMemo(() => {
+    return user?.socialFriends || [];
+  }, [user?.socialFriends]);
+  
+  // Check if user has connected a social account
+  const hasSocialConnection = useMemo(() => {
+    return !!(user?.googleId || user?.facebookId);
+  }, [user?.googleId, user?.facebookId]);
+  
   // Process and filter posts based on active tab
   const processedPosts = useMemo(() => {
     if (!data?.posts) return [];
     
     let posts = data.posts;
+    const allUsers = data?.users || [];
     
     // Filter out invalid (expired/archived) posts
     posts = filterValidPosts(posts);
@@ -142,8 +160,21 @@ export function useFilteredPosts(activeTab, options = {}) {
         break;
       
       case 'friends':
-        // TODO: Implement friends filtering when friends feature is available
-        // For now, just show newest posts
+        // Filter posts to show only those from social friends
+        if (socialFriends.length > 0) {
+          // socialFriends contains DOTO user IDs of friends
+          posts = posts.filter(post => {
+            // Include posts from users in socialFriends list
+            return socialFriends.includes(post.authorId);
+          });
+        } else if (hasSocialConnection) {
+          // User connected social but has no friends on DOTO yet
+          posts = [];
+        } else {
+          // User hasn't connected any social account
+          // Return empty - UI will show prompt to connect
+          posts = [];
+        }
         posts = sortByNewest(posts);
         break;
       
@@ -159,15 +190,16 @@ export function useFilteredPosts(activeTab, options = {}) {
         posts = sortByNewest(posts);
     }
     
-    // Strip large data (photos, likedBy arrays) for list view
+    // Strip large data (photos, claimers arrays) for list view
     // These will be loaded when viewing post details
-    posts = stripLargeData(posts);
+    // Pass current user ID to preserve isLikedByMe flag
+    posts = stripLargeData(posts, user?.id);
     
     // Limit the number of posts
     posts = posts.slice(0, MAX_POSTS_LIMIT);
     
     return posts;
-  }, [data?.posts, activeTab]);
+  }, [data?.posts, data?.users, activeTab, socialFriends, hasSocialConnection, user?.id]);
   
   // Update loading state when query finishes
   useEffect(() => {
@@ -197,6 +229,8 @@ export function useFilteredPosts(activeTab, options = {}) {
     error: queryError,
     refresh,
     isFocused, // Expose focus state for debugging
+    hasSocialConnection, // Whether user has connected Google/Facebook
+    socialFriendsCount: socialFriends.length, // Number of friends on DOTO
   };
 }
 

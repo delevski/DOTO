@@ -22,12 +22,23 @@ function filterSafeUserData(userData) {
   // Also filter out any nested large objects
   const filtered = { ...safeUser };
   
-  // Remove any fields that are arrays longer than 10 items (likely large data)
+  // Fields that should be preserved even if they're long strings or arrays
+  const preservedFields = [
+    'avatar', 'bio', 'name', 'email', 'id',
+    'googleId', 'facebookId', 'authProvider', // Social auth fields
+    'socialFriends', // Social friends list (IDs are small, can grow)
+  ];
+  
+  // Remove any fields that are arrays longer than 500 items (likely large data)
+  // Increased limit to accommodate social friends lists
   Object.keys(filtered).forEach(key => {
-    if (Array.isArray(filtered[key]) && filtered[key].length > 10) {
+    // Skip preserved fields
+    if (preservedFields.includes(key)) return;
+    
+    if (Array.isArray(filtered[key]) && filtered[key].length > 500) {
       delete filtered[key];
     }
-    // Remove base64 strings (they're usually very long)
+    // Remove unknown large strings (but preserve avatar and other known fields)
     if (typeof filtered[key] === 'string' && filtered[key].length > 10000) {
       delete filtered[key];
     }
@@ -92,12 +103,16 @@ export const useAuthStore = create((set, get) => ({
       // Check size before storing (AsyncStorage has ~6MB limit per key)
       if (jsonString.length > 5000000) { // 5MB limit
         console.warn('User data too large for AsyncStorage, storing minimal data');
-        // Store only essential fields
+        // Store only essential fields including social auth
         const minimalUser = {
           id: safeUser.id,
           name: safeUser.name,
           email: safeUser.email,
           avatar: safeUser.avatar,
+          googleId: safeUser.googleId,
+          facebookId: safeUser.facebookId,
+          authProvider: safeUser.authProvider,
+          socialFriends: safeUser.socialFriends,
         };
         await AsyncStorage.setItem(AUTH_KEY, JSON.stringify(minimalUser));
         set({ user: safeUser, isAuthenticated: true }); // Keep full data in memory
@@ -117,6 +132,10 @@ export const useAuthStore = create((set, get) => ({
             name: userData?.name,
             email: userData?.email,
             avatar: userData?.avatar,
+            googleId: userData?.googleId,
+            facebookId: userData?.facebookId,
+            authProvider: userData?.authProvider,
+            socialFriends: userData?.socialFriends,
           };
           await AsyncStorage.setItem(AUTH_KEY, JSON.stringify(minimalUser));
           set({ user: userData, isAuthenticated: true }); // Keep full data in memory
@@ -152,6 +171,10 @@ export const useAuthStore = create((set, get) => ({
           name: safeUser.name,
           email: safeUser.email,
           avatar: safeUser.avatar,
+          googleId: safeUser.googleId,
+          facebookId: safeUser.facebookId,
+          authProvider: safeUser.authProvider,
+          socialFriends: safeUser.socialFriends,
         };
         await AsyncStorage.setItem(AUTH_KEY, JSON.stringify(minimalUser));
         set({ user: updatedUser }); // Keep full data in memory
@@ -172,6 +195,10 @@ export const useAuthStore = create((set, get) => ({
             name: currentUser?.name,
             email: currentUser?.email,
             avatar: currentUser?.avatar,
+            googleId: currentUser?.googleId,
+            facebookId: currentUser?.facebookId,
+            authProvider: currentUser?.authProvider,
+            socialFriends: currentUser?.socialFriends,
           };
           await AsyncStorage.setItem(AUTH_KEY, JSON.stringify(minimalUser));
           set({ user: { ...currentUser, ...updates } }); // Keep full data in memory

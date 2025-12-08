@@ -22,8 +22,23 @@ class MainApplication : Application(), ReactApplication {
         object : DefaultReactNativeHost(this) {
           override fun getPackages(): List<ReactPackage> {
             // Packages that cannot be autolinked yet can be added manually here, for example:
-            // packages.add(new MyReactNativePackage());
-            return PackageList(this).packages
+            // packages.add(new MyReactPackage());
+            // Filter out Facebook SDK packages to prevent crashes
+            val allPackages = PackageList(this).packages
+            val filteredPackages = allPackages.filter { pkg ->
+              val packageName = pkg.javaClass.name
+              // Only exclude react-native-fbsdk-next packages, not core React Native packages
+              val shouldExclude = packageName.contains("androidsdk", ignoreCase = true) && 
+                                  (packageName.contains("fbsdk", ignoreCase = true) || 
+                                   packageName.contains("FBAppEventsLogger", ignoreCase = true) ||
+                                   packageName.contains("FBSDK", ignoreCase = true))
+              if (shouldExclude) {
+                android.util.Log.w("MainApplication", "Excluding Facebook SDK package: $packageName")
+              }
+              !shouldExclude
+            }
+            android.util.Log.d("MainApplication", "Loaded ${filteredPackages.size} packages (filtered from ${allPackages.size})")
+            return filteredPackages
           }
 
           override fun getJSMainModuleName(): String = ".expo/.virtual-metro-entry"
@@ -40,6 +55,7 @@ class MainApplication : Application(), ReactApplication {
 
   override fun onCreate() {
     super.onCreate()
+    // Facebook SDK disabled to prevent crashes - packages filtered in getPackages()
     SoLoader.init(this, false)
     if (BuildConfig.IS_NEW_ARCHITECTURE_ENABLED) {
       // If you opted-in for the New Architecture, we load the native entry point for this app.

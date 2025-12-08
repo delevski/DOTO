@@ -6,6 +6,7 @@
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "automatic",
+    "scheme": "doto",
     "splash": {
       "image": "./assets/splash.png",
       "resizeMode": "contain",
@@ -17,10 +18,16 @@
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.doto.app",
+      "usesAppleSignIn": false,
       "infoPlist": {
         "NSLocationWhenInUseUsageDescription": "DOTO needs your location to show nearby tasks.",
         "NSPhotoLibraryUsageDescription": "DOTO needs access to your photos to upload images.",
-        "NSCameraUsageDescription": "DOTO needs camera access to take photos."
+        "NSCameraUsageDescription": "DOTO needs camera access to take photos.",
+        "CFBundleURLTypes": [
+          {
+            "CFBundleURLSchemes": ["doto", "fb2301357543703221"]
+          }
+        ]
       }
     },
     "notification": {
@@ -36,13 +43,31 @@
         "backgroundColor": "#DC2626"
       },
       "package": "com.doto.app",
-      "versionCode": 4,
+      "versionCode": 6,
       "permissions": [
         "ACCESS_FINE_LOCATION",
         "ACCESS_COARSE_LOCATION",
         "CAMERA"
+      ],
+      "intentFilters": [
+        {
+          "action": "VIEW",
+          "autoVerify": true,
+          "data": [
+            {
+              "scheme": "doto"
+            },
+            {
+              "scheme": "fb2301357543703221"
+            }
+          ],
+          "category": ["BROWSABLE", "DEFAULT"]
+        }
       ]
     },
+    "facebookScheme": "fb2301357543703221",
+    "facebookAppId": "2301357543703221",
+    "facebookDisplayName": "DOTO",
     "web": {
       "favicon": "./assets/favicon.png",
       "bundler": "metro"
@@ -73,7 +98,11 @@
     "extra": {
       "eas": {
         "projectId": "5519a148-f81d-466e-8fe0-a3557958c204"
-      }
+      },
+      "googleClientId": "{YOUR_GOOGLE_CLIENT_ID}",
+      "googleClientIdIos": "{YOUR_GOOGLE_IOS_CLIENT_ID}",
+      "googleClientIdAndroid": "{YOUR_GOOGLE_ANDROID_CLIENT_ID}",
+      "facebookAppId": "2301357543703221"
     }
   }
 }

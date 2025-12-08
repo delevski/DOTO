@@ -222,57 +222,57 @@ export const getUserEarnedBadges = (stats) => {
   
   if (!stats) return earnedBadges;
 
-  // Posts milestones
-  if (stats.postsCreated >= 1) {
+  // Posts milestones (with null safety)
+  if ((stats.postsCreated || 0) >= 1) {
     earnedBadges.push(BADGE_TYPES.FIRST_POST);
   }
-  if (stats.postsCreated >= 10) {
+  if ((stats.postsCreated || 0) >= 10) {
     earnedBadges.push(BADGE_TYPES.POSTS_10);
   }
-  if (stats.postsCreated >= 25) {
+  if ((stats.postsCreated || 0) >= 25) {
     earnedBadges.push(BADGE_TYPES.POSTS_25);
   }
 
-  // Tasks completed milestones
-  if (stats.tasksCompleted >= 5) {
+  // Tasks completed milestones (with null safety)
+  if ((stats.tasksCompleted || 0) >= 5) {
     earnedBadges.push(BADGE_TYPES.HELPER);
   }
-  if (stats.tasksCompleted >= 10) {
+  if ((stats.tasksCompleted || 0) >= 10) {
     earnedBadges.push(BADGE_TYPES.TASKS_10);
   }
-  if (stats.tasksCompleted >= 20) {
+  if ((stats.tasksCompleted || 0) >= 20) {
     earnedBadges.push(BADGE_TYPES.SUPER_HELPER);
   }
-  if (stats.tasksCompleted >= 25) {
+  if ((stats.tasksCompleted || 0) >= 25) {
     earnedBadges.push(BADGE_TYPES.TASKS_25);
   }
-  if (stats.tasksCompleted >= 50) {
+  if ((stats.tasksCompleted || 0) >= 50) {
     earnedBadges.push(BADGE_TYPES.TASKS_50);
   }
 
-  // Rating-based badges
-  if (stats.averageRating >= 4.5 && stats.totalRatingsReceived >= 3) {
+  // Rating-based badges (with null safety)
+  if ((stats.averageRating || 0) >= 4.5 && (stats.totalRatingsReceived || 0) >= 3) {
     earnedBadges.push(BADGE_TYPES.COMMUNITY_STAR);
   }
-  if (stats.averageRating === 5.0 && stats.totalRatingsReceived >= 5) {
+  if ((stats.averageRating || 0) === 5.0 && (stats.totalRatingsReceived || 0) >= 5) {
     earnedBadges.push(BADGE_TYPES.PERFECT_RATING);
   }
 
-  // Early Bird: First person to claim a post
-  if (stats.firstClaimCount >= 1) {
+  // Early Bird: First person to claim a post (with null safety)
+  if ((stats.firstClaimCount || 0) >= 1) {
     earnedBadges.push(BADGE_TYPES.EARLY_BIRD);
   }
 
-  // Streak badges (check both current and longest streak)
-  if (stats.currentStreak >= 7 || stats.longestStreak >= 7) {
+  // Streak badges (with null safety - check both current and longest streak)
+  if ((stats.currentStreak || 0) >= 7 || (stats.longestStreak || 0) >= 7) {
     earnedBadges.push(BADGE_TYPES.STREAK_7);
   }
-  if (stats.currentStreak >= 30 || stats.longestStreak >= 30) {
+  if ((stats.currentStreak || 0) >= 30 || (stats.longestStreak || 0) >= 30) {
     earnedBadges.push(BADGE_TYPES.STREAK_30);
   }
 
-  // Community Leader: High total engagement (100+ posts + tasks + comments)
-  if (stats.totalEngagement >= 100) {
+  // Community Leader: High total engagement (100+ posts + tasks + comments) (with null safety)
+  if ((stats.totalEngagement || 0) >= 100) {
     earnedBadges.push(BADGE_TYPES.COMMUNITY_LEADER);
   }
   

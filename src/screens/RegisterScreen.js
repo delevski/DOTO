@@ -247,7 +247,7 @@ export default function RegisterScreen({ navigation }) {
     const enteredCode = verificationCode.map(c => c.trim()).join('').trim();
     
     if (enteredCode.length !== 6) {
-      setError(t('auth.enterFullCode') || 'Please enter the full 6-digit code');
+      setError(t('auth.enterFullCode'));
       return;
     }
 
@@ -270,20 +270,20 @@ export default function RegisterScreen({ navigation }) {
       const rawError = err.body?.message || err.message || 'Unknown error';
       
       // Show more specific error message
-      let errorMessage = t('auth.invalidCode') || 'Invalid code. Please try again.';
+      let errorMessage = t('auth.invalidCode');
       
       // Parse InstantDB error messages
       if (rawError.toLowerCase().includes('expired')) {
-        errorMessage = 'Code expired. Please request a new one.';
+        errorMessage = t('auth.codeExpired');
       } else if (rawError.toLowerCase().includes('invalid')) {
-        errorMessage = 'Invalid code. Please check and try again.';
+        errorMessage = t('auth.codeInvalid');
       } else if (rawError.toLowerCase().includes('used')) {
-        errorMessage = 'Code already used. Please request a new one.';
+        errorMessage = t('auth.codeAlreadyUsed');
       } else if (rawError.toLowerCase().includes('not found')) {
-        errorMessage = 'Email not found. Please try again.';
+        errorMessage = t('auth.emailNotFound');
       } else {
         // Show the actual error for debugging
-        errorMessage = `Verification failed: ${rawError}`;
+        errorMessage = `${t('auth.verificationFailed')}: ${rawError}`;
       }
       
       setError(errorMessage);
@@ -549,11 +549,11 @@ export default function RegisterScreen({ navigation }) {
               {/* Resend Code Section */}
               <View style={styles.resendContainer}>
                 <Text style={[styles.resendText, { color: themeColors.textSecondary }]}>
-                  {t('auth.didntReceiveCode') || "Didn't receive the code?"}
+                  {t('auth.didntReceiveCode')}
                 </Text>
                 {resendCooldown > 0 ? (
                   <Text style={[styles.cooldownText, { color: themeColors.textSecondary }]}>
-                    {t('auth.resendIn') || 'Resend in'} {resendCooldown}s
+                    {t('auth.resendIn')} {resendCooldown}s
                   </Text>
                 ) : (
                   <TouchableOpacity 
@@ -565,7 +565,7 @@ export default function RegisterScreen({ navigation }) {
                       <ActivityIndicator size="small" color={colors.primary} />
                     ) : (
                       <Text style={styles.resendLink}>
-                        {t('auth.resendCode') || 'Resend Code'}
+                        {t('auth.resendCode')}
                       </Text>
                     )}
                   </TouchableOpacity>

@@ -7,12 +7,16 @@ import { useTranslation } from '../utils/translations';
 import Badge from '../components/Badge';
 import { getAllBadges, getUserEarnedBadges } from '../utils/badges';
 import { useUserStats } from '../hooks/useUserStats';
+import { useUserProfileSync } from '../hooks/useUserProfileSync';
 
 export default function Profile() {
   const { user, logout } = useAuthStore();
   const { language } = useSettingsStore();
   const t = useTranslation();
   const isRTL = language === 'he';
+
+  // Sync user profile from InstantDB (picks up changes made from mobile app)
+  useUserProfileSync();
 
   // Fetch real user statistics
   const stats = useUserStats(user?.id);

@@ -11,19 +11,27 @@ import {
   Platform,
   ActivityIndicator,
 } from 'react-native';
+import * as ImagePicker from 'expo-image-picker';
 import { useAuthStore } from '../store/authStore';
 import { useSettingsStore } from '../store/settingsStore';
+import { useRTL, useRTLStyles } from '../context/RTLContext';
 import { db, id } from '../lib/instant';
 import { colors, spacing, borderRadius } from '../styles/theme';
+import Icon from '../components/Icon';
+import { compressImage } from '../utils/imageCompression';
 
 export default function ChatScreen({ route }) {
   const { conversationId, userName, userAvatar, userId } = route.params || {};
   const user = useAuthStore((state) => state.user);
   const isAuthenticated = useAuthStore((state) => state.isAuthenticated);
   const darkMode = useSettingsStore((state) => state.darkMode);
+  const { t, isRTL } = useRTL();
+  const rtlStyles = useRTLStyles();
   
   const [newMessage, setNewMessage] = useState('');
+  const [messageImages, setMessageImages] = useState([]);
   const [isSending, setIsSending] = useState(false);
+  const [isPickingImage, setIsPickingImage] = useState(false);
   const scrollViewRef = useRef(null);
   const isMountedRef = useRef(true);
   
@@ -95,9 +103,9 @@ export default function ChatScreen({ route }) {
     yesterday.setDate(yesterday.getDate() - 1);
 
     if (date.toDateString() === today.toDateString()) {
-      return 'Today';
+      return t('messages.today');
     } else if (date.toDateString() === yesterday.toDateString()) {
-      return 'Yesterday';
+      return t('messages.yesterday');
     } else {
       return date.toLocaleDateString([], { month: 'short', day: 'numeric' });
     }
@@ -110,18 +118,57 @@ export default function ChatScreen({ route }) {
     return currentDate !== prevDate;
   };
 
+  // Pick image from gallery
+  const pickImage = async () => {
+    try {
+      setIsPickingImage(true);
+      const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (status !== 'granted') {
+        return;
+      }
+
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        allowsMultipleSelection: true,
+        quality: 0.8,
+      });
+
+      if (!result.canceled && result.assets) {
+        const compressedImages = await Promise.all(
+          result.assets.slice(0, 5 - messageImages.length).map(async (asset) => {
+            const compressed = await compressImage(asset.uri);
+            return compressed.base64;
+          })
+        );
+        setMessageImages(prev => [...prev, ...compressedImages].slice(0, 5));
+      }
+    } catch (err) {
+      console.error('Image picker error:', err);
+    } finally {
+      setIsPickingImage(false);
+    }
+  };
+
+  // Remove image from selection
+  const removeImage = (index) => {
+    setMessageImages(prev => prev.filter((_, i) => i !== index));
+  };
+
   const handleSend = async () => {
-    if (!newMessage.trim() || !user || isSending) return;
+    if ((!newMessage.trim() && messageImages.length === 0) || !user || isSending) return;
 
     setIsSending(true);
     const messageText = newMessage.trim();
+    const imagesToSend = [...messageImages];
     setNewMessage('');
+    setMessageImages([]);
 
     try {
       const messageId = id();
       const timestamp = Date.now();
+      const lastMessagePreview = messageText || (imagesToSend.length > 0 ? '📷 ' + t('messages.image') : '');
 
-      // Create message
+      // Create message with images
       await db.transact(
         db.tx.messages[messageId].update({
           id: messageId,
@@ -130,18 +177,20 @@ export default function ChatScreen({ route }) {
           senderName: user.name,
           senderAvatar: user.avatar,
           text: messageText,
+          images: imagesToSend,
           timestamp,
           read: false,
         }),
         // Update conversation's last message
         db.tx.conversations[conversationId].update({
-          lastMessage: messageText,
+          lastMessage: lastMessagePreview,
           lastMessageTime: timestamp,
         })
       );
     } catch (err) {
       console.error('Send message error:', err);
-      setNewMessage(messageText); // Restore message on error
+      setNewMessage(messageText);
+      setMessageImages(imagesToSend);
     } finally {
       setIsSending(false);
     }
@@ -150,8 +199,9 @@ export default function ChatScreen({ route }) {
   if (!user) {
     return (
       <View style={[styles.container, styles.centerContent, { backgroundColor: themeColors.background }]}>
+        <Icon name="chatbubbles-outline" size={48} color={colors.primary} style={{ marginBottom: spacing.md }} />
         <Text style={[styles.errorText, { color: themeColors.textSecondary }]}>
-          Please login to view messages
+          {t('auth.pleaseLogin')}
         </Text>
       </View>
     );
@@ -164,15 +214,15 @@ export default function ChatScreen({ route }) {
       keyboardVerticalOffset={90}
     >
       {/* Chat Header */}
-      <View style={[styles.chatHeader, { backgroundColor: themeColors.surface, borderBottomColor: themeColors.border }]}>
+      <View style={[styles.chatHeader, { backgroundColor: themeColors.surface, borderBottomColor: themeColors.border, flexDirection: rtlStyles.row }]}>
         <Image 
           source={{ uri: userAvatar || `https://i.pravatar.cc/150?u=${userId}` }}
-          style={styles.headerAvatar}
+          style={[styles.headerAvatar, isRTL ? { marginLeft: spacing.md, marginRight: 0 } : { marginRight: spacing.md }]}
         />
-        <View style={styles.headerInfo}>
+        <View style={[styles.headerInfo, { alignItems: isRTL ? 'flex-end' : 'flex-start' }]}>
           <Text style={[styles.headerName, { color: themeColors.text }]}>{userName}</Text>
           <Text style={[styles.headerStatus, { color: themeColors.textSecondary }]}>
-            {messages.length > 0 ? 'Active' : 'Start chatting'}
+            {messages.length > 0 ? t('messages.active') : t('messages.startChatting')}
           </Text>
         </View>
       </View>
@@ -191,9 +241,9 @@ export default function ChatScreen({ route }) {
         >
           {messages.length === 0 ? (
             <View style={styles.emptyChat}>
-              <Text style={styles.emptyChatIcon}>👋</Text>
+              <Icon name="hand-left-outline" size={48} color={colors.primary} />
               <Text style={[styles.emptyChatText, { color: themeColors.textSecondary }]}>
-                Say hello to {userName}!
+                {t('messages.sayHelloTo', { name: userName })}
               </Text>
             </View>
           ) : (
@@ -225,19 +275,42 @@ export default function ChatScreen({ route }) {
                       styles.messageBubble,
                       isMe ? styles.myBubble : [styles.theirBubble, { backgroundColor: themeColors.surface }]
                     ]}>
-                      <Text style={[
-                        styles.messageText,
-                        isMe ? styles.myMessageText : { color: themeColors.text }
-                      ]}>
-                        {message.text}
-                      </Text>
-                      <Text style={[
-                        styles.messageTime,
-                        isMe ? styles.myMessageTime : { color: themeColors.textSecondary }
-                      ]}>
-                        {formatTime(message.timestamp)}
-                        {isMe && (message.read ? ' ✓✓' : ' ✓')}
-                      </Text>
+                      {message.text ? (
+                        <Text style={[
+                          styles.messageText,
+                          isMe ? styles.myMessageText : { color: themeColors.text }
+                        ]}>
+                          {message.text}
+                        </Text>
+                      ) : null}
+                      {/* Display images */}
+                      {message.images && message.images.length > 0 && (
+                        <View style={styles.messageImagesContainer}>
+                          {message.images.map((img, idx) => (
+                            <Image 
+                              key={idx}
+                              source={{ uri: img.startsWith('data:') ? img : `data:image/jpeg;base64,${img}` }}
+                              style={styles.messageImage}
+                              resizeMode="cover"
+                            />
+                          ))}
+                        </View>
+                      )}
+                      <View style={[styles.messageTimeRow, { flexDirection: rtlStyles.row }]}>
+                        <Text style={[
+                          styles.messageTime,
+                          isMe ? styles.myMessageTime : { color: themeColors.textSecondary }
+                        ]}>
+                          {formatTime(message.timestamp)}
+                        </Text>
+                        {isMe && (
+                          <Icon 
+                            name={message.read ? 'checkmark-done' : 'checkmark'} 
+                            size={14} 
+                            color={isMe ? 'rgba(255,255,255,0.7)' : themeColors.textSecondary} 
+                          />
+                        )}
+                      </View>
                     </View>
                   </View>
                 </View>
@@ -249,26 +322,64 @@ export default function ChatScreen({ route }) {
 
       {/* Input */}
       <View style={[styles.inputContainer, { backgroundColor: themeColors.surface, borderTopColor: themeColors.border }]}>
-        <TextInput
-          style={[styles.input, { color: themeColors.text, backgroundColor: themeColors.background }]}
-          placeholder="Type a message..."
-          placeholderTextColor={themeColors.textSecondary}
-          value={newMessage}
-          onChangeText={setNewMessage}
-          multiline
-          maxLength={1000}
-        />
-        <TouchableOpacity 
-          style={[styles.sendButton, (!newMessage.trim() || isSending) && styles.sendButtonDisabled]}
-          onPress={handleSend}
-          disabled={!newMessage.trim() || isSending}
-        >
-          {isSending ? (
-            <ActivityIndicator size="small" color="#fff" />
-          ) : (
-            <Text style={styles.sendIcon}>📤</Text>
-          )}
-        </TouchableOpacity>
+        {/* Image Previews */}
+        {messageImages.length > 0 && (
+          <View style={[styles.imagePreviewContainer, { flexDirection: rtlStyles.row }]}>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+              {messageImages.map((img, idx) => (
+                <View key={idx} style={styles.imagePreviewWrapper}>
+                  <Image 
+                    source={{ uri: img.startsWith('data:') ? img : `data:image/jpeg;base64,${img}` }}
+                    style={styles.imagePreview}
+                  />
+                  <TouchableOpacity 
+                    style={styles.removeImageButton}
+                    onPress={() => removeImage(idx)}
+                  >
+                    <Icon name="close" size={12} color="#fff" />
+                  </TouchableOpacity>
+                </View>
+              ))}
+            </ScrollView>
+          </View>
+        )}
+        
+        <View style={[styles.inputRow, { flexDirection: rtlStyles.row }]}>
+          {/* Image Picker Button */}
+          <TouchableOpacity 
+            style={styles.attachButton}
+            onPress={pickImage}
+            disabled={isPickingImage || messageImages.length >= 5}
+          >
+            {isPickingImage ? (
+              <ActivityIndicator size="small" color={colors.primary} />
+            ) : (
+              <Icon name="image-outline" size={22} color={messageImages.length >= 5 ? themeColors.textSecondary : colors.primary} />
+            )}
+          </TouchableOpacity>
+          
+          <TextInput
+            style={[styles.input, { color: themeColors.text, backgroundColor: themeColors.background, textAlign: rtlStyles.textAlign }]}
+            placeholder={t('messages.typeMessage')}
+            placeholderTextColor={themeColors.textSecondary}
+            value={newMessage}
+            onChangeText={setNewMessage}
+            multiline
+            maxLength={1000}
+          />
+          
+          <TouchableOpacity 
+            style={[styles.sendButton, (!newMessage.trim() && messageImages.length === 0 || isSending) && styles.sendButtonDisabled]}
+            onPress={handleSend}
+            disabled={(!newMessage.trim() && messageImages.length === 0) || isSending}
+          >
+            {isSending ? (
+              <ActivityIndicator size="small" color="#fff" />
+            ) : (
+              <Icon name="send" size={20} color="#fff" />
+            )}
+          </TouchableOpacity>
+        </View>
       </View>
     </KeyboardAvoidingView>
   );
@@ -296,7 +407,6 @@ const styles = StyleSheet.create({
     width: 44,
     height: 44,
     borderRadius: 22,
-    marginRight: spacing.md,
   },
   headerInfo: {
     flex: 1,
@@ -321,10 +431,6 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     paddingVertical: 100,
-  },
-  emptyChatIcon: {
-    fontSize: 48,
-    marginBottom: spacing.md,
   },
   emptyChatText: {
     fontSize: 16,
@@ -386,10 +492,42 @@ const styles = StyleSheet.create({
     color: 'rgba(255,255,255,0.7)',
   },
   inputContainer: {
-    flexDirection: 'row',
-    alignItems: 'flex-end',
     padding: spacing.md,
     borderTopWidth: 1,
+  },
+  imagePreviewContainer: {
+    marginBottom: spacing.sm,
+    gap: spacing.sm,
+  },
+  imagePreviewWrapper: {
+    position: 'relative',
+    marginRight: spacing.sm,
+  },
+  imagePreview: {
+    width: 60,
+    height: 60,
+    borderRadius: 8,
+  },
+  removeImageButton: {
+    position: 'absolute',
+    top: -6,
+    right: -6,
+    backgroundColor: colors.error,
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  inputRow: {
+    alignItems: 'flex-end',
+    gap: spacing.sm,
+  },
+  attachButton: {
+    width: 44,
+    height: 44,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   input: {
     flex: 1,
@@ -398,7 +536,6 @@ const styles = StyleSheet.create({
     paddingVertical: spacing.sm,
     fontSize: 16,
     maxHeight: 100,
-    marginRight: spacing.sm,
   },
   sendButton: {
     width: 44,
@@ -411,7 +548,19 @@ const styles = StyleSheet.create({
   sendButtonDisabled: {
     opacity: 0.5,
   },
-  sendIcon: {
-    fontSize: 20,
+  messageImagesContainer: {
+    marginTop: spacing.sm,
+    gap: spacing.xs,
+  },
+  messageImage: {
+    width: 200,
+    height: 150,
+    borderRadius: 12,
+  },
+  messageTimeRow: {
+    alignItems: 'center',
+    gap: 4,
+    marginTop: 4,
+    alignSelf: 'flex-end',
   },
 });

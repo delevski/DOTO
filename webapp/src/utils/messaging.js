@@ -1,5 +1,6 @@
 import { db } from '../lib/instant';
 import { id } from '@instantdb/react';
+import { sendPushNotificationToUser } from './pushNotifications';
 
 /**
  * Generate a consistent conversation ID from two user IDs
@@ -107,9 +108,24 @@ export function createOrUpdateConversation(conversationId, participant1Id, parti
 }
 
 /**
+ * Get the other participant's ID from a conversation ID
+ */
+export function getOtherParticipantId(conversationId, currentUserId) {
+  if (!currentUserId || !conversationId) return null;
+  
+  const match = conversationId.match(/^conv_(.+?)_(.+)$/);
+  if (match) {
+    const [, id1, id2] = match;
+    return id1 === currentUserId ? id2 : id1;
+  }
+  
+  return null;
+}
+
+/**
  * Send a message
  */
-export function sendMessage(conversationId, senderId, senderData, text, images = []) {
+export async function sendMessage(conversationId, senderId, senderData, text, images = []) {
   const messageId = id();
   const timestamp = Date.now();
   
@@ -132,13 +148,13 @@ export function sendMessage(conversationId, senderId, senderData, text, images =
     messageId,
     conversationId,
     senderId,
-    text: text.substring(0, 50) + '...',
+    text: text ? text.substring(0, 50) + '...' : '(no text)',
     timestamp
   });
   
   // Update both the message and conversation
   // Ensure conversation exists and is updated with latest message info
-  db.transact(
+  await db.transact(
     db.tx.messages[messageId].update(message),
     db.tx.conversations[conversationId].update({
       lastMessage: lastMessagePreview,
@@ -147,6 +163,18 @@ export function sendMessage(conversationId, senderId, senderData, text, images =
   );
   
   console.log('Message sent and conversation updated');
+  
+  // Send push notification to the recipient
+  const recipientId = getOtherParticipantId(conversationId, senderId);
+  if (recipientId) {
+    console.log('Sending push notification for new message to:', recipientId);
+    await sendPushNotificationToUser(
+      recipientId,
+      'newMessage',
+      { userName: senderData.name },
+      { conversationId, type: 'new_message', senderId }
+    );
+  }
   
   return message;
 }

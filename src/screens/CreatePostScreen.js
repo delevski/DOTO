@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useCallback } from 'react';
 import {
   View,
   Text,
@@ -9,6 +9,7 @@ import {
   Image,
   ActivityIndicator,
 } from 'react-native';
+import { useFocusEffect } from '@react-navigation/native';
 import * as ImagePicker from 'expo-image-picker';
 import * as Location from 'expo-location';
 import { useAuthStore } from '../store/authStore';
@@ -41,6 +42,21 @@ export default function CreatePostScreen({ navigation }) {
   const [isLoading, setIsLoading] = useState(false);
   const [isGettingLocation, setIsGettingLocation] = useState(false);
   const [isCompressing, setIsCompressing] = useState(false);
+
+  // Reset form when screen is focused (navigated to)
+  useFocusEffect(
+    useCallback(() => {
+      // Reset all form fields when screen comes into focus
+      setTitle('');
+      setDescription('');
+      setLocation('');
+      setCategory('Other');
+      setPhotos([]);
+      setIsLoading(false);
+      setIsGettingLocation(false);
+      setIsCompressing(false);
+    }, [])
+  );
 
   const themeColors = {
     background: darkMode ? colors.backgroundDark : colors.background,

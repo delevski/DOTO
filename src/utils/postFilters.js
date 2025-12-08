@@ -244,20 +244,28 @@ export function filterPostsForTab(posts, tab, options = {}) {
  * Used for list views where full post data isn't needed
  * 
  * @param {Array} posts - Array of post objects
+ * @param {string} currentUserId - Current user's ID to check if they liked the post
  * @returns {Array} - Array of posts with large data removed
  */
-export function stripLargeData(posts) {
+export function stripLargeData(posts, currentUserId = null) {
   if (!Array.isArray(posts)) return [];
   
   return posts.map(post => {
-    // Remove photos, likedBy, and claimers arrays to reduce memory
-    const { photos, likedBy, claimers, ...minimalPost } = post;
+    // Remove photos and claimers arrays to reduce memory
+    // Keep likedBy for checking if current user liked the post
+    const { photos, claimers, ...minimalPost } = post;
+    const likedBy = post.likedBy || [];
+    
     return {
       ...minimalPost,
+      // Keep likedBy array for like indicator to work
+      likedBy: likedBy,
       // Keep count information for display
       photosCount: Array.isArray(photos) ? photos.length : 0,
-      likesCount: post.likes || (Array.isArray(likedBy) ? likedBy.length : 0),
+      likesCount: post.likes || likedBy.length,
       claimersCount: Array.isArray(claimers) ? claimers.length : 0,
+      // Add convenience flag for checking if current user liked the post
+      isLikedByMe: currentUserId ? likedBy.includes(currentUserId) : false,
     };
   });
 }

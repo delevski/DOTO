@@ -14,6 +14,7 @@ import { useSettingsStore } from '../store/settingsStore';
 import { useRTL, useRTLStyles } from '../context/RTLContext';
 import { colors, spacing, borderRadius } from '../styles/theme';
 import { useUserStats } from '../hooks/useUserStats';
+import { useUserProfileSync } from '../hooks/useUserProfileSync';
 import { getAllBadges, getUserEarnedBadges } from '../utils/badges';
 import { clearPostsCache } from '../hooks/useFilteredPosts';
 import Icon from '../components/Icon';
@@ -45,6 +46,9 @@ function ProfileScreen({ navigation }) {
       return () => setQueryEnabled(false);
     }, [])
   );
+
+  // Sync user profile from InstantDB (picks up changes made from web app)
+  useUserProfileSync({ enabled: queryEnabled });
 
   // Use the comprehensive useUserStats hook with focus-based query (same logic as webapp)
   const stats = useUserStats(user?.id, { enabled: queryEnabled });
@@ -185,14 +189,21 @@ function ProfileScreen({ navigation }) {
                     earned ? { backgroundColor: badge.color + '20' } : styles.badgeItemLocked
                   ]}
                 >
-                  <Text style={[styles.badgeIcon, !earned && styles.badgeIconLocked]}>
-                    {badge.icon}
-                  </Text>
+                  <View style={[
+                    styles.badgeIconContainer,
+                    earned ? { backgroundColor: badge.color } : styles.badgeIconContainerLocked
+                  ]}>
+                    <Icon 
+                      name={earned ? badge.icon : 'lock-closed-outline'} 
+                      size={24} 
+                      color={earned ? '#fff' : '#9CA3AF'}
+                    />
+                  </View>
                   <Text style={[
                     styles.badgeName, 
                     { color: earned ? themeColors.text : themeColors.textSecondary }
                   ]}>
-                    {badge.name}
+                    {t(badge.name)}
                   </Text>
                 </View>
               );
@@ -206,6 +217,19 @@ function ProfileScreen({ navigation }) {
             {t('profile.quickActions')}
           </Text>
           
+          <TouchableOpacity 
+            style={[styles.actionItem, { borderBottomColor: themeColors.border, flexDirection: rtlStyles.row }]}
+            onPress={() => navigation.navigate('Notifications')}
+          >
+            <View style={styles.actionIcon}>
+              <Icon name="notifications" size={22} color={colors.primary} />
+            </View>
+            <Text style={[styles.actionLabel, { color: themeColors.text }]}>{t('notifications.title') || 'Notifications'}</Text>
+            <View style={[styles.actionArrow, { transform: isRTL ? [{ scaleX: -1 }] : [] }]}>
+              <Icon name="chevron-forward" size={20} color={themeColors.textSecondary} />
+            </View>
+          </TouchableOpacity>
+
           <TouchableOpacity 
             style={[styles.actionItem, { borderBottomColor: themeColors.border, flexDirection: rtlStyles.row }]}
             onPress={() => navigation.navigate('Settings')}
@@ -415,14 +439,23 @@ const styles = StyleSheet.create({
   },
   badgeItemLocked: {
     backgroundColor: 'rgba(0,0,0,0.05)',
-    opacity: 0.5,
+    opacity: 0.6,
   },
-  badgeIcon: {
-    fontSize: 32,
+  badgeIconContainer: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    justifyContent: 'center',
+    alignItems: 'center',
     marginBottom: spacing.xs,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 4,
+    elevation: 3,
   },
-  badgeIconLocked: {
-    opacity: 0.3,
+  badgeIconContainerLocked: {
+    backgroundColor: '#E5E7EB',
   },
   badgeName: {
     fontSize: 11,

@@ -19,6 +19,22 @@ const notificationMessages = {
       title: 'Great Job!',
       body: (postTitle, rating) => `Task "${postTitle}" is done! You received ${rating} stars.`,
     },
+    newMessage: {
+      title: 'New Message!',
+      body: (userName) => `${userName} sent you a message`,
+    },
+    postLiked: {
+      title: 'Someone Liked Your Post!',
+      body: (userName, postTitle) => `${userName} liked "${postTitle}"`,
+    },
+    newComment: {
+      title: 'New Comment!',
+      body: (userName, postTitle) => `${userName} commented on "${postTitle}"`,
+    },
+    newRating: {
+      title: 'You Got Rated!',
+      body: (userName, rating) => `${userName} gave you ${rating} stars!`,
+    },
   },
   he: {
     newClaim: {
@@ -36,6 +52,22 @@ const notificationMessages = {
     taskAccepted: {
       title: 'עבודה מצוינת!',
       body: (postTitle, rating) => `המשימה "${postTitle}" הושלמה! קיבלת ${rating} כוכבים.`,
+    },
+    newMessage: {
+      title: 'הודעה חדשה!',
+      body: (userName) => `${userName} שלח/ה לך הודעה`,
+    },
+    postLiked: {
+      title: 'מישהו אהב את הפוסט שלך!',
+      body: (userName, postTitle) => `${userName} אהב/ה את "${postTitle}"`,
+    },
+    newComment: {
+      title: 'תגובה חדשה!',
+      body: (userName, postTitle) => `${userName} הגיב/ה על "${postTitle}"`,
+    },
+    newRating: {
+      title: 'קיבלת דירוג!',
+      body: (userName, rating) => `${userName} נתן/ה לך ${rating} כוכבים!`,
     },
   },
 };

@@ -5,6 +5,7 @@ import { useAuthStore } from '../store/useStore';
 import { useSettingsStore } from '../store/settingsStore';
 import { useTranslation } from '../utils/translations';
 import { db } from '../lib/instant';
+import { useUserProfileSync } from '../hooks/useUserProfileSync';
 
 export default function EditProfile() {
   const navigate = useNavigate();
@@ -12,6 +13,9 @@ export default function EditProfile() {
   const { language } = useSettingsStore();
   const t = useTranslation();
   const isRTL = language === 'he';
+
+  // Sync user profile from InstantDB (picks up changes made from mobile app)
+  useUserProfileSync();
 
   const [formData, setFormData] = useState({
     name: user?.name || '',
@@ -23,6 +27,20 @@ export default function EditProfile() {
   const [avatar, setAvatar] = useState(user?.avatar || '');
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState('');
+  
+  // Update form when user data changes (from sync)
+  React.useEffect(() => {
+    if (user) {
+      setFormData({
+        name: user.name || '',
+        email: user.email || '',
+        phone: user.phone || '',
+        bio: user.bio || '',
+        location: user.location || '',
+      });
+      setAvatar(user.avatar || '');
+    }
+  }, [user?.updatedAt]); // Only re-run when updatedAt changes (indicates sync)
 
   // Fetch user's posts and comments to update them
   const { data } = db.useQuery({
@@ -73,12 +91,28 @@ export default function EditProfile() {
     try {
       const updatedName = formData.name.trim();
       const updatedAvatar = avatar || user.avatar;
+      const updatedBio = formData.bio?.trim() || '';
+      const updatedPhone = formData.phone?.trim() || '';
+      const updatedLocation = formData.location?.trim() || '';
 
-      // Update user profile in store
+      // Prepare user update data for InstantDB
+      const userUpdates = {
+        name: updatedName,
+        avatar: updatedAvatar,
+        bio: updatedBio,
+        phone: updatedPhone,
+        location: updatedLocation,
+        updatedAt: Date.now(),
+      };
+
+      // Update user profile in local store
       updateProfile({
         ...formData,
         avatar: updatedAvatar,
       });
+
+      // Update user in InstantDB (THIS IS THE CRITICAL FIX!)
+      const userUpdate = db.tx.users[user.id].update(userUpdates);
 
       // Update all user's posts
       const postUpdates = userPosts.map(post => 
@@ -103,14 +137,13 @@ export default function EditProfile() {
         })
       );
 
-      // Execute all updates in a single transaction
-      if (postUpdates.length > 0 || commentUpdates.length > 0 || claimedUpdates.length > 0) {
-        db.transact(
+      // Execute all updates in a single transaction (including user!)
+      await db.transact(
+        userUpdate,
           ...postUpdates,
           ...commentUpdates,
           ...claimedUpdates
         );
-      }
 
       setTimeout(() => {
         navigate('/profile');

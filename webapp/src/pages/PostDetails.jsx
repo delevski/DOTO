@@ -378,7 +378,7 @@ export default function PostDetails() {
     }
   };
 
-  const handleLike = () => {
+  const handleLike = async () => {
     if (!user) {
       setLocalError('You must be logged in to like a post');
       return;
@@ -397,16 +397,44 @@ export default function PostDetails() {
       );
     } else {
       // Like: add user to likedBy array
-      db.transact(
+      const now = Date.now();
+      await db.transact(
         db.tx.posts[postId].update({
           likedBy: [...currentLikedBy, user.id],
           likes: (post.likes || 0) + 1
         })
       );
+      
+      // Send push notification to post author (don't notify if liking own post)
+      if (post?.authorId && post.authorId !== user.id) {
+        // Create in-app notification
+        const notificationId = id();
+        await db.transact(
+          db.tx.notifications[notificationId].update({
+            id: notificationId,
+            userId: post.authorId,
+            postId: postId,
+            type: 'post_liked',
+            message: `${user.name} liked your post`,
+            read: false,
+            timestamp: now,
+            postTitle: post.title || 'your post',
+            createdAt: now
+          })
+        );
+        
+        // Send push notification
+        sendPushNotificationToUser(
+          post.authorId,
+          'postLiked',
+          { userName: user.name, postTitle: post.title || 'your post' },
+          { postId, type: 'post_liked' }
+        );
+      }
     }
   };
 
-  const handleAddComment = () => {
+  const handleAddComment = async () => {
     if (!user) {
       setLocalError('You must be logged in to comment');
       return;
@@ -418,6 +446,7 @@ export default function PostDetails() {
     }
 
     const commentId = id();
+    const now = Date.now();
     const comment = {
       id: commentId,
       postId: postId,
@@ -425,16 +454,43 @@ export default function PostDetails() {
       author: user.name,
       avatar: user.avatar,
       text: newComment.trim(),
-      timestamp: Date.now(),
-      createdAt: Date.now()
+      timestamp: now,
+      createdAt: now
     };
 
-    db.transact(
+    await db.transact(
       db.tx.comments[commentId].update(comment),
       db.tx.posts[postId].update({
         comments: (post.comments || 0) + 1
       })
     );
+
+    // Send push notification to post author (don't notify if commenting on own post)
+    if (post?.authorId && post.authorId !== user.id) {
+      // Create in-app notification
+      const notificationId = id();
+      await db.transact(
+        db.tx.notifications[notificationId].update({
+          id: notificationId,
+          userId: post.authorId,
+          postId: postId,
+          type: 'new_comment',
+          message: `${user.name} commented on your post`,
+          read: false,
+          timestamp: now,
+          postTitle: post.title || 'your post',
+          createdAt: now
+        })
+      );
+      
+      // Send push notification
+      sendPushNotificationToUser(
+        post.authorId,
+        'newComment',
+        { userName: user.name, postTitle: post.title || 'your post' },
+        { postId, type: 'new_comment' }
+      );
+    }
 
     // Update user's activity streak
     updateUserStreak(user.id);

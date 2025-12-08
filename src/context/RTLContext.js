@@ -30,7 +30,24 @@ export function RTLProvider({ children }) {
   useEffect(() => {
     const initLanguage = async () => {
       try {
-        const storedLanguage = await AsyncStorage.getItem(LANGUAGE_KEY);
+        // Try to get from @doto_settings first (settingsStore), then fallback to @doto_language
+        const storedSettings = await AsyncStorage.getItem('@doto_settings');
+        let storedLanguage = null;
+        
+        if (storedSettings) {
+          try {
+            const settings = JSON.parse(storedSettings);
+            storedLanguage = settings.language;
+          } catch (e) {
+            // Ignore parse errors
+          }
+        }
+        
+        // Fallback to old key if settings not found
+        if (!storedLanguage) {
+          storedLanguage = await AsyncStorage.getItem(LANGUAGE_KEY);
+        }
+        
         if (storedLanguage && (storedLanguage === 'en' || storedLanguage === 'he')) {
           setLanguageState(storedLanguage);
           setI18nLanguage(storedLanguage);
@@ -64,9 +81,10 @@ export function RTLProvider({ children }) {
 
   /**
    * Set the language and persist to storage
+   * Also syncs with settingsStore if available
    * @param {string} lang - 'en' or 'he'
    */
-  const setLanguage = useCallback(async (lang) => {
+  const setLanguage = useCallback(async (lang, userId = null) => {
     if (lang !== 'en' && lang !== 'he') return;
 
     try {
@@ -75,8 +93,23 @@ export function RTLProvider({ children }) {
       setI18nLanguage(lang);
       setIsRTL(lang === 'he');
 
-      // Persist to storage
+      // Persist to both storage keys for compatibility
       await AsyncStorage.setItem(LANGUAGE_KEY, lang);
+      
+      // Also update settingsStore storage
+      try {
+        const storedSettings = await AsyncStorage.getItem('@doto_settings');
+        if (storedSettings) {
+          const settings = JSON.parse(storedSettings);
+          settings.language = lang;
+          await AsyncStorage.setItem('@doto_settings', JSON.stringify(settings));
+        } else {
+          // Create settings if doesn't exist
+          await AsyncStorage.setItem('@doto_settings', JSON.stringify({ language: lang, darkMode: false }));
+        }
+      } catch (e) {
+        console.warn('Failed to sync language to settingsStore:', e);
+      }
 
       // Apply RTL to I18nManager
       const shouldBeRTL = lang === 'he';
@@ -84,6 +117,16 @@ export function RTLProvider({ children }) {
         I18nManager.allowRTL(shouldBeRTL);
         I18nManager.forceRTL(shouldBeRTL);
         // Note: Full RTL switch may require app restart on some devices
+      }
+      
+      // Sync with settingsStore if available (for DB save)
+      if (userId) {
+        try {
+          const { saveUserLanguage } = await import('../utils/notifications');
+          await saveUserLanguage(userId, lang);
+        } catch (e) {
+          console.warn('Failed to save language to DB:', e);
+        }
       }
     } catch (error) {
       console.error('Failed to save language preference:', error);
@@ -167,4 +210,3 @@ export function useRTLStyles() {
 }
 
 export default RTLContext;
-
