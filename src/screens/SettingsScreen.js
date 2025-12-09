@@ -99,60 +99,87 @@ export default function SettingsScreen({ navigation }) {
 
   // Debug: Test push notifications - SIMPLIFIED
   const testPushNotifications = async () => {
-    let info = '';
-    
     try {
-      info += '1. Checking permissions...\n';
-      const { status } = await Notifications.getPermissionsAsync();
-      info += `   Status: ${status}\n`;
-      
-      if (status !== 'granted') {
-        const { status: newStatus } = await Notifications.requestPermissionsAsync();
-        info += `   After request: ${newStatus}\n`;
-        if (newStatus !== 'granted') {
-          RNAlert.alert('Permission Denied', info);
+      // 1. Check permissions
+      const permResult = await Notifications.getPermissionsAsync();
+      if (permResult.status !== 'granted') {
+        const reqResult = await Notifications.requestPermissionsAsync();
+        if (reqResult.status !== 'granted') {
+          RNAlert.alert('Error', 'Permission denied');
           return;
         }
       }
       
-      info += '2. Getting FCM token...\n';
+      // 2. Get REAL Expo push token (this is what Expo's push service needs)
+      let expoPushToken = null;
       try {
-        const fcm = await Notifications.getDevicePushTokenAsync();
-        info += `   FCM: ${fcm?.data ? 'GOT IT!' : 'NONE'}\n`;
-        if (fcm?.data) {
-          info += `   Token: ${String(fcm.data).slice(0, 40)}...\n`;
-          
-          // Save to DB
-          if (user?.id) {
-            info += '3. Saving to DB...\n';
-            await db.transact(
-              db.tx.users[user.id].update({
-                pushToken: `ExponentPushToken[${fcm.data}]`,
-                pushTokenUpdatedAt: Date.now()
-              })
-            );
-            info += '   SAVED!\n';
-          }
-          
-          // Send local notification
-          info += '4. Sending test notification...\n';
-          await Notifications.scheduleNotificationAsync({
-            content: {
-              title: '🎉 Success!',
-              body: 'Push notifications work!',
-            },
-            trigger: { seconds: 2 },
-          });
-          info += '   SENT! Check in 2 seconds.\n';
-        }
-      } catch (fcmErr) {
-        info += `   FCM Error: ${fcmErr.message}\n`;
+        console.log('🔔 Getting Expo push token...');
+        const tokenData = await Notifications.getExpoPushTokenAsync({
+          projectId: '5519a148-f81d-466e-8fe0-a3557958c204',
+        });
+        expoPushToken = tokenData?.data || null;
+        console.log('🔔 Got Expo token:', expoPushToken ? expoPushToken.substring(0, 50) + '...' : 'FAILED');
+      } catch (expoErr) {
+        console.log('🔔 Expo token error:', expoErr.message);
       }
       
-      RNAlert.alert('Push Test Result', info);
+      // 3. Also get native FCM token as backup
+      let fcmToken = null;
+      try {
+        const fcm = await Notifications.getDevicePushTokenAsync();
+        fcmToken = fcm?.data || null;
+        console.log('🔔 Got FCM token:', fcmToken ? fcmToken.substring(0, 50) + '...' : 'FAILED');
+      } catch (e) {
+        console.log('🔔 FCM error:', e.message);
+      }
+      
+      // Determine which token to use
+      // Priority: Real Expo token > Raw FCM token
+      const tokenToSave = expoPushToken || fcmToken;
+      const tokenType = expoPushToken ? 'Expo' : 'FCM';
+      
+      if (!tokenToSave) {
+        RNAlert.alert(
+          'Token Error', 
+          'Could not get any push token.\n\nPlease ensure:\n1. Notification permissions are granted\n2. Google Play Services is working'
+        );
+        return;
+      }
+      
+      // 4. Save to DB
+      if (user && user.id) {
+        await db.transact(
+          db.tx.users[user.id].merge({
+            pushToken: tokenToSave,     // Real Expo token OR raw FCM token
+            fcmToken: fcmToken,         // Always save FCM as backup
+            pushTokenUpdatedAt: Date.now()
+          })
+        );
+        
+        // 5. Send local test notification
+        await Notifications.scheduleNotificationAsync({
+          content: {
+            title: '✅ Push Token Saved!',
+            body: `Using ${tokenType} notifications.`,
+          },
+          trigger: { seconds: 1 },
+        });
+        
+        RNAlert.alert(
+          '✅ Success', 
+          `Push token saved!\n\nType: ${tokenType}\nToken: ${tokenToSave.substring(0, 35)}...\n\n${
+            tokenType === 'FCM' 
+              ? 'Note: FCM mode requires proxy server running.' 
+              : 'Now test from web app Settings.'
+          }`
+        );
+      } else {
+        RNAlert.alert('Error', 'Not logged in');
+      }
       
     } catch (err) {
-      RNAlert.alert('Error', `${info}\n\nERROR: ${err.message}`);
+      console.log('Test error:', err);
+      RNAlert.alert('Error', 'Failed: ' + (err && err.message ? err.message : 'Unknown'));
     }
   };
 

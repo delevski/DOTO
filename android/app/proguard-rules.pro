@@ -11,4 +11,13 @@
 -keep class com.swmansion.reanimated.** { *; }
 -keep class com.facebook.react.turbomodule.** { *; }
 
+# Expo modules
+-keep class expo.modules.** { *; }
+-keep class expo.modules.core.** { *; }
+-keep class expo.modules.core.interfaces.** { *; }
+-keep class expo.modules.kotlin.** { *; }
+-keep class expo.modules.ReactNativeHostWrapper { *; }
+-keep class expo.modules.ApplicationLifecycleDispatcher { *; }
+-keep class expo.modules.ReactActivityDelegateWrapper { *; }
+
 # Add any project specific keep options here:

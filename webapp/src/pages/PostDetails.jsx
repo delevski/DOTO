@@ -255,7 +255,7 @@ export default function PostDetails() {
         claimedAt: now
       };
 
-      db.transact(
+      await db.transact(
         db.tx.posts[postId].update({
           claimers: [...claimers, newClaimer]
         })
@@ -263,7 +263,7 @@ export default function PostDetails() {
       
       // Create in-app notification for the poster
       const notificationId = id();
-      db.transact(
+      await db.transact(
         db.tx.notifications[notificationId].update({
           id: notificationId,
           userId: post.authorId,
@@ -278,7 +278,8 @@ export default function PostDetails() {
       );
       
       // Send push notification to the poster (in their preferred language)
-      sendPushNotificationToUser(
+      console.log('🔔 Sending push for new claim to:', post.authorId);
+      await sendPushNotificationToUser(
         post.authorId,
         'newClaim',
         { userName: user.name, postTitle: post.title || 'your task' },
@@ -357,7 +358,8 @@ export default function PostDetails() {
       console.log('Notification created successfully');
       
       // Send push notification to the approved claimer (in their preferred language)
-      sendPushNotificationToUser(
+      console.log('🔔 Sending push for approval to:', claimerUserId);
+      await sendPushNotificationToUser(
         claimerUserId,
         'claimerApproved',
         { postTitle: post.title || 'a task' },
@@ -424,7 +426,8 @@ export default function PostDetails() {
         );
         
         // Send push notification
-        sendPushNotificationToUser(
+        console.log('🔔 Sending push for like to:', post.authorId);
+        await sendPushNotificationToUser(
           post.authorId,
           'postLiked',
           { userName: user.name, postTitle: post.title || 'your post' },
@@ -484,7 +487,8 @@ export default function PostDetails() {
       );
       
       // Send push notification
-      sendPushNotificationToUser(
+      console.log('🔔 Sending push for comment to:', post.authorId);
+      await sendPushNotificationToUser(
         post.authorId,
         'newComment',
         { userName: user.name, postTitle: post.title || 'your post' },
@@ -583,7 +587,8 @@ export default function PostDetails() {
       );
       
       // Send push notification to the poster (in their preferred language)
-      sendPushNotificationToUser(
+      console.log('🔔 Sending push for task complete to:', post.authorId);
+      await sendPushNotificationToUser(
         post.authorId,
         'taskMarkedComplete',
         { postTitle: post.title || 'your task' },
@@ -648,7 +653,8 @@ export default function PostDetails() {
       );
       
       // Send push notification to the helper (in their preferred language)
-      sendPushNotificationToUser(
+      console.log('🔔 Sending push for task accepted to:', approvedClaimerId);
+      await sendPushNotificationToUser(
         approvedClaimerId,
         'taskAccepted',
         { postTitle: post.title || 'completed', rating: selectedRating },

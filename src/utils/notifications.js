@@ -13,10 +13,11 @@ Notifications.setNotificationHandler({
 
 /**
  * Request notification permissions and register push token
- * @returns {Promise<string|null>} Push token or null if permission denied
+ * @returns {Promise<{token: string|null, fcmToken: string|null}>} Push tokens or null if permission denied
  */
 export async function registerForPushNotificationsAsync() {
   let token = null;
+  let fcmToken = null;
 
   console.log('=== registerForPushNotificationsAsync START ===');
   console.log('Platform:', Platform.OS);
@@ -45,69 +46,85 @@ export async function registerForPushNotificationsAsync() {
 
   if (finalStatus !== 'granted') {
     console.log('Permission NOT granted!');
-    return null;
+    return { token: null, fcmToken: null };
   }
 
-  // Try to get native FCM token first
+  // Step 1: Get native FCM token
   try {
-    console.log('Trying to get native device token...');
+    console.log('Getting native FCM device token...');
     const deviceToken = await Notifications.getDevicePushTokenAsync();
-    console.log('🔔 Native FCM Device Token:', deviceToken.data);
-    console.log('🔔 Token Type:', deviceToken.type);
-    
-    // For standalone builds, we can use FCM token with Expo format
-    if (deviceToken && deviceToken.data) {
-      // Convert FCM token to Expo format
-      token = `ExponentPushToken[${deviceToken.data}]`;
-      console.log('Created Expo-style token from FCM:', token.substring(0, 50) + '...');
-    }
+    fcmToken = deviceToken?.data || null;
+    console.log('🔔 Native FCM Token:', fcmToken ? fcmToken.substring(0, 50) + '...' : 'FAILED');
   } catch (deviceError) {
-    console.log('Native token error:', deviceError.message);
+    console.log('Native FCM token error:', deviceError.message);
   }
 
-  // Also try Expo push token
-  if (!token) {
-    try {
-      console.log('Trying Expo push token...');
-      const expoToken = await Notifications.getExpoPushTokenAsync({
-        projectId: '5519a148-f81d-466e-8fe0-a3557958c204',
-      });
-      token = expoToken.data;
-      console.log('Expo push token:', token);
-    } catch (expoError) {
-      console.log('Expo token error:', expoError.message);
+  // Step 2: Try to get Expo push token (may fail for standalone builds without EAS)
+  try {
+    console.log('Getting Expo push token...');
+    const expoPushToken = await Notifications.getExpoPushTokenAsync({
+      projectId: '5519a148-f81d-466e-8fe0-a3557958c204',
+    });
+    token = expoPushToken?.data || null;
+    console.log('🔔 Expo Push Token:', token ? token.substring(0, 50) + '...' : 'FAILED');
+  } catch (expoError) {
+    console.log('Expo token error (expected for standalone):', expoError.message);
+    // For standalone builds, just use the raw FCM token
+    // The push notification sender will detect this and use FCM directly
+    if (fcmToken) {
+      token = fcmToken;  // Use raw FCM token, NOT wrapped
+      console.log('🔔 Using raw FCM token for standalone build');
     }
   }
 
-  console.log('=== Final token:', token ? token.substring(0, 50) + '...' : 'NULL');
-  return token;
+  console.log('=== Final tokens:', { 
+    hasToken: !!token, 
+    hasFcmToken: !!fcmToken 
+  });
+  
+  return { token, fcmToken };
 }
 
 /**
  * Store push token in user profile
  * @param {string} userId - User ID
  * @param {string} pushToken - Expo push token
+ * @param {string} fcmToken - Native FCM token (optional)
  * @returns {Promise<boolean>} Success status
  */
-export async function savePushTokenToUser(userId, pushToken) {
+export async function savePushTokenToUser(userId, pushToken, fcmToken = null) {
   console.log('=== savePushTokenToUser ===');
   console.log('User ID:', userId);
   console.log('Push Token:', pushToken ? pushToken.substring(0, 40) + '...' : 'NONE');
+  console.log('FCM Token:', fcmToken ? fcmToken.substring(0, 40) + '...' : 'NONE');
   
-  if (!userId || !pushToken) {
-    console.log('ERROR: Missing userId or pushToken');
+  if (!userId) {
+    console.log('ERROR: Missing userId');
+    return false;
+  }
+
+  if (!pushToken && !fcmToken) {
+    console.log('ERROR: Missing both pushToken and fcmToken');
     return false;
   }
 
   try {
-    // Try method 1: Direct update with merge
-    console.log('Attempting to save push token...');
+    // Save both tokens
+    const updateData = {
+      pushTokenUpdatedAt: Date.now()
+    };
+    
+    if (pushToken) {
+      updateData.pushToken = pushToken;
+    }
+    if (fcmToken) {
+      updateData.fcmToken = fcmToken;
+    }
+    
+    console.log('Saving tokens to DB:', Object.keys(updateData));
     
     await db.transact(
-      db.tx.users[userId].merge({
-        pushToken: pushToken,
-        pushTokenUpdatedAt: Date.now()
-      })
+      db.tx.users[userId].merge(updateData)
     );
     
     console.log('Transaction completed, verifying...');
@@ -120,30 +137,13 @@ export async function savePushTokenToUser(userId, pushToken) {
       users: { $: { where: { id: userId } } } 
     });
     const verifiedUser = verifyData?.users?.[0];
-    const saved = verifiedUser?.pushToken === pushToken;
     
-    console.log('Push token save verified:', saved);
+    console.log('Verification result:', {
+      hasPushToken: !!verifiedUser?.pushToken,
+      hasFcmToken: !!verifiedUser?.fcmToken
+    });
     
-    if (!saved) {
-      console.log('First method failed, trying update...');
-      // Try method 2: Regular update
-      await db.transact(
-        db.tx.users[userId].update({
-          pushToken: pushToken,
-          pushTokenUpdatedAt: Date.now()
-        })
-      );
-      
-      await new Promise(resolve => setTimeout(resolve, 500));
-      
-      const { data: verifyData2 } = await db.query({ 
-        users: { $: { where: { id: userId } } } 
-      });
-      const verifiedUser2 = verifyData2?.users?.[0];
-      return verifiedUser2?.pushToken === pushToken;
-    }
-    
-    return saved;
+    return !!(verifiedUser?.pushToken || verifiedUser?.fcmToken);
   } catch (error) {
     console.error('ERROR saving push token:', error);
     console.error('Error details:', error.message);
@@ -175,46 +175,49 @@ export async function getUserPushToken(userId) {
 /**
  * Get push token and language preference for a user from InstantDB
  * @param {string} userId - User ID
- * @returns {Promise<{pushToken: string|null, language: string}>} User info
+ * @returns {Promise<{pushToken: string|null, fcmToken: string|null, language: string}>} User info
  */
 export async function getUserPushTokenAndLanguage(userId) {
-  console.log('=== getUserPushTokenAndLanguage ===');
-  console.log('Looking for user:', userId);
+  console.log('🔔 === getUserPushTokenAndLanguage ===');
+  console.log('🔔 Looking for user:', userId);
   
   if (!userId) {
-    console.log('ERROR: No userId provided');
-    return { pushToken: null, language: 'en' };
+    console.log('🔔 ERROR: No userId provided');
+    return { pushToken: null, fcmToken: null, language: 'en' };
   }
 
   try {
     // Fetch all users and find by ID (InstantDB query pattern)
-    console.log('Querying InstantDB for users...');
+    console.log('🔔 Querying InstantDB for users...');
     const { data } = await db.query({ users: {} });
     
-    console.log('Total users in DB:', data?.users?.length || 0);
+    console.log('🔔 Total users in DB:', data?.users?.length || 0);
     
     const user = data?.users?.find(u => u.id === userId);
     
     if (user) {
-      console.log('Found user:', {
+      console.log('🔔 Found user:', {
         id: user.id,
         name: user.name,
         hasPushToken: !!user.pushToken,
+        hasFcmToken: !!user.fcmToken,
         pushTokenPreview: user.pushToken ? user.pushToken.substring(0, 40) + '...' : 'NONE',
+        fcmTokenPreview: user.fcmToken ? user.fcmToken.substring(0, 40) + '...' : 'NONE',
         language: user.language || 'en'
       });
     } else {
-      console.log('ERROR: User not found in database!');
-      console.log('Available user IDs:', data?.users?.map(u => u.id).slice(0, 5));
+      console.log('🔔 ERROR: User not found in database!');
+      console.log('🔔 Available user IDs:', data?.users?.map(u => u.id).slice(0, 5));
     }
     
     return {
       pushToken: user?.pushToken || null,
+      fcmToken: user?.fcmToken || null,
       language: user?.language || 'en'
     };
   } catch (error) {
-    console.error('ERROR fetching user info:', error);
-    return { pushToken: null, language: 'en' };
+    console.error('🔔 ERROR fetching user info:', error);
+    return { pushToken: null, fcmToken: null, language: 'en' };
   }
 }
 

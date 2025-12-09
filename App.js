@@ -127,13 +127,25 @@ function AppInitializer({ children }) {
     if (user?.id) {
       const registerPushNotifications = async () => {
         try {
-          const token = await registerForPushNotificationsAsync();
-          if (token) {
-            await savePushTokenToUser(user.id, token);
-            console.log('Push token registered for user:', user.id);
+          console.log('=== REGISTERING PUSH NOTIFICATIONS ===');
+          console.log('User ID:', user.id);
+          console.log('User name:', user.name);
+          
+          const { token, fcmToken } = await registerForPushNotificationsAsync();
+          
+          console.log('Got tokens:', {
+            expoToken: token ? token.substring(0, 40) + '...' : 'NONE',
+            fcmToken: fcmToken ? fcmToken.substring(0, 40) + '...' : 'NONE'
+          });
+          
+          if (token || fcmToken) {
+            await savePushTokenToUser(user.id, token, fcmToken);
+            console.log('Push tokens SAVED for user:', user.id);
+          } else {
+            console.log('WARNING: No push tokens received - notifications will not work!');
           }
         } catch (error) {
-          console.error('Error registering push notifications:', error);
+          console.error('ERROR registering push notifications:', error);
         }
       };
       

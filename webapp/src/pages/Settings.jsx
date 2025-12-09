@@ -5,6 +5,8 @@ import { useSettingsStore } from '../store/settingsStore';
 import { useAuthStore } from '../store/useStore';
 import { useTranslation } from '../utils/translations';
 import { Link } from 'react-router-dom';
+import { db } from '../lib/instant';
+import { sendPushNotificationToUser } from '../utils/pushNotifications';
 
 export default function Settings() {
   const navigate = useNavigate();
@@ -13,6 +15,7 @@ export default function Settings() {
   const t = useTranslation();
   const isRTL = language === 'he';
   const [showLanguageModal, setShowLanguageModal] = useState(false);
+  const [debugInfo, setDebugInfo] = useState('');
 
   useEffect(() => {
     // Initialize settings on mount
@@ -39,6 +42,84 @@ export default function Settings() {
     if (window.confirm(t('areYouSureDeleteAccount'))) {
       logout();
       navigate('/login');
+    }
+  };
+
+  const testPushNotification = async () => {
+    if (!user?.id) {
+      alert('Not logged in');
+      return;
+    }
+
+    setDebugInfo('Testing...\n');
+
+    try {
+      // 1. Check if user exists in DB (use queryOnce for one-time queries)
+      console.log('🔔 [Settings] Querying users from DB...');
+      let data;
+      try {
+        const result = await db.queryOnce({ users: {} });
+        data = result?.data || result;
+        console.log('🔔 [Settings] Query successful, users count:', data?.users?.length || 0);
+      } catch (queryError) {
+        console.error('🔔 [Settings] Query error:', queryError);
+        setDebugInfo(`Database query error: ${queryError.message}\n\nCheck browser console (F12) for details.`);
+        alert(`Database error: ${queryError.message}\n\nCheck browser console (F12) for details.`);
+        return;
+      }
+      const dbUser = data?.users?.find(u => u.id === user.id);
+      
+      let info = `User ID: ${user.id}\n`;
+      info += `Total users in DB: ${data?.users?.length || 0}\n`;
+      info += `User found in DB: ${dbUser ? 'YES' : 'NO'}\n`;
+      
+      if (dbUser) {
+        info += `Push Token: ${dbUser.pushToken ? dbUser.pushToken.substring(0, 50) + '...' : 'NOT FOUND'}\n`;
+        info += `FCM Token: ${dbUser.fcmToken ? dbUser.fcmToken.substring(0, 50) + '...' : 'NOT FOUND'}\n`;
+        info += `Language: ${dbUser.language || 'not set'}\n\n`;
+      } else {
+        info += `Available user IDs: ${data?.users?.map(u => u.id).slice(0, 5).join(', ')}\n\n`;
+      }
+
+      // Check for either token
+      const hasToken = dbUser && (dbUser.pushToken || dbUser.fcmToken);
+      
+      if (!hasToken) {
+        info += '❌ NO PUSH TOKEN - Mobile app needs to save token first!\n';
+        info += 'Go to mobile app Settings and tap "🧪 Test Notifications"\n';
+        setDebugInfo(info);
+        alert('No push token found! Open mobile app Settings and tap "🧪 Test Notifications" to save token.');
+        return;
+      }
+
+      // 2. Try sending a test notification
+      info += 'Sending test notification...\n';
+      setDebugInfo(info);
+      console.log('🔔 [Settings] Calling sendPushNotificationToUser...');
+
+      const result = await sendPushNotificationToUser(
+        user.id,
+        'newMessage',
+        { userName: 'Test from Web' },
+        { type: 'test' }
+      );
+
+      info += `Result: ${result ? '✅ SUCCESS' : '⚠️ FAILED (but notification saved in DB)'}\n`;
+      info += `\nNote: Browser push may fail due to CORS.\n`;
+      info += `Notifications are saved in database and will appear in mobile app.\n`;
+      info += `Check browser console (F12) for detailed logs\n`;
+      setDebugInfo(info);
+
+      if (result) {
+        alert('✅ Push notification sent! Check your mobile device.');
+      } else {
+        alert('⚠️ Push API call failed (likely CORS issue).\n\n✅ Notification saved in database.\n📱 Mobile app will receive it when it syncs.\n\nCheck browser console (F12) for details.');
+      }
+    } catch (error) {
+      console.error('🔔 [Settings] Test error:', error);
+      const errorMsg = `Error: ${error.message}\n\nStack: ${error.stack}\n\nCheck browser console (F12) for more details.`;
+      setDebugInfo(errorMsg);
+      alert(`Error: ${error.message}\n\nCheck browser console (F12) for details.`);
     }
   };
 
@@ -204,6 +285,26 @@ export default function Settings() {
               </div>
               <ChevronRight size={20} className={`text-red-400 ${isRTL ? 'rotate-180' : ''}`} />
             </button>
+          </div>
+        </div>
+
+        {/* Debug Push Notifications */}
+        <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-sm border border-blue-100 dark:border-blue-900/30 overflow-hidden">
+          <div className="p-6 border-b border-blue-100 dark:border-blue-900/30">
+            <h2 className="text-xl font-bold text-blue-600 dark:text-blue-400">🧪 Debug Push Notifications</h2>
+          </div>
+          <div className="p-6 space-y-4">
+            <button 
+              onClick={testPushNotification}
+              className="w-full py-3 px-6 bg-blue-500 hover:bg-blue-600 text-white font-semibold rounded-xl transition-colors"
+            >
+              Test Push Notification to My Device
+            </button>
+            {debugInfo && (
+              <pre className="p-4 bg-gray-100 dark:bg-gray-900 rounded-xl text-xs font-mono whitespace-pre-wrap text-gray-800 dark:text-gray-200">
+                {debugInfo}
+              </pre>
+            )}
           </div>
         </div>
       </div>
