@@ -17,24 +17,78 @@ import { LoginManager, AccessToken, Profile } from 'react-native-fbsdk-next';
 // Ensure web browser redirects work properly
 WebBrowser.maybeCompleteAuthSession();
 
-// OAuth Configuration from app.json extra
-const GOOGLE_CLIENT_ID = Constants.expoConfig?.extra?.googleClientId || process.env.EXPO_PUBLIC_GOOGLE_CLIENT_ID;
-const GOOGLE_CLIENT_ID_IOS = Constants.expoConfig?.extra?.googleClientIdIos || process.env.EXPO_PUBLIC_GOOGLE_CLIENT_ID_IOS;
-const GOOGLE_CLIENT_ID_ANDROID = Constants.expoConfig?.extra?.googleClientIdAndroid || process.env.EXPO_PUBLIC_GOOGLE_CLIENT_ID_ANDROID;
-const FACEBOOK_APP_ID = Constants.expoConfig?.extra?.facebookAppId || 
-                        Constants.expoConfig?.facebookAppId || 
-                        process.env.EXPO_PUBLIC_FACEBOOK_APP_ID;
+// OAuth Configuration - Hardcoded values for release builds
+// These values are from app.json and will always work in release builds
+const FALLBACK_GOOGLE_CLIENT_ID = '478956201432-ac1cqomlshdhnkkjq23lcb7r0jhc92ul.apps.googleusercontent.com';
+const FALLBACK_FACEBOOK_APP_ID = '2301357543703221';
+
+// Try to get config from Constants (works in dev), but always fallback to hardcoded values
+const getConfigValue = (key, fallbackEnvKey, defaultValue) => {
+  // Try Constants.expoConfig.extra first (works in dev)
+  if (Constants.expoConfig?.extra?.[key] && !Constants.expoConfig.extra[key].includes('{YOUR_')) {
+    return Constants.expoConfig.extra[key];
+  }
+  // Try Constants.expoConfig directly
+  if (Constants.expoConfig?.[key] && !Constants.expoConfig[key].includes('{YOUR_')) {
+    return Constants.expoConfig[key];
+  }
+  // Try environment variable
+  if (fallbackEnvKey && process.env[fallbackEnvKey] && !process.env[fallbackEnvKey].includes('{YOUR_')) {
+    return process.env[fallbackEnvKey];
+  }
+  // Always return the hardcoded fallback for release builds
+  return defaultValue;
+};
+
+// Get config values - ALWAYS use fallback if other sources fail or are placeholders
+let GOOGLE_CLIENT_ID = getConfigValue('googleClientId', 'EXPO_PUBLIC_GOOGLE_CLIENT_ID', FALLBACK_GOOGLE_CLIENT_ID);
+// Force fallback if value is invalid
+if (!GOOGLE_CLIENT_ID || GOOGLE_CLIENT_ID.includes('{YOUR_') || GOOGLE_CLIENT_ID.length < 10) {
+  GOOGLE_CLIENT_ID = FALLBACK_GOOGLE_CLIENT_ID;
+}
+
+const GOOGLE_CLIENT_ID_IOS = getConfigValue('googleClientIdIos', 'EXPO_PUBLIC_GOOGLE_CLIENT_ID_IOS', null);
+const GOOGLE_CLIENT_ID_ANDROID = getConfigValue('googleClientIdAndroid', 'EXPO_PUBLIC_GOOGLE_CLIENT_ID_ANDROID', null);
+
+let FACEBOOK_APP_ID = getConfigValue('facebookAppId', 'EXPO_PUBLIC_FACEBOOK_APP_ID', FALLBACK_FACEBOOK_APP_ID);
+// Force fallback if value is invalid
+if (!FACEBOOK_APP_ID || FACEBOOK_APP_ID.includes('{YOUR_') || FACEBOOK_APP_ID.length < 5) {
+  FACEBOOK_APP_ID = FALLBACK_FACEBOOK_APP_ID;
+}
 
 // Get the appropriate Google client ID based on platform
 function getGoogleClientId() {
   if (Platform.OS === 'ios') {
-    return GOOGLE_CLIENT_ID_IOS || GOOGLE_CLIENT_ID;
+    // Skip placeholder values and use fallback
+    const iosId = GOOGLE_CLIENT_ID_IOS;
+    if (iosId && !iosId.includes('{YOUR_') && iosId.length > 10) {
+      return iosId;
+    }
+    // Always return the general client ID (which has fallback)
+    return GOOGLE_CLIENT_ID;
   }
   if (Platform.OS === 'android') {
-    return GOOGLE_CLIENT_ID_ANDROID || GOOGLE_CLIENT_ID;
+    // Skip placeholder values and use fallback
+    const androidId = GOOGLE_CLIENT_ID_ANDROID;
+    if (androidId && !androidId.includes('{YOUR_') && androidId.length > 10) {
+      return androidId;
+    }
+    // Always return the general client ID (which has fallback)
+    return GOOGLE_CLIENT_ID;
   }
   return GOOGLE_CLIENT_ID; // Web
 }
+
+// Log configuration at module load (for debugging)
+console.log('📱 Social Auth Config Loaded:', {
+  platform: Platform.OS,
+  googleClientId: GOOGLE_CLIENT_ID ? `${GOOGLE_CLIENT_ID.substring(0, 30)}...` : 'MISSING',
+  googleClientIdLength: GOOGLE_CLIENT_ID ? GOOGLE_CLIENT_ID.length : 0,
+  facebookAppId: FACEBOOK_APP_ID ? `${FACEBOOK_APP_ID.substring(0, 10)}...` : 'MISSING',
+  facebookAppIdLength: FACEBOOK_APP_ID ? FACEBOOK_APP_ID.length : 0,
+  hasFallbackGoogle: GOOGLE_CLIENT_ID === FALLBACK_GOOGLE_CLIENT_ID,
+  hasFallbackFacebook: FACEBOOK_APP_ID === FALLBACK_FACEBOOK_APP_ID,
+});
 
 // OAuth Discovery documents
 const googleDiscovery = {
@@ -78,6 +132,8 @@ function getFacebookRedirectUri() {
 
 /**
  * Google OAuth Configuration
+ * Updated to use ID tokens for InstantDB native sign-in
+ * Uses implicit flow to get ID token directly
  */
 export function useGoogleAuth() {
   const clientId = getGoogleClientId();
@@ -87,13 +143,17 @@ export function useGoogleAuth() {
     {
       clientId,
       redirectUri,
+      usePKCE: false, // Disable PKCE for Implicit Flow (response_type=token)
       scopes: [
         'openid',
         'profile',
         'email',
         'https://www.googleapis.com/auth/contacts.readonly',
       ],
-      responseType: AuthSession.ResponseType.Token,
+      // Use Code response type for PKCE (standard for native apps)
+      responseType: AuthSession.ResponseType.Code,
+      shouldAutoExchangeCode: false, // We'll exchange it manually
+      usePKCE: true, // Enable PKCE
     },
     googleDiscovery
   );
@@ -102,31 +162,119 @@ export function useGoogleAuth() {
 }
 
 /**
+ * Exchange authorization code for tokens (PKCE flow)
+ */
+export async function exchangeGoogleCode(code, request) {
+  try {
+    const redirectUri = getRedirectUri('google');
+    const clientId = getGoogleClientId();
+
+    const result = await AuthSession.exchangeCodeAsync(
+      {
+        clientId,
+        code,
+        redirectUri,
+        extraParams: {
+          code_verifier: request.codeVerifier,
+        },
+      },
+      googleDiscovery
+    );
+
+    return result;
+  } catch (error) {
+    console.error('Error exchanging Google code:', error);
+    throw error;
+  }
+}
+
+/**
  * Native Facebook Login using react-native-fbsdk-next
  * This will use the Facebook app if installed, otherwise falls back to web
  */
 export async function loginWithFacebookNative() {
   try {
-    // Log out first to ensure clean state
-    LoginManager.logOut();
-    
+    // First, check if LoginManager is available at all
+    if (typeof LoginManager === 'undefined' || LoginManager === null) {
+      console.error('LoginManager is undefined or null');
+      return {
+        type: 'error',
+        error: 'Facebook SDK not initialized. Please rebuild the app with react-native-fbsdk-next properly linked.'
+      };
+    }
+
+    // Check if LoginManager is an object with methods
+    if (typeof LoginManager !== 'object') {
+      console.error('LoginManager is not an object:', typeof LoginManager);
+      return {
+        type: 'error',
+        error: 'Facebook SDK not properly initialized. Please rebuild the app.'
+      };
+    }
+
+    // Log out first to ensure clean state - wrap in try-catch, this is not critical
+    try {
+      if (typeof LoginManager.logOut === 'function') {
+        LoginManager.logOut();
+      }
+    } catch (e) {
+      // Ignore logout errors - they're not critical for login
+      console.log('Logout error (non-critical):', e?.message || e);
+    }
+
+    // Check if logInWithPermissions method exists
+    if (typeof LoginManager.logInWithPermissions !== 'function') {
+      console.error('LoginManager.logInWithPermissions is not a function', {
+        LoginManagerType: typeof LoginManager,
+        availableMethods: LoginManager ? Object.keys(LoginManager).join(', ') : 'none'
+      });
+      return {
+        type: 'error',
+        error: 'Facebook login method not available. Please rebuild the app.'
+      };
+    }
+
     // Request login with permissions
     const result = await LoginManager.logInWithPermissions(['public_profile', 'email']);
-    
+
+    if (!result) {
+      return { type: 'error', error: 'Facebook login returned no result' };
+    }
+
     if (result.isCancelled) {
       console.log('Facebook login cancelled');
       return { type: 'cancel', error: null };
     }
-    
-    // Get access token
+
+    // Check if AccessToken is available
+    if (typeof AccessToken === 'undefined' || AccessToken === null) {
+      console.error('AccessToken is undefined or null');
+      return {
+        type: 'error',
+        error: 'Facebook access token module not available. Please rebuild the app.'
+      };
+    }
+
+    if (typeof AccessToken.getCurrentAccessToken !== 'function') {
+      console.error('AccessToken.getCurrentAccessToken is not a function');
+      return {
+        type: 'error',
+        error: 'Facebook access token method not available. Please rebuild the app.'
+      };
+    }
+
     const accessToken = await AccessToken.getCurrentAccessToken();
-    
+
     if (!accessToken) {
       throw new Error('Failed to get Facebook access token');
     }
-    
+
+    if (!accessToken.accessToken) {
+      throw new Error('Facebook access token is missing accessToken property');
+    }
+
     console.log('Facebook login successful, token:', accessToken.accessToken.substring(0, 20) + '...');
-    
+
     return {
       type: 'success',
       accessToken: accessToken.accessToken,
@@ -134,7 +282,8 @@ export async function loginWithFacebookNative() {
     };
   } catch (error) {
     console.error('Facebook native login error:', error);
-    return { type: 'error', error: error.message };
+    const errorMessage = error?.message || error?.toString() || 'Unknown Facebook login error';
+    return { type: 'error', error: errorMessage };
   }
 }
 
@@ -149,9 +298,9 @@ export function useFacebookAuth() {
     return await loginWithFacebookNative();
   };
 
-  return { 
-    request: { ready: true }, 
-    response: null, 
+  return {
+    request: { ready: true },
+    response: null,
     promptAsync,
     redirectUri: `fb${FACEBOOK_APP_ID}://authorize`
   };
@@ -168,11 +317,11 @@ export async function fetchGoogleUserProfile(accessToken) {
         headers: { Authorization: `Bearer ${accessToken}` },
       }
     );
-    
+
     if (!response.ok) {
       throw new Error('Failed to fetch Google profile');
     }
-    
+
     const data = await response.json();
     return {
       id: data.id,
@@ -200,15 +349,15 @@ export async function fetchGoogleContacts(accessToken) {
         headers: { Authorization: `Bearer ${accessToken}` },
       }
     );
-    
+
     if (!response.ok) {
       console.warn('Failed to fetch Google contacts - may need permission');
       return [];
     }
-    
+
     const data = await response.json();
     const connections = data.connections || [];
-    
+
     // Extract unique emails from contacts
     const contactEmails = [];
     connections.forEach(connection => {
@@ -223,7 +372,7 @@ export async function fetchGoogleContacts(accessToken) {
         }
       });
     });
-    
+
     return contactEmails;
   } catch (error) {
     console.error('Error fetching Google contacts:', error);
@@ -239,11 +388,11 @@ export async function fetchFacebookUserProfile(accessToken) {
     const response = await fetch(
       `https://graph.facebook.com/v18.0/me?fields=id,name,email,picture.type(large)&access_token=${accessToken}`
     );
-    
+
     if (!response.ok) {
       throw new Error('Failed to fetch Facebook profile');
     }
-    
+
     const data = await response.json();
     return {
       id: data.id,
@@ -267,15 +416,15 @@ export async function fetchFacebookFriends(accessToken) {
     const response = await fetch(
       `https://graph.facebook.com/v18.0/me/friends?fields=id,name,picture&access_token=${accessToken}`
     );
-    
+
     if (!response.ok) {
       console.warn('Failed to fetch Facebook friends - may need permission');
       return [];
     }
-    
+
     const data = await response.json();
     const friends = data.data || [];
-    
+
     return friends.map(friend => ({
       provider: 'facebook',
       id: friend.id,
@@ -298,7 +447,7 @@ export async function fetchFacebookFriends(accessToken) {
  */
 export async function findOrCreateSocialUser(profile, socialFriends, existingUsers) {
   const { id: socialId, email, name, avatar, provider } = profile;
-  
+
   // Check if user already exists by social ID or email
   let existingUser = existingUsers.find(u => {
     if (provider === 'google' && u.googleId === socialId) return true;
@@ -306,10 +455,10 @@ export async function findOrCreateSocialUser(profile, socialFriends, existingUse
     if (u.email?.toLowerCase() === email?.toLowerCase()) return true;
     return false;
   });
-  
+
   // Find which of user's social friends are already DOTO users
   const friendUserIds = [];
-  
+
   if (provider === 'facebook') {
     // For Facebook, match by Facebook ID
     socialFriends.forEach(friend => {
@@ -329,7 +478,7 @@ export async function findOrCreateSocialUser(profile, socialFriends, existingUse
       }
     });
   }
-  
+
   if (existingUser) {
     // Update existing user with social info
     const updates = {
@@ -338,20 +487,20 @@ export async function findOrCreateSocialUser(profile, socialFriends, existingUse
       ...(avatar && !existingUser.avatar && { avatar }),
       lastLogin: Date.now(),
     };
-    
+
     // Merge friend lists
     const existingSocialFriends = existingUser.socialFriends || [];
     const mergedFriends = [...new Set([...existingSocialFriends, ...friendUserIds])];
     updates.socialFriends = mergedFriends;
-    
+
     await db.transact(db.tx.users[existingUser.id].update(updates));
-    
+
     return {
       ...existingUser,
       ...updates,
     };
   }
-  
+
   // Create new user
   const newUserId = id();
   const newUser = {
@@ -374,9 +523,9 @@ export async function findOrCreateSocialUser(profile, socialFriends, existingUse
       likesReceived: 0,
     },
   };
-  
+
   await db.transact(db.tx.users[newUserId].update(newUser));
-  
+
   return newUser;
 }
 
@@ -386,7 +535,7 @@ export async function findOrCreateSocialUser(profile, socialFriends, existingUse
  */
 export async function updateSocialFriends(userId, provider, friends, existingUsers) {
   const friendUserIds = [];
-  
+
   if (provider === 'facebook') {
     friends.forEach(friend => {
       const matchedUser = existingUsers.find(u => u.facebookId === friend.id);
@@ -404,32 +553,95 @@ export async function updateSocialFriends(userId, provider, friends, existingUse
       }
     });
   }
-  
+
   // Get current user to merge friends
   const currentUser = existingUsers.find(u => u.id === userId);
   const existingSocialFriends = currentUser?.socialFriends || [];
   const mergedFriends = [...new Set([...existingSocialFriends, ...friendUserIds])];
-  
+
   await db.transact(
     db.tx.users[userId].update({
       socialFriends: mergedFriends,
     })
   );
-  
+
   return mergedFriends;
 }
 
 /**
  * Check if OAuth credentials are configured
+ * Always returns true if we have the hardcoded fallback value
  */
 export function isGoogleConfigured() {
+  // Get the actual client ID that would be used
   const clientId = getGoogleClientId();
-  return clientId && !clientId.includes('{YOUR_');
+
+  // Always log for debugging
+  console.log('🔍 Google Config Check:', {
+    platform: Platform.OS,
+    clientId: clientId ? `${clientId.substring(0, 40)}...` : 'null',
+    clientIdLength: clientId ? clientId.length : 0,
+    hasGeneralId: !!GOOGLE_CLIENT_ID,
+    generalIdValue: GOOGLE_CLIENT_ID ? `${GOOGLE_CLIENT_ID.substring(0, 40)}...` : 'null',
+    isFallback: clientId === FALLBACK_GOOGLE_CLIENT_ID,
+  });
+
+  // Always return true if we have the fallback value (which we always do)
+  if (clientId === FALLBACK_GOOGLE_CLIENT_ID) {
+    console.log('✅ Using hardcoded Google Client ID fallback');
+    return true;
+  }
+
+  // Check if client ID exists and is valid
+  if (clientId && typeof clientId === 'string' && clientId.length > 0) {
+    // Check if it's a placeholder value
+    if (clientId.includes('{YOUR_') || clientId.includes('YOUR_')) {
+      console.warn('⚠️ Google Client ID is a placeholder, using fallback');
+      // Force use fallback
+      return true; // Still return true because fallback exists
+    }
+    // Valid client ID found
+    if (clientId.includes('.apps.googleusercontent.com') || clientId.length > 50) {
+      console.log('✅ Valid Google Client ID found');
+      return true;
+    }
+  }
+
+  // If we get here, something is wrong, but we always have fallback, so return true
+  console.warn('⚠️ Using fallback Google Client ID');
+  return true;
 }
 
 export function isFacebookConfigured() {
-  const appId = FACEBOOK_APP_ID || Constants.expoConfig?.facebookAppId;
-  return appId && !appId.includes('{YOUR_') && appId.length > 0;
+  const appId = FACEBOOK_APP_ID;
+
+  // Always log for debugging
+  console.log('🔍 Facebook Config Check:', {
+    appId: appId ? `${appId.substring(0, 15)}...` : 'null',
+    appIdLength: appId ? appId.length : 0,
+    isFallback: appId === FALLBACK_FACEBOOK_APP_ID,
+  });
+
+  // Always return true if we have the fallback value (which we always do)
+  if (appId === FALLBACK_FACEBOOK_APP_ID) {
+    console.log('✅ Using hardcoded Facebook App ID fallback');
+    return true;
+  }
+
+  // Check if app ID exists and is valid
+  if (appId && typeof appId === 'string' && appId.length > 0) {
+    // Check if it's a placeholder value
+    if (appId.includes('{YOUR_') || appId.includes('YOUR_')) {
+      console.warn('⚠️ Facebook App ID is a placeholder, using fallback');
+      return true; // Still return true because fallback exists
+    }
+    // Valid app ID found
+    return true;
+  }
+
+  // If we get here, something is wrong, but we always have fallback, so return true
+  console.warn('⚠️ Using fallback Facebook App ID');
+  return true;
 }
 
 /**

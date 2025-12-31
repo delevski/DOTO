@@ -1,6 +1,6 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { MapPin, MessageCircle, Share2, Heart, MoreHorizontal, Clock, TrendingUp, CheckCircle, Lock, Edit, Trash2, Filter, X, Users } from 'lucide-react';
+import { MapPin, MessageCircle, Share2, Heart, MoreHorizontal, Clock, TrendingUp, CheckCircle, Lock, Edit, Trash2, Filter, X, Users, Calendar, Sparkles, Bell } from 'lucide-react';
 import { useAuthStore } from '../store/useStore';
 import { useSettingsStore } from '../store/settingsStore';
 import { useTranslation } from '../utils/translations';
@@ -12,14 +12,15 @@ export default function Feed() {
   const { user } = useAuthStore();
   const { isLoading, error, data } = db.useQuery({ 
     posts: {},
-    comments: {}
+    comments: {},
+    communityEvents: {}
   });
   const { language } = useSettingsStore();
   const t = useTranslation();
   const isRTL = language === 'he';
   const navigate = useNavigate();
   const [openMenuId, setOpenMenuId] = useState(null);
-  const [activeTab, setActiveTab] = useState('nearby'); // 'nearby', 'friends', 'following', 'myPosts', 'myClaim'
+  const [activeTab, setActiveTab] = useState('nearby'); // 'nearby', 'friends', 'following', 'myPosts', 'myClaim', 'events'
   const [showFilters, setShowFilters] = useState(false);
   const [filters, setFilters] = useState({
     withComments: false,
@@ -40,6 +41,33 @@ export default function Feed() {
 
   const allPosts = data?.posts || [];
   const allComments = data?.comments || [];
+  const allEvents = data?.communityEvents || [];
+
+  // Get top 3 weekly events (most subscribers in past 7 days)
+  const topWeeklyEvents = useMemo(() => {
+    const oneWeekAgo = Date.now() - 7 * 24 * 60 * 60 * 1000;
+    return allEvents
+      .filter(event => event.status !== 'cancelled' && event.createdAt >= oneWeekAgo)
+      .sort((a, b) => (b.subscribers?.length || 0) - (a.subscribers?.length || 0))
+      .slice(0, 3);
+  }, [allEvents]);
+
+  // Filter events for the Events tab
+  const filteredEvents = useMemo(() => {
+    return allEvents
+      .filter(event => event.status !== 'cancelled')
+      .sort((a, b) => (b.timestamp || b.createdAt || 0) - (a.timestamp || a.createdAt || 0));
+  }, [allEvents]);
+
+  // Event category info
+  const EVENT_CATEGORIES = {
+    social: { icon: '🎉', color: 'bg-purple-100 text-purple-700' },
+    sports: { icon: '⚽', color: 'bg-green-100 text-green-700' },
+    volunteering: { icon: '🤝', color: 'bg-blue-100 text-blue-700' },
+    workshop: { icon: '🎨', color: 'bg-orange-100 text-orange-700' },
+    culture: { icon: '🎭', color: 'bg-pink-100 text-pink-700' },
+    other: { icon: '📌', color: 'bg-gray-100 text-gray-700' },
+  };
   
   // Create a map of post IDs to comment counts
   const postCommentCounts = React.useMemo(() => {
@@ -617,6 +645,17 @@ export default function Feed() {
           >
             {t('myClaim')}
           </button>
+          <button 
+            onClick={() => setActiveTab('events')}
+            className={`pb-3 text-sm px-1 transition-colors flex items-center gap-1.5 ${
+              activeTab === 'events'
+                ? 'text-gray-900 dark:text-white font-semibold border-b-2 border-purple-600'
+                : 'text-gray-500 dark:text-gray-400 font-medium hover:text-gray-800 dark:hover:text-gray-200'
+            }`}
+          >
+            <Sparkles size={14} className={activeTab === 'events' ? 'text-purple-600' : ''} />
+            {t('events') || 'Events'}
+          </button>
         </div>
       </div>
 
@@ -624,7 +663,233 @@ export default function Feed() {
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Main Feed Column */}
         <div className="lg:col-span-2 space-y-4">
-          {isLoading ? (
+          {/* Events Tab Content */}
+          {activeTab === 'events' ? (
+            filteredEvents.length === 0 ? (
+              <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-sm border border-gray-100 dark:border-gray-700 p-12 text-center">
+                <Sparkles size={48} className="text-purple-300 dark:text-purple-600 mx-auto mb-4" />
+                <p className="text-gray-500 dark:text-gray-400 text-lg mb-4">{t('noEventsYet') || 'No community events yet'}</p>
+                <button
+                  onClick={() => navigate('/new-community-event')}
+                  className="px-6 py-2 bg-gradient-to-r from-purple-600 to-pink-500 text-white font-semibold rounded-xl hover:shadow-lg transition-all"
+                >
+                  {t('createFirstEvent') || 'Create the First Event'}
+                </button>
+              </div>
+            ) : (
+              filteredEvents.map(event => {
+                const categoryInfo = EVENT_CATEGORIES[event.category] || EVENT_CATEGORIES.other;
+                const subscriberCount = event.subscribers?.length || 0;
+                const maxParticipants = event.maxParticipants;
+                const isFull = maxParticipants && subscriberCount >= maxParticipants;
+                const isMyEvent = event.authorId === user?.id;
+                const isSubscribed = user && event.subscribers?.some(s => s.userId === user.id);
+                const likedBy = event.likedBy || [];
+                const isLiked = user && likedBy.includes(user.id);
+                const likeCount = likedBy.length || 0;
+
+                const handleEventLike = (e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  if (!user) {
+                    alert(t('mustBeLoggedInToLike'));
+                    return;
+                  }
+
+                  const currentLikedBy = event.likedBy || [];
+                  const isCurrentlyLiked = currentLikedBy.includes(user.id);
+                  
+                  if (isCurrentlyLiked) {
+                    db.transact(
+                      db.tx.communityEvents[event.id].update({
+                        likedBy: currentLikedBy.filter(id => id !== user.id),
+                        likesCount: Math.max(0, (event.likesCount || 0) - 1)
+                      })
+                    );
+                  } else {
+                    db.transact(
+                      db.tx.communityEvents[event.id].update({
+                        likedBy: [...currentLikedBy, user.id],
+                        likesCount: (event.likesCount || 0) + 1
+                      })
+                    );
+                  }
+                };
+
+                const handleQuickSubscribe = async (e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  if (!user) {
+                    alert(t('mustBeLoggedIn') || 'You must be logged in');
+                    return;
+                  }
+                  
+                  const subscribers = event.subscribers || [];
+                  if (isSubscribed) {
+                    await db.transact(
+                      db.tx.communityEvents[event.id].update({
+                        subscribers: subscribers.filter(s => s.userId !== user.id)
+                      })
+                    );
+                  } else {
+                    if (isFull) {
+                      alert(t('eventIsFull') || 'This event is full');
+                      return;
+                    }
+                    await db.transact(
+                      db.tx.communityEvents[event.id].update({
+                        subscribers: [...subscribers, {
+                          userId: user.id,
+                          userName: user.name,
+                          userAvatar: user.avatar,
+                          subscribedAt: Date.now()
+                        }]
+                      })
+                    );
+                  }
+                };
+
+                return (
+                  <article 
+                    key={event.id} 
+                    className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-100 dark:border-gray-700 overflow-hidden transition-shadow duration-200 hover:shadow-md"
+                  >
+                    {/* Cover Image */}
+                    {event.coverImage && (
+                      <Link to={`/community-event/${event.id}`}>
+                        <div className="relative h-40 overflow-hidden">
+                          <img src={event.coverImage} alt={event.title} className="w-full h-full object-cover" />
+                          <div className="absolute inset-0 bg-gradient-to-t from-black/40 to-transparent"></div>
+                        </div>
+                      </Link>
+                    )}
+                    
+                    <div className="p-4">
+                      {/* Header */}
+                      <div className={`flex justify-between items-start mb-3 ${isRTL ? 'flex-row-reverse' : ''}`}>
+                        <div className={`flex gap-2.5 items-center flex-1 min-w-0 ${isRTL ? 'flex-row-reverse' : ''}`}>
+                          <img src={event.authorAvatar || `https://i.pravatar.cc/150?u=${event.authorId}`} alt={event.authorName} className="w-10 h-10 rounded-full object-cover ring-2 ring-purple-100 dark:ring-purple-900 flex-shrink-0" />
+                          <div className="flex-1 min-w-0">
+                            <h3 className="font-bold text-gray-900 dark:text-white truncate">{event.authorName}</h3>
+                            <div className={`flex items-center gap-2 text-xs text-gray-500 dark:text-gray-400 mt-0.5 ${isRTL ? 'flex-row-reverse' : ''}`}>
+                              <Clock size={12} />
+                              <span>{formatTime(event.timestamp)}</span>
+                              <span>•</span>
+                              <span className={`font-semibold px-2 py-0.5 rounded-full ${categoryInfo.color}`}>
+                                {categoryInfo.icon} {event.category}
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+                        {event.status === 'upcoming' && (
+                          <span className="px-2 py-1 bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400 text-xs font-medium rounded-full">
+                            {t('upcoming') || 'Upcoming'}
+                          </span>
+                        )}
+                      </div>
+                      
+                      {/* Event Title & Description */}
+                      <Link to={`/community-event/${event.id}`} className="block group">
+                        <h4 className="text-lg font-bold text-gray-900 dark:text-white mb-2 group-hover:text-purple-600 dark:group-hover:text-purple-400 transition-colors">
+                          {event.title}
+                        </h4>
+                      </Link>
+                      <p className="text-sm text-gray-700 dark:text-gray-300 leading-relaxed line-clamp-2 mb-3">
+                        {event.description}
+                      </p>
+                      
+                      {/* Event Info */}
+                      <div className={`flex flex-wrap gap-3 mb-3 ${isRTL ? 'flex-row-reverse' : ''}`}>
+                        {event.eventDate && (
+                          <div className={`flex items-center gap-1 text-gray-600 dark:text-gray-400 text-xs bg-purple-50 dark:bg-purple-900/20 px-2 py-1 rounded-md ${isRTL ? 'flex-row-reverse' : ''}`}>
+                            <Calendar size={12} className="text-purple-500" />
+                            <span className="font-medium">
+                              {new Date(event.eventDate).toLocaleDateString(isRTL ? 'he-IL' : 'en-US', { weekday: 'short', month: 'short', day: 'numeric' })}
+                              {event.eventTime && ` • ${event.eventTime}`}
+                            </span>
+                          </div>
+                        )}
+                        {event.location && (
+                          <div className={`flex items-center gap-1 text-gray-600 dark:text-gray-400 text-xs bg-gray-50 dark:bg-gray-700 px-2 py-1 rounded-md ${isRTL ? 'flex-row-reverse' : ''}`}>
+                            <MapPin size={12} className="text-red-500" />
+                            <span className="font-medium truncate max-w-[150px]">{event.location}</span>
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Subscribers Preview */}
+                      <div className={`flex items-center gap-2 mb-3 ${isRTL ? 'flex-row-reverse' : ''}`}>
+                        {event.subscribers?.length > 0 && (
+                          <div className={`flex items-center ${isRTL ? 'flex-row-reverse' : ''}`}>
+                            {event.subscribers.slice(0, 4).map((sub, index) => (
+                              <img
+                                key={sub.userId}
+                                src={sub.userAvatar}
+                                alt={sub.userName}
+                                className="w-6 h-6 rounded-full border-2 border-white dark:border-gray-800 object-cover -ms-1 first:ms-0"
+                                style={{ zIndex: event.subscribers.length - index }}
+                                title={sub.userName}
+                              />
+                            ))}
+                            {event.subscribers.length > 4 && (
+                              <div className="w-6 h-6 rounded-full border-2 border-white dark:border-gray-800 bg-gray-200 dark:bg-gray-700 flex items-center justify-center text-[10px] font-semibold text-gray-600 dark:text-gray-300 -ms-1">
+                                +{event.subscribers.length - 4}
+                              </div>
+                            )}
+                          </div>
+                        )}
+                        <span className="text-xs text-gray-500 dark:text-gray-400">
+                          {subscriberCount} {t('subscribers') || 'subscribers'}
+                          {maxParticipants && ` / ${maxParticipants}`}
+                        </span>
+                        {maxParticipants && (
+                          <div className="flex-1 max-w-24 h-1.5 bg-gray-200 dark:bg-gray-600 rounded-full overflow-hidden">
+                            <div 
+                              className={`h-full rounded-full ${isFull ? 'bg-red-500' : 'bg-purple-500'}`}
+                              style={{ width: `${Math.min(100, (subscriberCount / maxParticipants) * 100)}%` }}
+                            ></div>
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Actions */}
+                      <div className={`flex items-center justify-between pt-3 border-t border-gray-100 dark:border-gray-700 ${isRTL ? 'flex-row-reverse' : ''}`}>
+                        <div className={`flex gap-4 ${isRTL ? 'flex-row-reverse' : ''}`}>
+                          <button 
+                            onClick={handleEventLike}
+                            className={`flex items-center gap-1.5 ${isLiked ? 'text-red-500 dark:text-red-400' : 'text-gray-500 dark:text-gray-400'} hover:text-red-500 dark:hover:text-red-400 transition-colors group ${isRTL ? 'flex-row-reverse' : ''}`}
+                          >
+                            <Heart size={18} className={isLiked ? 'fill-red-500 text-red-500' : 'group-hover:fill-current'} />
+                            <span className="text-xs font-medium">{likeCount}</span>
+                          </button>
+                          <Link to={`/community-event/${event.id}`} className={`flex items-center gap-1.5 text-gray-500 dark:text-gray-400 hover:text-blue-500 dark:hover:text-blue-400 transition-colors ${isRTL ? 'flex-row-reverse' : ''}`}>
+                            <MessageCircle size={18} />
+                            <span className="text-xs font-medium">{event.commentsCount || 0}</span>
+                          </Link>
+                        </div>
+                        {!isMyEvent && (
+                          <button
+                            onClick={handleQuickSubscribe}
+                            disabled={isFull && !isSubscribed}
+                            className={`text-xs font-semibold px-4 py-2 rounded-lg shadow-sm transition-all duration-200 hover:shadow-md active:scale-95 flex items-center gap-1.5 ${
+                              isSubscribed
+                                ? 'bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300 hover:bg-purple-200'
+                                : isFull
+                                  ? 'bg-gray-200 dark:bg-gray-700 text-gray-500 dark:text-gray-400 cursor-not-allowed'
+                                  : 'bg-gradient-to-r from-purple-600 to-pink-500 text-white hover:opacity-90'
+                            } ${isRTL ? 'flex-row-reverse' : ''}`}
+                          >
+                            <Bell size={14} />
+                            {isSubscribed ? (t('subscribed') || 'Subscribed') : isFull ? (t('full') || 'Full') : (t('subscribe') || 'Subscribe')}
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  </article>
+                );
+              })
+            )
+          ) : isLoading ? (
              <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-sm border border-gray-100 dark:border-gray-700 p-12 text-center">
                <p className="text-gray-500 dark:text-gray-400 text-lg">{t('loadingPosts')}</p>
              </div>
@@ -1100,20 +1365,66 @@ export default function Feed() {
         <div className="space-y-6">
           {/* Top Weekly Widget */}
           <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-sm border border-gray-100 dark:border-gray-700 p-6">
-            <h3 className={`font-bold text-gray-900 dark:text-white mb-4 flex items-center gap-2 ${isRTL ? 'flex-row-reverse' : ''}`}>
-              <TrendingUp size={18} className="text-red-600" />
+            <div className={`flex items-center justify-between mb-4 ${isRTL ? 'flex-row-reverse' : ''}`}>
+              <h3 className={`font-bold text-gray-900 dark:text-white flex items-center gap-2 ${isRTL ? 'flex-row-reverse' : ''}`}>
+                <TrendingUp size={18} className="text-purple-600" />
               {t('topWeekly')}
             </h3>
+              <Link 
+                to="/new-community-event"
+                className="text-xs text-purple-600 dark:text-purple-400 hover:text-purple-700 dark:hover:text-purple-300 font-medium"
+              >
+                + {t('createEvent') || 'Create'}
+              </Link>
+            </div>
             <div className="space-y-3">
-              {[1, 2, 3].map(i => (
-                <div key={i} className={`flex gap-3 p-3 bg-gray-50 dark:bg-gray-700 rounded-xl hover:bg-gray-100 dark:hover:bg-gray-600 transition-colors cursor-pointer group ${isRTL ? 'flex-row-reverse' : ''}`}>
-                  <div className="w-16 h-16 bg-gradient-to-br from-gray-800 to-gray-900 rounded-lg flex-shrink-0"></div>
+              {topWeeklyEvents.length > 0 ? (
+                topWeeklyEvents.map(event => {
+                  const categoryInfo = EVENT_CATEGORIES[event.category] || EVENT_CATEGORIES.other;
+                  const subscriberCount = event.subscribers?.length || 0;
+                  return (
+                    <Link 
+                      key={event.id} 
+                      to={`/community-event/${event.id}`}
+                      className={`flex gap-3 p-3 bg-gray-50 dark:bg-gray-700 rounded-xl hover:bg-gray-100 dark:hover:bg-gray-600 transition-colors cursor-pointer group ${isRTL ? 'flex-row-reverse' : ''}`}
+                    >
+                      {event.coverImage ? (
+                        <img src={event.coverImage} alt={event.title} className="w-16 h-16 object-cover rounded-lg flex-shrink-0" />
+                      ) : (
+                        <div className="w-16 h-16 bg-gradient-to-br from-purple-500 to-pink-500 rounded-lg flex-shrink-0 flex items-center justify-center">
+                          <span className="text-2xl">{categoryInfo.icon}</span>
+                        </div>
+                      )}
                   <div className="flex-1 min-w-0">
-                    <h4 className="font-semibold text-sm text-gray-900 dark:text-white group-hover:text-red-600 dark:group-hover:text-red-400 transition-colors truncate">{t('communityEvent')}{i}</h4>
-                    <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">12 {t('peopleJoining')}</p>
+                        <h4 className="font-semibold text-sm text-gray-900 dark:text-white group-hover:text-purple-600 dark:group-hover:text-purple-400 transition-colors truncate">
+                          {event.title}
+                        </h4>
+                        <div className={`flex items-center gap-1 text-xs text-gray-500 dark:text-gray-400 mt-1 ${isRTL ? 'flex-row-reverse' : ''}`}>
+                          <Users size={12} />
+                          <span>{subscriberCount} {t('peopleJoining')}</span>
                   </div>
+                        {event.eventDate && (
+                          <div className={`flex items-center gap-1 text-xs text-purple-600 dark:text-purple-400 mt-0.5 ${isRTL ? 'flex-row-reverse' : ''}`}>
+                            <Calendar size={12} />
+                            <span>{new Date(event.eventDate).toLocaleDateString(isRTL ? 'he-IL' : 'en-US', { month: 'short', day: 'numeric' })}</span>
                 </div>
-              ))}
+                        )}
+                      </div>
+                    </Link>
+                  );
+                })
+              ) : (
+                <div className="text-center py-6">
+                  <Sparkles size={32} className="text-gray-300 dark:text-gray-600 mx-auto mb-2" />
+                  <p className="text-sm text-gray-500 dark:text-gray-400">{t('noEventsYet') || 'No events yet'}</p>
+                  <Link 
+                    to="/new-community-event"
+                    className="inline-block mt-2 text-sm text-purple-600 dark:text-purple-400 hover:text-purple-700 font-medium"
+                  >
+                    {t('createFirstEvent') || 'Create the first one!'}
+                  </Link>
+                </div>
+              )}
             </div>
           </div>
 

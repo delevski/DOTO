@@ -6,6 +6,8 @@ import Feed from './pages/Feed';
 import MapView from './pages/MapView';
 import PostDetails from './pages/PostDetails';
 import NewPost from './pages/NewPost';
+import NewCommunityEvent from './pages/NewCommunityEvent';
+import CommunityEventDetails from './pages/CommunityEventDetails';
 import Messages from './pages/Messages';
 import Profile from './pages/Profile';
 import Settings from './pages/Settings';
@@ -49,6 +51,8 @@ function App() {
           <Route path="/map" element={<MapView />} />
           <Route path="/post/:postId" element={<PostDetails />} />
           <Route path="/new-post" element={<NewPost />} />
+          <Route path="/new-community-event" element={<NewCommunityEvent />} />
+          <Route path="/community-event/:eventId" element={<CommunityEventDetails />} />
           <Route path="/messages" element={<Messages />} />
           <Route path="/notifications" element={<Notifications />} />
           <Route path="/profile" element={<Profile />} />

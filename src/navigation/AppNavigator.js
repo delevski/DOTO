@@ -27,6 +27,8 @@ import ChatScreen from '../screens/ChatScreen';
 import SettingsScreen from '../screens/SettingsScreen';
 import EditProfileScreen from '../screens/EditProfileScreen';
 import NotificationsScreen from '../screens/NotificationsScreen';
+import CreateCommunityEventScreen from '../screens/CreateCommunityEventScreen';
+import CommunityEventDetailsScreen from '../screens/CommunityEventDetailsScreen';
 
 const Stack = createStackNavigator();
 const Tab = createBottomTabNavigator();
@@ -313,6 +315,22 @@ function MainStack() {
         component={NotificationsScreen}
         options={{ 
           title: 'Notifications',
+          headerBackTitle: 'Back',
+        }}
+      />
+      <Stack.Screen 
+        name="CreateCommunityEvent" 
+        component={CreateCommunityEventScreen}
+        options={{ 
+          title: 'Create Event',
+          headerBackTitle: 'Back',
+        }}
+      />
+      <Stack.Screen 
+        name="CommunityEventDetails" 
+        component={CommunityEventDetailsScreen}
+        options={{ 
+          title: 'Event Details',
           headerBackTitle: 'Back',
         }}
       />

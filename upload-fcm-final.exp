@@ -1,0 +1,36 @@
+#!/usr/bin/expect -f
+log_user 1
+set timeout 30
+set service_account_path "/Users/corphd/Downloads/doto-1f5d4-firebase-adminsdk-fbsvc-744092c80c.json"
+
+cd "/Users/corphd/Desktop/Or codes projects/DOTO"
+spawn npx eas credentials --platform android
+
+expect "Which build profile*"
+send "\r"
+
+expect "What do you want to do?*"
+send "\x1b\[B\r"
+
+expect "What do you want to do?*"
+send "\x1b\[B\r"
+
+expect "What do you want to do?*"
+send "\r"
+
+expect "Select the Google Service Account*"
+send "\x1b\[B\r"
+
+expect "Path to Google Service Account file*"
+send "$service_account_path\r"
+
+set timeout 60
+expect {
+    "Uploaded*" { puts "\n✅ UPLOADED!" }
+    "Assigned*" { puts "\n✅ ASSIGNED!" }
+    "*success*" { puts "\n✅ SUCCESS!" }
+    eof { puts "\n🎉 Done" }
+}
+
+expect eof
+

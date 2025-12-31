@@ -11,7 +11,7 @@ export const translations = {
     profile: 'Profile',
     settings: 'Settings',
     createPost: 'Create Post',
-    
+
     // Settings
     account: 'Account',
     editProfile: 'Edit Profile',
@@ -34,7 +34,7 @@ export const translations = {
     dangerZone: 'Danger Zone',
     deleteAccount: 'Delete Account',
     deleteAccountDesc: 'Permanently delete your account and data',
-    
+
     // Profile
     name: 'Name',
     email: 'Email',
@@ -43,7 +43,7 @@ export const translations = {
     location: 'Location',
     save: 'Save',
     cancel: 'Cancel',
-    
+
     // Common
     back: 'Back',
     search: 'Search',
@@ -69,7 +69,7 @@ export const translations = {
     failedToApproveClaimer: 'Failed to approve claimer. Please try again.',
     noClaimersYet: 'No claimers yet',
     approved: 'Approved',
-    
+
     // Post
     newPost: 'New Post',
     description: 'Description',
@@ -77,11 +77,11 @@ export const translations = {
     when: 'When do you need help?',
     addPhotos: 'Add Photos (Optional)',
     publishPost: 'Publish Post',
-    
+
     // Language names
     english: 'English',
     hebrew: 'עברית',
-    
+
     // Login & Auth
     welcomeBack: 'Welcome back',
     signInToContinue: 'Sign in to continue helping your community',
@@ -115,8 +115,13 @@ export const translations = {
     joinThousands: 'Join thousands helping their community',
     activeUsers: 'Active Users',
     tasksCompleted: 'Tasks Completed',
-    
+    connectedAccounts: 'Connected Accounts',
+    connectGoogle: 'Connect Google Account',
+    googleLinked: 'Google Linked',
+    failedToLinkGoogle: 'Failed to link Google account',
+
     // Register
+
     updateYourProfile: 'Update Your Profile',
     completeYourProfile: 'Complete Your Profile',
     updateYourInformation: 'Update your information',
@@ -132,7 +137,7 @@ export const translations = {
     creatingAccount: 'Creating Account...',
     updateProfile: 'Update Profile',
     completeRegistration: 'Complete Registration',
-    
+
     // Feed
     filters: 'Filters',
     filterPosts: 'Filter Posts',
@@ -171,7 +176,7 @@ export const translations = {
     yourImpact: 'Your Impact',
     angelRating: 'Angel Rating',
     badgesEarned: 'Badges Earned',
-    
+
     // Badge names
     firstPost: 'First Post',
     helper: 'Helper',
@@ -187,7 +192,77 @@ export const translations = {
     streak30: '30 Day Streak',
     posts10: '10 Posts',
     posts25: '25 Posts',
-    
+
+    // Community Events
+    events: 'Events',
+    newCommunityEvent: 'New Community Event',
+    createEventSubtitle: 'Bring your community together',
+    coverImage: 'Cover Image',
+    uploadCoverImage: 'Upload Cover Image',
+    eventTitle: 'Event Title',
+    eventTitlePlaceholder: 'Give your event a catchy title...',
+    eventDescriptionPlaceholder: 'Describe your event, what to expect, what to bring...',
+    eventCategory: 'Category',
+    eventDate: 'Event Date',
+    eventTime: 'Event Time',
+    maxParticipants: 'Max Participants',
+    unlimitedParticipants: 'Leave empty for unlimited',
+    optional: 'Optional',
+    creating: 'Creating...',
+    createEvent: 'Create Event',
+    mustBeLoggedInToCreateEvent: 'You must be logged in to create an event',
+    pleaseEnterEventTitle: 'Please enter an event title',
+    pleaseSelectEventDate: 'Please select an event date',
+    pleaseSelectEventTime: 'Please select an event time',
+    failedToCreateEvent: 'Failed to create event. Please try again.',
+    locationOutsideIsrael: 'Location is outside Israel region. Please select a location within Israel.',
+    noEventsYet: 'No community events yet',
+    createFirstEvent: 'Create the First Event',
+    subscribers: 'subscribers',
+    subscribe: 'Subscribe',
+    subscribed: 'Subscribed',
+    unsubscribe: 'Unsubscribe',
+    subscribedToEvent: 'You have subscribed to this event!',
+    unsubscribedFromEvent: 'You have unsubscribed from this event',
+    failedToSubscribe: 'Failed to subscribe. Please try again.',
+    eventIsFull: 'This event is full',
+    youAreBlockedFromEvent: 'You are blocked from this event',
+    full: 'Full',
+    upcoming: 'Upcoming',
+    ongoing: 'Happening Now',
+    completed: 'Completed',
+    cancelled: 'Cancelled',
+    organizer: 'Organizer',
+    eventOrganizer: 'Event Organizer',
+    joinThisEvent: 'Join This Event',
+    youreGoing: "You're Going!",
+    participants: 'Participants',
+    startsIn: 'Starts in',
+    in: 'In',
+    startingSoon: 'Starting soon',
+    max: 'max',
+    subscribersTitle: 'People Going',
+    manageSubscribers: 'Manage',
+    noSubscribersYet: 'No subscribers yet',
+    joined: 'Joined',
+    removeFromEvent: 'Remove from event',
+    userRemoved: 'User removed from event',
+    failedToRemoveUser: 'Failed to remove user',
+    blockUser: 'Block user',
+    userBlocked: 'User has been blocked',
+    failedToBlockUser: 'Failed to block user',
+    cancelEvent: 'Cancel Event',
+    areYouSureCancelEvent: 'Are you sure you want to cancel this event?',
+    eventCancelled: 'Event Cancelled',
+    eventCancelledDescription: 'This event has been cancelled by the organizer.',
+    areYouSureDeleteEvent: 'Are you sure you want to delete this event? This cannot be undone.',
+    shareVia: 'Share via...',
+    copyLink: 'Copy Link',
+    failedToCopyLink: 'Failed to copy link',
+    comments: 'Comments',
+    noCommentsYet: 'No comments yet. Be the first to comment!',
+    areYouSureDeleteComment: 'Are you sure you want to delete this comment?',
+
     // Badge descriptions
     firstPostDesc: 'Created your first post',
     helperDesc: 'Completed your first task',
@@ -203,14 +278,14 @@ export const translations = {
     streak30Desc: '30 days of activity',
     posts10Desc: 'Created 10 posts',
     posts25Desc: 'Created 25 posts',
-    
+
     day: 'day',
     days: 'days',
     ago: 'ago',
     hr: 'hr',
     hrs: 'hrs',
     justNow: 'Just now',
-    
+
     // New Post
     whatDoYouNeedHelpWith: 'What do you need help with?',
     titleOptional: 'Title (Optional)',
@@ -225,7 +300,7 @@ export const translations = {
     publishing: 'Publishing...',
     loading: 'Loading...',
     gettingAddress: 'Getting address...',
-    
+
     // Profile
     verified: 'Verified',
     communityHelperSince: 'Community helper since 2023',
@@ -234,15 +309,15 @@ export const translations = {
     helpSupport: 'Help & Support',
     logOut: 'Log Out',
     points: 'Points',
-    
+
     // Settings
     signOutOfAccount: 'Sign out of your account',
     areYouSureDeleteAccount: 'Are you sure you want to delete your account? This action cannot be undone.',
-    
+
     // Layout
     badges: 'Badges',
     help: 'Help',
-    
+
     // Map
     loadingMap: 'Loading map...',
     loadingAddress: 'Loading address...',
@@ -256,7 +331,7 @@ export const translations = {
     locationNotSpecified: 'Location not specified',
     viewDetails: 'View Details →',
     searching: 'Searching...',
-    
+
     // Messages
     connectWithCommunity: 'Connect with your community',
     sendMessage: 'Send Message',
@@ -270,7 +345,7 @@ export const translations = {
     image: 'Image',
     newMessage: 'New Message',
     conversationWith: 'Conversation with',
-    
+
     // Task Completion
     taskCompleted: 'Task Completed',
     youCompletedTask: 'Great job! You completed this task!',
@@ -288,7 +363,7 @@ export const translations = {
     approvedHelper: 'Approved helper',
     claimerMarkedComplete: 'The helper has marked the task as complete',
     taskCompletedNotification: 'Task completed! You received a rating.',
-    
+
     // Rating
     rateTheHelper: 'Rate the Helper',
     howWasYourExperience: 'How was your experience with this helper?',
@@ -299,36 +374,36 @@ export const translations = {
     poorRating: 'Poor 😔',
     submitRating: 'Submit Rating',
     submitting: 'Submitting...',
-    
+
     // Profile Stats
     currentStreak: 'Current Streak',
     tasksPosted: 'Tasks Posted',
-    
+
     // Form placeholders
     enterFullNamePlaceholder: 'Enter your full name',
     enterAgePlaceholder: 'Enter your age',
     cityStateOrAddress: 'City, State or Address',
     descriptionPlaceholder: 'Describe what you need help with... Be specific about location, time, and any requirements.',
     characters: 'characters',
-    
+
     // Aria labels
     showPassword: 'Show password',
     hidePassword: 'Hide password',
     showConfirmPassword: 'Show confirm password',
     hideConfirmPassword: 'Hide confirm password',
-    
+
     // Categories
     categoryMoving: 'Moving',
     categoryPetCare: 'Pet Care',
     categoryBorrow: 'Borrow Item',
     categoryAssembly: 'Assembly',
     categoryOther: 'Other',
-    
+
     // More placeholders
     tellUsAboutYourselfPlaceholder: 'Tell us about yourself...',
     writeAComment: 'Write a comment...',
     removePhoto: 'Remove photo',
-    
+
     // Error messages
     pleaseEnterPhoneNumber: 'Please enter your phone number',
     pleaseEnterEmail: 'Please enter your email address',
@@ -370,7 +445,7 @@ export const translations = {
     profile: 'פרופיל',
     settings: 'הגדרות',
     createPost: 'צור פוסט',
-    
+
     // Settings
     account: 'חשבון',
     editProfile: 'ערוך פרופיל',
@@ -393,7 +468,7 @@ export const translations = {
     dangerZone: 'אזור סכנה',
     deleteAccount: 'מחק חשבון',
     deleteAccountDesc: 'מחק לצמיתות את החשבון והנתונים שלך',
-    
+
     // Profile
     name: 'שם',
     email: 'אימייל',
@@ -402,7 +477,7 @@ export const translations = {
     location: 'מיקום',
     save: 'שמור',
     cancel: 'ביטול',
-    
+
     // Common
     back: 'חזור',
     search: 'חיפוש',
@@ -428,7 +503,7 @@ export const translations = {
     approve: 'אשר',
     failedToApproveClaimer: 'אישור התובע נכשל. אנא נסה שוב.',
     noClaimersYet: 'אין תובעים עדיין',
-    
+
     // Post
     newPost: 'פוסט חדש',
     description: 'תיאור',
@@ -436,11 +511,11 @@ export const translations = {
     when: 'מתי אתה צריך עזרה?',
     addPhotos: 'הוסף תמונות (אופציונלי)',
     publishPost: 'פרסם פוסט',
-    
+
     // Language names
     english: 'English',
     hebrew: 'עברית',
-    
+
     // Login & Auth
     welcomeBack: 'ברוך שובך',
     signInToContinue: 'היכנס כדי להמשיך לעזור לקהילה שלך',
@@ -474,7 +549,12 @@ export const translations = {
     joinThousands: 'הצטרף לאלפים שעוזרים לקהילה שלהם',
     activeUsers: 'משתמשים פעילים',
     tasksCompleted: 'משימות הושלמו',
-    
+    connectedAccounts: 'חשבונות מחוברים',
+    connectGoogle: 'חבר חשבון גוגל',
+    googleLinked: 'גוגל מחובר',
+    failedToLinkGoogle: 'קישור חשבון גוגל נכשל',
+
+
     // Register
     updateYourProfile: 'עדכן את הפרופיל שלך',
     completeYourProfile: 'השלם את הפרופיל שלך',
@@ -491,7 +571,7 @@ export const translations = {
     creatingAccount: 'יוצר חשבון...',
     updateProfile: 'עדכן פרופיל',
     completeRegistration: 'השלם רישום',
-    
+
     // Feed
     filters: 'מסננים',
     filterPosts: 'סנן פוסטים',
@@ -530,7 +610,7 @@ export const translations = {
     yourImpact: 'ההשפעה שלך',
     angelRating: 'דירוג מלאך',
     badgesEarned: 'תגים שהושגו',
-    
+
     // Badge names
     firstPost: 'פוסט ראשון',
     helper: 'עוזר',
@@ -546,7 +626,77 @@ export const translations = {
     streak30: 'רצף 30 ימים',
     posts10: '10 פוסטים',
     posts25: '25 פוסטים',
-    
+
+    // Community Events
+    events: 'אירועים',
+    newCommunityEvent: 'אירוע קהילתי חדש',
+    createEventSubtitle: 'חבר את הקהילה שלך',
+    coverImage: 'תמונת כיסוי',
+    uploadCoverImage: 'העלה תמונת כיסוי',
+    eventTitle: 'כותרת האירוע',
+    eventTitlePlaceholder: 'תן לאירוע שלך כותרת מושכת...',
+    eventDescriptionPlaceholder: 'תאר את האירוע שלך, למה לצפות, מה להביא...',
+    eventCategory: 'קטגוריה',
+    eventDate: 'תאריך האירוע',
+    eventTime: 'שעת האירוע',
+    maxParticipants: 'מספר משתתפים מקסימלי',
+    unlimitedParticipants: 'השאר ריק ללא הגבלה',
+    optional: 'אופציונלי',
+    creating: 'יוצר...',
+    createEvent: 'צור אירוע',
+    mustBeLoggedInToCreateEvent: 'עליך להיות מחובר כדי ליצור אירוע',
+    pleaseEnterEventTitle: 'אנא הזן כותרת לאירוע',
+    pleaseSelectEventDate: 'אנא בחר תאריך לאירוע',
+    pleaseSelectEventTime: 'אנא בחר שעה לאירוע',
+    failedToCreateEvent: 'יצירת האירוע נכשלה. אנא נסה שוב.',
+    locationOutsideIsrael: 'המיקום נמצא מחוץ לישראל. אנא בחר מיקום בתוך ישראל.',
+    noEventsYet: 'אין אירועים קהילתיים עדיין',
+    createFirstEvent: 'צור את האירוע הראשון!',
+    subscribers: 'מנויים',
+    subscribe: 'הרשמה',
+    subscribed: 'רשום',
+    unsubscribe: 'ביטול הרשמה',
+    subscribedToEvent: 'נרשמת לאירוע בהצלחה!',
+    unsubscribedFromEvent: 'ביטלת את ההרשמה לאירוע',
+    failedToSubscribe: 'ההרשמה נכשלה. אנא נסה שוב.',
+    eventIsFull: 'האירוע מלא',
+    youAreBlockedFromEvent: 'אתה חסום מאירוע זה',
+    full: 'מלא',
+    upcoming: 'קרוב',
+    ongoing: 'מתרחש כעת',
+    completed: 'הסתיים',
+    cancelled: 'בוטל',
+    organizer: 'מארגן',
+    eventOrganizer: 'מארגן האירוע',
+    joinThisEvent: 'הצטרף לאירוע',
+    youreGoing: 'אתה הולך!',
+    participants: 'משתתפים',
+    startsIn: 'מתחיל בעוד',
+    in: 'בעוד',
+    startingSoon: 'מתחיל בקרוב',
+    max: 'מקסימום',
+    subscribersTitle: 'אנשים שמגיעים',
+    manageSubscribers: 'נהל',
+    noSubscribersYet: 'אין מנויים עדיין',
+    joined: 'הצטרף',
+    removeFromEvent: 'הסר מהאירוע',
+    userRemoved: 'המשתמש הוסר מהאירוע',
+    failedToRemoveUser: 'הסרת המשתמש נכשלה',
+    blockUser: 'חסום משתמש',
+    userBlocked: 'המשתמש נחסם',
+    failedToBlockUser: 'חסימת המשתמש נכשלה',
+    cancelEvent: 'בטל אירוע',
+    areYouSureCancelEvent: 'האם אתה בטוח שברצונך לבטל את האירוע?',
+    eventCancelled: 'האירוע בוטל',
+    eventCancelledDescription: 'אירוע זה בוטל על ידי המארגן.',
+    areYouSureDeleteEvent: 'האם אתה בטוח שברצונך למחוק את האירוע? פעולה זו בלתי הפיכה.',
+    shareVia: 'שתף דרך...',
+    copyLink: 'העתק קישור',
+    failedToCopyLink: 'העתקת הקישור נכשלה',
+    comments: 'תגובות',
+    noCommentsYet: 'אין תגובות עדיין. היה הראשון להגיב!',
+    areYouSureDeleteComment: 'האם אתה בטוח שברצונך למחוק את התגובה?',
+
     // Badge descriptions
     firstPostDesc: 'יצרת את הפוסט הראשון שלך',
     helperDesc: 'השלמת את המשימה הראשונה שלך',
@@ -562,14 +712,14 @@ export const translations = {
     streak30Desc: '30 ימים של פעילות',
     posts10Desc: 'יצרת 10 פוסטים',
     posts25Desc: 'יצרת 25 פוסטים',
-    
+
     day: 'יום',
     days: 'ימים',
     ago: 'לפני',
     hr: 'שעה',
     hrs: 'שעות',
     justNow: 'עכשיו',
-    
+
     // New Post
     whatDoYouNeedHelpWith: 'עם מה אתה צריך עזרה?',
     titleOptional: 'כותרת (אופציונלי)',
@@ -584,7 +734,7 @@ export const translations = {
     publishing: 'מפרסם...',
     loading: 'טוען...',
     gettingAddress: 'מביא כתובת...',
-    
+
     // Profile
     verified: 'מאומת',
     communityHelperSince: 'עוזר קהילה מאז 2023',
@@ -593,15 +743,15 @@ export const translations = {
     helpSupport: 'עזרה ותמיכה',
     logOut: 'התנתק',
     points: 'נקודות',
-    
+
     // Settings
     signOutOfAccount: 'התנתק מהחשבון שלך',
     areYouSureDeleteAccount: 'האם אתה בטוח שברצונך למחוק את החשבון שלך? פעולה זו לא ניתנת לביטול.',
-    
+
     // Layout
     badges: 'תגים',
     help: 'עזרה',
-    
+
     // Map
     loadingMap: 'טוען מפה...',
     loadingAddress: 'טוען כתובת...',
@@ -615,7 +765,7 @@ export const translations = {
     locationNotSpecified: 'מיקום לא צוין',
     viewDetails: 'צפה בפרטים →',
     searching: 'מחפש...',
-    
+
     // Messages
     connectWithCommunity: 'התחבר לקהילה שלך',
     sendMessage: 'שלח הודעה',
@@ -629,7 +779,7 @@ export const translations = {
     image: 'תמונה',
     newMessage: 'הודעה חדשה',
     conversationWith: 'שיחה עם',
-    
+
     // Task Completion
     taskCompleted: 'המשימה הושלמה',
     youCompletedTask: 'עבודה מצוינת! השלמת את המשימה!',
@@ -647,7 +797,7 @@ export const translations = {
     approvedHelper: 'עוזר מאושר',
     claimerMarkedComplete: 'העוזר סימן את המשימה כהושלמה',
     taskCompletedNotification: 'המשימה הושלמה! קיבלת דירוג.',
-    
+
     // Rating
     rateTheHelper: 'דרג את העוזר',
     howWasYourExperience: 'איך הייתה החוויה שלך עם העוזר?',
@@ -658,36 +808,36 @@ export const translations = {
     poorRating: 'גרוע 😔',
     submitRating: 'שלח דירוג',
     submitting: 'שולח...',
-    
+
     // Profile Stats
     currentStreak: 'רצף נוכחי',
     tasksPosted: 'משימות שפורסמו',
-    
+
     // Form placeholders
     enterFullNamePlaceholder: 'הכנס את שמך המלא',
     enterAgePlaceholder: 'הכנס את גילך',
     cityStateOrAddress: 'עיר, מדינה או כתובת',
     descriptionPlaceholder: 'תאר במה אתה צריך עזרה... היה ספציפי לגבי מיקום, זמן ודרישות.',
     characters: 'תווים',
-    
+
     // Aria labels
     showPassword: 'הצג סיסמה',
     hidePassword: 'הסתר סיסמה',
     showConfirmPassword: 'הצג אישור סיסמה',
     hideConfirmPassword: 'הסתר אישור סיסמה',
-    
+
     // Categories
     categoryMoving: 'הובלה',
     categoryPetCare: 'טיפול בחיות',
     categoryBorrow: 'השאלת פריט',
     categoryAssembly: 'הרכבה',
     categoryOther: 'אחר',
-    
+
     // More placeholders
     tellUsAboutYourselfPlaceholder: 'ספר לנו על עצמך...',
     writeAComment: 'כתוב תגובה...',
     removePhoto: 'הסר תמונה',
-    
+
     // Error messages
     pleaseEnterPhoneNumber: 'אנא הכנס את מספר הטלפון שלך',
     pleaseEnterEmail: 'אנא הכנס את כתובת האימייל שלך',

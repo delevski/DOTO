@@ -16,6 +16,8 @@ export default function Settings() {
   const isRTL = language === 'he';
   const [showLanguageModal, setShowLanguageModal] = useState(false);
   const [debugInfo, setDebugInfo] = useState('');
+  const [isGoogleLoading, setIsGoogleLoading] = useState(false);
+  const [googleError, setGoogleError] = useState('');
 
   useEffect(() => {
     // Initialize settings on mount
@@ -68,11 +70,11 @@ export default function Settings() {
         return;
       }
       const dbUser = data?.users?.find(u => u.id === user.id);
-      
+
       let info = `User ID: ${user.id}\n`;
       info += `Total users in DB: ${data?.users?.length || 0}\n`;
       info += `User found in DB: ${dbUser ? 'YES' : 'NO'}\n`;
-      
+
       if (dbUser) {
         info += `Push Token: ${dbUser.pushToken ? dbUser.pushToken.substring(0, 50) + '...' : 'NOT FOUND'}\n`;
         info += `FCM Token: ${dbUser.fcmToken ? dbUser.fcmToken.substring(0, 50) + '...' : 'NOT FOUND'}\n`;
@@ -83,7 +85,7 @@ export default function Settings() {
 
       // Check for either token
       const hasToken = dbUser && (dbUser.pushToken || dbUser.fcmToken);
-      
+
       if (!hasToken) {
         info += '❌ NO PUSH TOKEN - Mobile app needs to save token first!\n';
         info += 'Go to mobile app Settings and tap "🧪 Test Notifications"\n';
@@ -123,11 +125,94 @@ export default function Settings() {
     }
   };
 
+  useEffect(() => {
+    // Initialize Google Sign-In when component mounts and Google API is loaded
+    const initGoogleSignIn = () => {
+      const clientId = import.meta.env.VITE_GOOGLE_CLIENT_ID;
+
+      if (!clientId) {
+        console.warn('Google Client ID not configured. Set VITE_GOOGLE_CLIENT_ID in your .env file.');
+        return;
+      }
+
+      if (window.google) {
+        try {
+          window.google.accounts.id.initialize({
+            client_id: clientId,
+            callback: handleGoogleLink,
+          });
+        } catch (err) {
+          console.error('Error initializing Google for Settings:', err);
+        }
+      }
+    };
+
+    if (window.google) {
+      initGoogleSignIn();
+    } else {
+      const checkGoogle = setInterval(() => {
+        if (window.google) {
+          clearInterval(checkGoogle);
+          initGoogleSignIn();
+        }
+      }, 100);
+      setTimeout(() => clearInterval(checkGoogle), 10000);
+    }
+  }, []);
+
+  const handleGoogleLink = async (response) => {
+    setIsGoogleLoading(true);
+    setGoogleError('');
+
+    try {
+      const credential = response.credential;
+      await db.auth.signInWithIdToken({
+        clientName: 'google-web2',
+        idToken: credential
+      });
+
+      const base64Url = credential.split('.')[1];
+      const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
+      const jsonPayload = decodeURIComponent(
+        atob(base64)
+          .split('')
+          .map((c) => '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2))
+          .join('')
+      );
+      const userInfo = JSON.parse(jsonPayload);
+
+      // Update user in InstantDB to mark as linked
+      await db.transact(
+        db.tx.users[user.id].update({
+          authProvider: 'google', // Explicitly mark as Google-enabled
+          // We don't change email to avoid account hijacking, but we link the provider
+          updatedAt: Date.now(),
+        })
+      );
+
+      alert(t('googleLinked') || 'Google account linked successfully!');
+    } catch (err) {
+      console.error('Google linking error:', err);
+      setGoogleError(t('failedToLinkGoogle') || 'Failed to link Google account.');
+      alert(t('failedToLinkGoogle') || 'Failed to link Google account. Please try again.');
+    } finally {
+      setIsGoogleLoading(false);
+    }
+  };
+
+  const triggerGoogleLogin = () => {
+    if (window.google) {
+      window.google.accounts.id.prompt();
+    } else {
+      alert('Google Sign-In is not available yet. Please refresh the page.');
+    }
+  };
+
   return (
     <div className={`max-w-4xl mx-auto px-6 py-8 ${isRTL ? 'rtl' : ''}`}>
       <div className={`flex items-center gap-4 mb-8 ${isRTL ? 'flex-row-reverse' : ''}`}>
-        <button 
-          onClick={() => navigate(-1)} 
+        <button
+          onClick={() => navigate(-1)}
           className="p-2 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg transition-colors"
         >
           <ArrowLeft size={24} className="dark:text-gray-300" />
@@ -142,7 +227,7 @@ export default function Settings() {
             <h2 className="text-xl font-bold text-gray-900 dark:text-white">{t('account')}</h2>
           </div>
           <div className="divide-y divide-gray-100 dark:divide-gray-700">
-            <Link 
+            <Link
               to="/edit-profile"
               className={`w-full text-left px-6 py-4 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors flex items-center justify-between`}
             >
@@ -157,7 +242,7 @@ export default function Settings() {
               </div>
               <ChevronRight size={20} className={`text-gray-400 ${isRTL ? 'rotate-180' : ''}`} />
             </Link>
-            <Link 
+            <Link
               to="/privacy-policy"
               className={`w-full text-left px-6 py-4 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors flex items-center justify-between`}
             >
@@ -187,6 +272,49 @@ export default function Settings() {
           </div>
         </div>
 
+        {/* Connected Accounts */}
+        <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-sm border border-gray-100 dark:border-gray-700 overflow-hidden">
+          <div className="p-6 border-b border-gray-100 dark:border-gray-700">
+            <h2 className="text-xl font-bold text-gray-900 dark:text-white">{t('connectedAccounts')}</h2>
+          </div>
+          <div className="p-6">
+            <button
+              onClick={triggerGoogleLogin}
+              disabled={isGoogleLoading || user?.authProvider === 'google'}
+              className={`w-full flex items-center justify-between p-4 rounded-xl border ${user?.authProvider === 'google'
+                ? 'bg-green-50 dark:bg-green-900/20 border-green-200 dark:border-green-800'
+                : 'bg-white dark:bg-gray-700 border-gray-200 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-600'
+                } transition-all`}
+            >
+              <div className="flex items-center gap-3">
+                <div className="p-2 bg-white dark:bg-gray-800 rounded-lg shadow-sm">
+                  <svg className="w-5 h-5" viewBox="0 0 24 24">
+                    <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4" />
+                    <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853" />
+                    <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.27.81-.57z" fill="#FBBC05" />
+                    <path d="M12 5.38c1.62 0 3.06.56 4.21 1.66l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335" />
+                  </svg>
+                </div>
+                <div className={`${isRTL ? 'text-right' : 'text-left'}`}>
+                  <div className="font-semibold text-gray-900 dark:text-white">
+                    {user?.authProvider === 'google' ? t('googleLinked') : t('connectGoogle')}
+                  </div>
+                  <div className="text-sm text-gray-500 dark:text-gray-400">
+                    {user?.authProvider === 'google' ? user.email : t('signInToContinue')}
+                  </div>
+                </div>
+              </div>
+              {user?.authProvider === 'google' ? (
+                <div className="bg-green-100 dark:bg-green-900/30 p-1 rounded-full">
+                  <Check size={16} className="text-green-600 dark:text-green-400" />
+                </div>
+              ) : (
+                <ChevronRight size={20} className={`text-gray-400 ${isRTL ? 'rotate-180' : ''}`} />
+              )}
+            </button>
+          </div>
+        </div>
+
         {/* App Settings */}
         <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-sm border border-gray-100 dark:border-gray-700 overflow-hidden">
           <div className="p-6 border-b border-gray-100 dark:border-gray-700">
@@ -194,7 +322,7 @@ export default function Settings() {
           </div>
           <div className="divide-y divide-gray-100 dark:divide-gray-700">
             {/* Language Selector */}
-            <button 
+            <button
               onClick={() => setShowLanguageModal(true)}
               className={`w-full text-left px-6 py-4 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors flex items-center justify-between`}
             >
@@ -213,7 +341,7 @@ export default function Settings() {
             </button>
 
             {/* Dark Mode Toggle */}
-            <button 
+            <button
               onClick={toggleDarkMode}
               className={`w-full text-left px-6 py-4 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors flex items-center justify-between`}
             >
@@ -244,7 +372,7 @@ export default function Settings() {
         {/* Logout */}
         <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-sm border border-gray-100 dark:border-gray-700 overflow-hidden">
           <div className="p-6">
-            <button 
+            <button
               onClick={handleLogout}
               className={`w-full text-left px-6 py-4 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors flex items-center justify-between rounded-xl border border-gray-200 dark:border-gray-600`}
             >
@@ -270,7 +398,7 @@ export default function Settings() {
             <h2 className="text-xl font-bold text-red-600 dark:text-red-400">{t('dangerZone')}</h2>
           </div>
           <div className="p-6">
-            <button 
+            <button
               onClick={handleDeleteAccount}
               className={`w-full text-left px-6 py-4 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors flex items-center justify-between rounded-xl border border-red-200 dark:border-red-800`}
             >
@@ -294,7 +422,7 @@ export default function Settings() {
             <h2 className="text-xl font-bold text-blue-600 dark:text-blue-400">🧪 Debug Push Notifications</h2>
           </div>
           <div className="p-6 space-y-4">
-            <button 
+            <button
               onClick={testPushNotification}
               className="w-full py-3 px-6 bg-blue-500 hover:bg-blue-600 text-white font-semibold rounded-xl transition-colors"
             >
@@ -312,7 +440,7 @@ export default function Settings() {
       {/* Language Selection Modal */}
       {showLanguageModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm" onClick={() => setShowLanguageModal(false)}>
-          <div 
+          <div
             className={`bg-white dark:bg-gray-800 rounded-2xl shadow-xl max-w-md w-full mx-4 p-6 ${isRTL ? 'rtl' : ''}`}
             onClick={(e) => e.stopPropagation()}
           >
@@ -322,11 +450,10 @@ export default function Settings() {
                 <button
                   key={lang.code}
                   onClick={() => handleLanguageChange(lang.code)}
-                  className={`w-full text-left px-4 py-3 rounded-xl transition-colors flex items-center justify-between ${
-                    language === lang.code
-                      ? 'bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400'
-                      : 'hover:bg-gray-50 dark:hover:bg-gray-700 text-gray-900 dark:text-white'
-                  }`}
+                  className={`w-full text-left px-4 py-3 rounded-xl transition-colors flex items-center justify-between ${language === lang.code
+                    ? 'bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400'
+                    : 'hover:bg-gray-50 dark:hover:bg-gray-700 text-gray-900 dark:text-white'
+                    }`}
                 >
                   <div>
                     <div className="font-semibold">{lang.native}</div>

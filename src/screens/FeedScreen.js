@@ -31,6 +31,155 @@ const { width: SCREEN_WIDTH } = Dimensions.get('window');
 const INITIAL_RENDER_COUNT = 10;
 const MAX_RENDER_PER_BATCH = 5;
 
+// Memoized PostCard component to prevent unnecessary re-renders
+const PostCard = React.memo(({ 
+  post, 
+  user, 
+  themeColors, 
+  rtlStyles, 
+  isRTL, 
+  postCommentCounts, 
+  onLike, 
+  onShare, 
+  onNavigate, 
+  t,
+  formatTime 
+}) => {
+  const isMyPost = post.authorId === user?.id;
+  const likedBy = post.likedBy || [];
+  const isLiked = post.isLikedByMe ?? (user && likedBy.includes(user.id));
+  const likeCount = post.likesCount ?? likedBy.length ?? post.likes ?? 0;
+  const commentCount = postCommentCounts[post.id] || post.comments || 0;
+  const claimers = post.claimers || [];
+  const isApproved = post.approvedClaimerId;
+  const isClaimedByMe = post.approvedClaimerId === user?.id;
+
+  return (
+    <TouchableOpacity 
+      style={[
+        styles.postCard, 
+        { 
+          backgroundColor: themeColors.surface,
+          borderColor: isApproved ? colors.success : themeColors.border,
+        }
+      ]}
+      onPress={() => onNavigate('PostDetails', { postId: post.id })}
+      activeOpacity={0.7}
+    >
+      {/* Header */}
+      <View style={[styles.postHeader, { flexDirection: rtlStyles.row }]}>
+        <OptimizedAvatar 
+          source={post.avatar}
+          fallbackId={post.authorId}
+          size={44}
+          style={isRTL ? { marginLeft: spacing.md, marginRight: 0 } : { marginRight: spacing.md }}
+        />
+        <View style={[styles.headerInfo, { alignItems: isRTL ? 'flex-end' : 'flex-start' }]}>
+          <Text style={[styles.authorName, { color: themeColors.text }]}>
+            {isMyPost ? (user?.name || post.author) : post.author}
+          </Text>
+          <View style={[styles.metaRow, { flexDirection: rtlStyles.row }]}>
+            <View style={styles.metaTimeRow}>
+              <Icon name="time-outline" size={12} color={themeColors.textSecondary} />
+              <Text style={[styles.metaText, { color: themeColors.textSecondary }]}>
+                {formatTime(post.timestamp || post.createdAt)}
+              </Text>
+            </View>
+            <View style={styles.tagBadge}>
+              <Text style={styles.tagText}>{post.tag || post.category || t('post.categories.other')}</Text>
+            </View>
+          </View>
+        </View>
+        {isApproved && (
+          <View style={[styles.statusBadge, { backgroundColor: isClaimedByMe ? '#D1FAE5' : '#F3F4F6', flexDirection: 'row', alignItems: 'center', gap: 4 }]}>
+            <Icon name="checkmark" size={12} color={isClaimedByMe ? '#059669' : themeColors.textSecondary} />
+            <Text style={[styles.statusText, { color: isClaimedByMe ? '#059669' : themeColors.textSecondary }]}>
+              {isClaimedByMe ? t('feed.claimed') : t('feed.approved')}
+            </Text>
+          </View>
+        )}
+      </View>
+
+      {/* Content */}
+      <Text style={[styles.postTitle, { color: themeColors.text, textAlign: rtlStyles.textAlign }]} numberOfLines={2}>
+        {post.title || t('post.helpNeeded')}
+      </Text>
+      <Text style={[styles.postDescription, { color: themeColors.textSecondary, textAlign: rtlStyles.textAlign }]} numberOfLines={3}>
+        {post.description}
+      </Text>
+
+      {/* Photos - Show photo count indicator if post has photos */}
+      {post.photosCount > 0 && (
+        <View style={[styles.photosIndicator, { flexDirection: rtlStyles.row }]}>
+          <Icon name="camera-outline" size={14} color="#6B7280" />
+          <Text style={styles.photosIndicatorText}>{post.photosCount} {post.photosCount === 1 ? t('feed.photo') : t('feed.photos')}</Text>
+        </View>
+      )}
+
+      {/* Location */}
+      {post.location && (
+        <View style={[styles.locationRow, { flexDirection: rtlStyles.row, alignSelf: isRTL ? 'flex-end' : 'flex-start' }]}>
+          <Icon name="location-outline" size={14} color={colors.primary} />
+          <Text style={[styles.locationText, { color: themeColors.textSecondary }]} numberOfLines={1}>
+            {post.location}
+          </Text>
+        </View>
+      )}
+
+      {/* Claimers - Show count from stripped data */}
+      {(post.claimersCount > 0 || claimers.length > 0) && !isApproved && (
+        <View style={[styles.claimersRow, { flexDirection: rtlStyles.row }]}>
+          <View style={styles.claimersIconContainer}>
+            <Icon name="people-outline" size={16} color={colors.primary} />
+          </View>
+          <Text style={[styles.claimersText, { color: themeColors.textSecondary }]}>
+            {post.claimersCount || claimers.length} {(post.claimersCount || claimers.length) === 1 ? t('feed.claimer') : t('feed.claimers')}
+          </Text>
+        </View>
+      )}
+
+      {/* Actions */}
+      <View style={[styles.actionsRow, { borderTopColor: themeColors.border, flexDirection: rtlStyles.row }]}>
+        <TouchableOpacity 
+          style={[styles.actionButton, { flexDirection: rtlStyles.row }]}
+          onPress={() => onLike(post)}
+        >
+          <Icon name={isLiked ? 'heart' : 'heart-outline'} size={20} color={isLiked ? colors.primary : themeColors.textSecondary} />
+          <Text style={[styles.actionText, { color: isLiked ? colors.primary : themeColors.textSecondary }]}>
+            {likeCount}
+          </Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity 
+          style={[styles.actionButton, { flexDirection: rtlStyles.row }]}
+          onPress={() => onNavigate('PostDetails', { postId: post.id })}
+        >
+          <Icon name="chatbubble-outline" size={20} color={themeColors.textSecondary} />
+          <Text style={[styles.actionText, { color: themeColors.textSecondary }]}>
+            {commentCount}
+          </Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity 
+          style={[styles.actionButton, { flexDirection: rtlStyles.row }]}
+          onPress={() => onShare(post)}
+        >
+          <Icon name="share-outline" size={20} color={themeColors.textSecondary} style={isRTL ? { transform: [{ scaleX: -1 }] } : null} />
+        </TouchableOpacity>
+
+        {!isApproved && !isMyPost && (
+          <TouchableOpacity 
+            style={[styles.claimButton, isRTL && { marginLeft: 0, marginRight: 'auto' }]}
+            onPress={() => onNavigate('PostDetails', { postId: post.id })}
+          >
+            <Text style={styles.claimButtonText}>{t('feed.claimTask')}</Text>
+          </TouchableOpacity>
+        )}
+      </View>
+    </TouchableOpacity>
+  );
+});
+
 function FeedScreen({ navigation }) {
   const user = useAuthStore((state) => state.user);
   const isAuthenticated = useAuthStore((state) => state.isAuthenticated);
@@ -67,6 +216,36 @@ function FeedScreen({ navigation }) {
   const { data: commentsData } = db.useQuery(isAuthenticated ? { 
     comments: {}
   } : null);
+
+  // Fetch community events
+  const { data: eventsData } = db.useQuery(isAuthenticated ? {
+    communityEvents: {}
+  } : null);
+
+  const allEvents = useMemo(() => {
+    try {
+      return eventsData?.communityEvents || [];
+    } catch (e) {
+      console.warn('FeedScreen: Error reading events', e);
+      return [];
+    }
+  }, [eventsData?.communityEvents]);
+
+  // Filter events for the Events tab
+  const filteredEvents = useMemo(() => {
+    return allEvents
+      .filter(event => event.status !== 'cancelled')
+      .sort((a, b) => (b.timestamp || b.createdAt || 0) - (a.timestamp || a.createdAt || 0));
+  }, [allEvents]);
+
+  const EVENT_CATEGORIES = {
+    social: { icon: '🎉', color: '#9333EA' },
+    sports: { icon: '⚽', color: '#22C55E' },
+    volunteering: { icon: '🤝', color: '#3B82F6' },
+    workshop: { icon: '🎨', color: '#F97316' },
+    culture: { icon: '🎭', color: '#EC4899' },
+    other: { icon: '📌', color: '#6B7280' },
+  };
   
   const allComments = useMemo(() => {
     try {
@@ -180,6 +359,7 @@ function FeedScreen({ navigation }) {
     { key: 'friends', label: t('feed.friends') },
     { key: 'myPosts', label: t('feed.myPosts') },
     { key: 'myClaims', label: t('feed.myClaims') },
+    { key: 'events', label: t('events.title') || 'Events' },
   ], [t]);
 
   const handleTabPress = useCallback((tabKey, index) => {
@@ -192,143 +372,27 @@ function FeedScreen({ navigation }) {
     setActiveTab(tabs[pageIndex].key);
   }, [tabs]);
 
-  const renderPostCard = (post) => {
-    const isMyPost = post.authorId === user?.id;
-    const likedBy = post.likedBy || [];
-    // Use isLikedByMe flag if available, otherwise check likedBy array
-    const isLiked = post.isLikedByMe ?? (user && likedBy.includes(user.id));
-    const likeCount = post.likesCount ?? likedBy.length ?? post.likes ?? 0;
-    const commentCount = postCommentCounts[post.id] || post.comments || 0;
-    const claimers = post.claimers || [];
-    const isApproved = post.approvedClaimerId;
-    const isClaimedByMe = post.approvedClaimerId === user?.id;
+  // Stable navigation callback
+  const handleNavigate = useCallback((screen, params) => {
+    navigation.navigate(screen, params);
+  }, [navigation]);
 
-    return (
-      <TouchableOpacity 
-        key={post.id}
-        style={[
-          styles.postCard, 
-          { 
-            backgroundColor: themeColors.surface,
-            borderColor: isApproved ? colors.success : themeColors.border,
-          }
-        ]}
-        onPress={() => navigation.navigate('PostDetails', { postId: post.id })}
-        activeOpacity={0.7}
-      >
-        {/* Header */}
-        <View style={[styles.postHeader, { flexDirection: rtlStyles.row }]}>
-          <OptimizedAvatar 
-            source={post.avatar}
-            fallbackId={post.authorId}
-            size={44}
-            style={isRTL ? { marginLeft: spacing.md, marginRight: 0 } : { marginRight: spacing.md }}
-          />
-          <View style={[styles.headerInfo, { alignItems: isRTL ? 'flex-end' : 'flex-start' }]}>
-            <Text style={[styles.authorName, { color: themeColors.text }]}>
-              {isMyPost ? (user?.name || post.author) : post.author}
-            </Text>
-            <View style={[styles.metaRow, { flexDirection: rtlStyles.row }]}>
-              <View style={styles.metaTimeRow}>
-                <Icon name="time-outline" size={12} color={themeColors.textSecondary} />
-                <Text style={[styles.metaText, { color: themeColors.textSecondary }]}>
-                  {formatTime(post.timestamp || post.createdAt)}
-                </Text>
-              </View>
-              <View style={styles.tagBadge}>
-                <Text style={styles.tagText}>{post.tag || post.category || t('post.categories.other')}</Text>
-              </View>
-            </View>
-          </View>
-          {isApproved && (
-            <View style={[styles.statusBadge, { backgroundColor: isClaimedByMe ? '#D1FAE5' : '#F3F4F6', flexDirection: 'row', alignItems: 'center', gap: 4 }]}>
-              <Icon name="checkmark" size={12} color={isClaimedByMe ? '#059669' : themeColors.textSecondary} />
-              <Text style={[styles.statusText, { color: isClaimedByMe ? '#059669' : themeColors.textSecondary }]}>
-                {isClaimedByMe ? t('feed.claimed') : t('feed.approved')}
-              </Text>
-            </View>
-          )}
-        </View>
-
-        {/* Content */}
-        <Text style={[styles.postTitle, { color: themeColors.text, textAlign: rtlStyles.textAlign }]} numberOfLines={2}>
-          {post.title || t('post.helpNeeded')}
-        </Text>
-        <Text style={[styles.postDescription, { color: themeColors.textSecondary, textAlign: rtlStyles.textAlign }]} numberOfLines={3}>
-          {post.description}
-        </Text>
-
-        {/* Photos - Show photo count indicator if post has photos */}
-        {post.photosCount > 0 && (
-          <View style={[styles.photosIndicator, { flexDirection: rtlStyles.row }]}>
-            <Icon name="camera-outline" size={14} color="#6B7280" />
-            <Text style={styles.photosIndicatorText}>{post.photosCount} {post.photosCount === 1 ? t('feed.photo') : t('feed.photos')}</Text>
-          </View>
-        )}
-
-        {/* Location */}
-        {post.location && (
-          <View style={[styles.locationRow, { flexDirection: rtlStyles.row, alignSelf: isRTL ? 'flex-end' : 'flex-start' }]}>
-            <Icon name="location-outline" size={14} color={colors.primary} />
-            <Text style={[styles.locationText, { color: themeColors.textSecondary }]} numberOfLines={1}>
-              {post.location}
-            </Text>
-          </View>
-        )}
-
-        {/* Claimers - Show count from stripped data */}
-        {(post.claimersCount > 0 || claimers.length > 0) && !isApproved && (
-          <View style={[styles.claimersRow, { flexDirection: rtlStyles.row }]}>
-            <View style={styles.claimersIconContainer}>
-              <Icon name="people-outline" size={16} color={colors.primary} />
-            </View>
-            <Text style={[styles.claimersText, { color: themeColors.textSecondary }]}>
-              {post.claimersCount || claimers.length} {(post.claimersCount || claimers.length) === 1 ? t('feed.claimer') : t('feed.claimers')}
-            </Text>
-          </View>
-        )}
-
-        {/* Actions */}
-        <View style={[styles.actionsRow, { borderTopColor: themeColors.border, flexDirection: rtlStyles.row }]}>
-          <TouchableOpacity 
-            style={[styles.actionButton, { flexDirection: rtlStyles.row }]}
-            onPress={() => handleLike(post)}
-          >
-            <Icon name={isLiked ? 'heart' : 'heart-outline'} size={20} color={isLiked ? colors.primary : themeColors.textSecondary} />
-            <Text style={[styles.actionText, { color: isLiked ? colors.primary : themeColors.textSecondary }]}>
-              {likeCount}
-            </Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity 
-            style={[styles.actionButton, { flexDirection: rtlStyles.row }]}
-            onPress={() => navigation.navigate('PostDetails', { postId: post.id })}
-          >
-            <Icon name="chatbubble-outline" size={20} color={themeColors.textSecondary} />
-            <Text style={[styles.actionText, { color: themeColors.textSecondary }]}>
-              {commentCount}
-            </Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity 
-            style={[styles.actionButton, { flexDirection: rtlStyles.row }]}
-            onPress={() => handleShare(post)}
-          >
-            <Icon name="share-outline" size={20} color={themeColors.textSecondary} style={isRTL ? { transform: [{ scaleX: -1 }] } : null} />
-          </TouchableOpacity>
-
-          {!isApproved && !isMyPost && (
-            <TouchableOpacity 
-              style={[styles.claimButton, isRTL && { marginLeft: 0, marginRight: 'auto' }]}
-              onPress={() => navigation.navigate('PostDetails', { postId: post.id })}
-            >
-              <Text style={styles.claimButtonText}>{t('feed.claimTask')}</Text>
-            </TouchableOpacity>
-          )}
-        </View>
-      </TouchableOpacity>
-    );
-  };
+  // Memoized render function for FlatList
+  const renderPostItem = useCallback(({ item }) => (
+    <PostCard
+      post={item}
+      user={user}
+      themeColors={themeColors}
+      rtlStyles={rtlStyles}
+      isRTL={isRTL}
+      postCommentCounts={postCommentCounts}
+      onLike={handleLike}
+      onShare={handleShare}
+      onNavigate={handleNavigate}
+      t={t}
+      formatTime={formatTime}
+    />
+  ), [user, themeColors, rtlStyles, isRTL, postCommentCounts, handleLike, handleShare, handleNavigate, t]);
 
   return (
     <View style={[styles.container, { backgroundColor: themeColors.background }]}>
@@ -417,7 +481,7 @@ function FeedScreen({ navigation }) {
               <FlatList
                 data={posts}
                 keyExtractor={(item) => item.id}
-                renderItem={({ item }) => renderPostCard(item)}
+                renderItem={renderPostItem}
                 contentContainerStyle={styles.postsContent}
                 refreshControl={
                   <RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={[colors.primary]} />
@@ -523,7 +587,7 @@ function FeedScreen({ navigation }) {
               <FlatList
                 data={posts}
                 keyExtractor={(item) => item.id}
-                renderItem={({ item }) => renderPostCard(item)}
+                renderItem={renderPostItem}
                 contentContainerStyle={styles.postsContent}
                 refreshControl={
                   <RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={[colors.primary]} />
@@ -580,7 +644,7 @@ function FeedScreen({ navigation }) {
               <FlatList
                 data={posts}
                 keyExtractor={(item) => item.id}
-                renderItem={({ item }) => renderPostCard(item)}
+                renderItem={renderPostItem}
                 contentContainerStyle={styles.postsContent}
                 refreshControl={
                   <RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={[colors.primary]} />
@@ -631,7 +695,7 @@ function FeedScreen({ navigation }) {
               <FlatList
                 data={posts}
                 keyExtractor={(item) => item.id}
-                renderItem={({ item }) => renderPostCard(item)}
+                renderItem={renderPostItem}
                 contentContainerStyle={styles.postsContent}
                 refreshControl={
                   <RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={[colors.primary]} />
@@ -646,6 +710,173 @@ function FeedScreen({ navigation }) {
                   offset: 350 * index,
                   index,
                 })}
+              />
+            )
+          )}
+        </View>
+
+        {/* Page 4: Events */}
+        <View key="events" style={styles.pageContainer}>
+          {activeTab === 'events' && (
+            filteredEvents.length === 0 ? (
+              <View style={[styles.postsContainer, styles.centerContent]}>
+                <Text style={styles.eventEmptyIcon}>✨</Text>
+                <Text style={[styles.emptyText, { color: themeColors.textSecondary }]}>
+                  {t('events.noEventsYet') || 'No community events yet'}
+                </Text>
+                <TouchableOpacity 
+                  style={styles.createEventButton}
+                  onPress={() => navigation.navigate('CreateCommunityEvent')}
+                >
+                  <Text style={styles.createEventButtonText}>
+                    {t('events.createFirstEvent') || 'Create the First Event'}
+                  </Text>
+                </TouchableOpacity>
+              </View>
+            ) : (
+              <FlatList
+                data={filteredEvents}
+                keyExtractor={(item) => item.id}
+                renderItem={({ item: event }) => {
+                  const categoryInfo = EVENT_CATEGORIES[event.category] || EVENT_CATEGORIES.other;
+                  const subscriberCount = event.subscribers?.length || 0;
+                  const maxParticipants = event.maxParticipants;
+                  const isFull = maxParticipants && subscriberCount >= maxParticipants;
+                  const isMyEvent = event.authorId === user?.id;
+                  const isSubscribed = user && event.subscribers?.some(s => s.userId === user.id);
+
+                  return (
+                    <TouchableOpacity 
+                      style={[styles.eventCard, { backgroundColor: themeColors.surface, borderColor: themeColors.border }]}
+                      onPress={() => navigation.navigate('CommunityEventDetails', { eventId: event.id })}
+                      activeOpacity={0.7}
+                    >
+                      {/* Cover Image */}
+                      {event.coverImage && (
+                        <View style={styles.eventCoverContainer}>
+                          <OptimizedPostImage source={event.coverImage} style={styles.eventCover} />
+                        </View>
+                      )}
+                      
+                      <View style={styles.eventContent}>
+                        {/* Header */}
+                        <View style={[styles.eventHeader, { flexDirection: rtlStyles.row }]}>
+                          <OptimizedAvatar 
+                            source={event.authorAvatar}
+                            fallbackId={event.authorId}
+                            size={40}
+                            style={isRTL ? { marginLeft: spacing.md } : { marginRight: spacing.md }}
+                          />
+                          <View style={{ flex: 1, alignItems: isRTL ? 'flex-end' : 'flex-start' }}>
+                            <Text style={[styles.eventAuthor, { color: themeColors.text }]}>{event.authorName}</Text>
+                            <View style={[styles.eventMetaRow, { flexDirection: rtlStyles.row }]}>
+                              <Text style={[styles.eventMetaText, { color: themeColors.textSecondary }]}>
+                                {formatTime(event.timestamp)}
+                              </Text>
+                              <View style={[styles.eventCategoryBadge, { backgroundColor: categoryInfo.color + '20' }]}>
+                                <Text style={{ color: categoryInfo.color, fontSize: 12, fontWeight: '600' }}>
+                                  {categoryInfo.icon} {event.category}
+                                </Text>
+                              </View>
+                            </View>
+                          </View>
+                          {event.status === 'upcoming' && (
+                            <View style={styles.upcomingBadge}>
+                              <Text style={styles.upcomingBadgeText}>{t('events.upcoming') || 'Upcoming'}</Text>
+                            </View>
+                          )}
+                        </View>
+
+                        {/* Title & Description */}
+                        <Text style={[styles.eventTitle, { color: themeColors.text, textAlign: rtlStyles.textAlign }]} numberOfLines={2}>
+                          {event.title}
+                        </Text>
+                        <Text style={[styles.eventDescription, { color: themeColors.textSecondary, textAlign: rtlStyles.textAlign }]} numberOfLines={2}>
+                          {event.description}
+                        </Text>
+
+                        {/* Event Info */}
+                        <View style={[styles.eventInfoRow, { flexDirection: rtlStyles.row }]}>
+                          {event.eventDate && (
+                            <View style={[styles.eventInfoItem, { flexDirection: rtlStyles.row }]}>
+                              <Icon name="calendar-outline" size={14} color="#9333EA" />
+                              <Text style={[styles.eventInfoText, { color: themeColors.textSecondary }]}>
+                                {new Date(event.eventDate).toLocaleDateString(isRTL ? 'he-IL' : 'en-US', { month: 'short', day: 'numeric' })}
+                              </Text>
+                            </View>
+                          )}
+                          {event.location && (
+                            <View style={[styles.eventInfoItem, { flexDirection: rtlStyles.row }]}>
+                              <Icon name="location-outline" size={14} color="#EF4444" />
+                              <Text style={[styles.eventInfoText, { color: themeColors.textSecondary }]} numberOfLines={1}>
+                                {event.location.substring(0, 20)}
+                              </Text>
+                            </View>
+                          )}
+                        </View>
+
+                        {/* Subscribers */}
+                        <View style={[styles.eventSubscribersRow, { flexDirection: rtlStyles.row }]}>
+                          {event.subscribers?.slice(0, 4).map((sub, index) => (
+                            <OptimizedAvatar
+                              key={sub.userId}
+                              source={sub.userAvatar}
+                              fallbackId={sub.userId}
+                              size={24}
+                              style={{ marginLeft: index === 0 ? 0 : -6, borderWidth: 2, borderColor: themeColors.surface }}
+                            />
+                          ))}
+                          <Text style={[styles.eventSubscribersText, { color: themeColors.textSecondary }]}>
+                            {subscriberCount} {t('events.subscribers') || 'subscribers'}
+                            {maxParticipants && ` / ${maxParticipants}`}
+                          </Text>
+                        </View>
+
+                        {/* Actions */}
+                        <View style={[styles.eventActionsRow, { borderTopColor: themeColors.border, flexDirection: rtlStyles.row }]}>
+                          <TouchableOpacity style={[styles.eventActionButton, { flexDirection: rtlStyles.row }]}>
+                            <Icon name="heart-outline" size={18} color={themeColors.textSecondary} />
+                            <Text style={[styles.eventActionText, { color: themeColors.textSecondary }]}>
+                              {event.likesCount || 0}
+                            </Text>
+                          </TouchableOpacity>
+                          <TouchableOpacity style={[styles.eventActionButton, { flexDirection: rtlStyles.row }]}>
+                            <Icon name="chatbubble-outline" size={18} color={themeColors.textSecondary} />
+                            <Text style={[styles.eventActionText, { color: themeColors.textSecondary }]}>
+                              {event.commentsCount || 0}
+                            </Text>
+                          </TouchableOpacity>
+                          {!isMyEvent && (
+                            <TouchableOpacity 
+                              style={[
+                                styles.subscribeButton,
+                                isSubscribed && styles.subscribedButton,
+                                isFull && !isSubscribed && styles.fullButton,
+                              ]}
+                            >
+                              <Icon 
+                                name={isSubscribed ? 'notifications' : 'notifications-outline'} 
+                                size={14} 
+                                color={isSubscribed ? '#9333EA' : '#fff'} 
+                              />
+                              <Text style={[styles.subscribeButtonText, isSubscribed && styles.subscribedButtonText]}>
+                                {isSubscribed ? (t('events.subscribed') || 'Subscribed') : isFull ? (t('events.full') || 'Full') : (t('events.subscribe') || 'Subscribe')}
+                              </Text>
+                            </TouchableOpacity>
+                          )}
+                        </View>
+                      </View>
+                    </TouchableOpacity>
+                  );
+                }}
+                contentContainerStyle={styles.postsContent}
+                refreshControl={
+                  <RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={['#9333EA']} />
+                }
+                showsVerticalScrollIndicator={false}
+                initialNumToRender={INITIAL_RENDER_COUNT}
+                maxToRenderPerBatch={MAX_RENDER_PER_BATCH}
+                windowSize={5}
               />
             )
           )}
@@ -1008,5 +1239,143 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontSize: 13,
     fontWeight: '600',
+  },
+  // Event styles
+  eventEmptyIcon: {
+    fontSize: 64,
+    marginBottom: spacing.lg,
+  },
+  createEventButton: {
+    marginTop: spacing.lg,
+    backgroundColor: '#9333EA',
+    paddingHorizontal: spacing.xl,
+    paddingVertical: spacing.md,
+    borderRadius: borderRadius.lg,
+  },
+  createEventButtonText: {
+    color: '#fff',
+    fontWeight: '600',
+  },
+  eventCard: {
+    borderRadius: 16,
+    marginBottom: spacing.md,
+    borderWidth: 1,
+    overflow: 'hidden',
+  },
+  eventCoverContainer: {
+    height: 120,
+    backgroundColor: '#F3E8FF',
+  },
+  eventCover: {
+    width: '100%',
+    height: '100%',
+  },
+  eventContent: {
+    padding: spacing.lg,
+  },
+  eventHeader: {
+    alignItems: 'flex-start',
+    marginBottom: spacing.md,
+  },
+  eventAuthor: {
+    fontSize: 15,
+    fontWeight: '600',
+  },
+  eventMetaRow: {
+    alignItems: 'center',
+    marginTop: spacing.xs,
+    gap: spacing.sm,
+  },
+  eventMetaText: {
+    fontSize: 12,
+  },
+  eventCategoryBadge: {
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 2,
+    borderRadius: 12,
+  },
+  upcomingBadge: {
+    backgroundColor: '#D1FAE5',
+    paddingHorizontal: spacing.sm,
+    paddingVertical: spacing.xs,
+    borderRadius: 12,
+  },
+  upcomingBadgeText: {
+    color: '#059669',
+    fontSize: 11,
+    fontWeight: '600',
+  },
+  eventTitle: {
+    fontSize: 17,
+    fontWeight: '700',
+    marginBottom: spacing.sm,
+  },
+  eventDescription: {
+    fontSize: 14,
+    lineHeight: 20,
+    marginBottom: spacing.md,
+  },
+  eventInfoRow: {
+    gap: spacing.md,
+    marginBottom: spacing.md,
+  },
+  eventInfoItem: {
+    alignItems: 'center',
+    gap: spacing.xs,
+    backgroundColor: '#F3F4F6',
+    paddingHorizontal: spacing.sm,
+    paddingVertical: spacing.xs,
+    borderRadius: 8,
+  },
+  eventInfoText: {
+    fontSize: 12,
+    fontWeight: '500',
+  },
+  eventSubscribersRow: {
+    alignItems: 'center',
+    gap: spacing.sm,
+    marginBottom: spacing.md,
+  },
+  eventSubscribersText: {
+    fontSize: 12,
+    marginLeft: spacing.sm,
+  },
+  eventActionsRow: {
+    alignItems: 'center',
+    paddingTop: spacing.md,
+    borderTopWidth: 1,
+    gap: spacing.lg,
+  },
+  eventActionButton: {
+    alignItems: 'center',
+    gap: spacing.xs,
+  },
+  eventActionText: {
+    fontSize: 14,
+    fontWeight: '500',
+  },
+  subscribeButton: {
+    marginLeft: 'auto',
+    backgroundColor: '#9333EA',
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    borderRadius: 8,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+  },
+  subscribedButton: {
+    backgroundColor: '#F3E8FF',
+  },
+  fullButton: {
+    backgroundColor: '#E5E7EB',
+  },
+  subscribeButtonText: {
+    color: '#fff',
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  subscribedButtonText: {
+    color: '#9333EA',
   },
 });

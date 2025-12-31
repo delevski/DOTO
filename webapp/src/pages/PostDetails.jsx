@@ -1579,7 +1579,7 @@ export default function PostDetails() {
                   setHoverRating(0);
                 }}
                 disabled={isSubmittingRating}
-                className="flex-1 py-3 border border-gray-200 dark:border-gray-600 rounded-xl font-semibold text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors disabled:opacity-50"
+                className="flex-1 py-3 border border-gray-200 dark:border-gray-600 rounded-xl font-semibold text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors disabled:opacity-50 text-center"
               >
                 {t('cancel') || 'Cancel'}
               </button>

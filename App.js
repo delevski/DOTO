@@ -20,14 +20,16 @@ import {
 } from './src/utils/notifications';
 import { navigationRef } from './src/navigation/AppNavigator';
 
-// Configure notification behavior
-Notifications.setNotificationHandler({
-  handleNotification: async () => ({
-    shouldShowAlert: true,
-    shouldPlaySound: true,
-    shouldSetBadge: true,
-  }),
-});
+// Configure notification behavior (skip on web)
+if (Platform.OS !== 'web') {
+  Notifications.setNotificationHandler({
+    handleNotification: async () => ({
+      shouldShowAlert: true,
+      shouldPlaySound: true,
+      shouldSetBadge: true,
+    }),
+  });
+}
 
 // Error Boundary Component
 class ErrorBoundary extends React.Component {
@@ -75,35 +77,38 @@ function AppInitializer({ children }) {
   useEffect(() => {
     const initialize = async () => {
       try {
-        // First check for RTL mismatch BEFORE loading other settings
-        const storedSettings = await AsyncStorage.getItem('@doto_settings');
-        if (storedSettings) {
-          const { language: storedLang } = JSON.parse(storedSettings);
-          const shouldBeRTL = storedLang === 'he';
-          
-          // If there's a mismatch between native RTL and expected RTL
-          if (I18nManager.isRTL !== shouldBeRTL) {
-            console.log('RTL mismatch detected:', { 
-              nativeRTL: I18nManager.isRTL, 
-              shouldBeRTL,
-              storedLang 
-            });
+        // Skip RTL/Updates logic on web platform
+        if (Platform.OS !== 'web') {
+          // First check for RTL mismatch BEFORE loading other settings
+          const storedSettings = await AsyncStorage.getItem('@doto_settings');
+          if (storedSettings) {
+            const { language: storedLang } = JSON.parse(storedSettings);
+            const shouldBeRTL = storedLang === 'he';
             
-            // Force RTL setting for next restart
-            I18nManager.allowRTL(shouldBeRTL);
-            I18nManager.forceRTL(shouldBeRTL);
-            
-            // Try to auto-reload the app
-            setIsRestarting(true);
-            try {
-              await Updates.reloadAsync();
-            } catch (reloadError) {
-              // If auto-reload fails (e.g., in dev mode), show manual restart prompt
-              console.log('Auto-reload not available:', reloadError.message);
-              setIsRestarting(false);
-              setNeedsRestart(true);
-              setIsReady(true);
-              return;
+            // If there's a mismatch between native RTL and expected RTL
+            if (I18nManager.isRTL !== shouldBeRTL) {
+              console.log('RTL mismatch detected:', { 
+                nativeRTL: I18nManager.isRTL, 
+                shouldBeRTL,
+                storedLang 
+              });
+              
+              // Force RTL setting for next restart
+              I18nManager.allowRTL(shouldBeRTL);
+              I18nManager.forceRTL(shouldBeRTL);
+              
+              // Try to auto-reload the app
+              setIsRestarting(true);
+              try {
+                await Updates.reloadAsync();
+              } catch (reloadError) {
+                // If auto-reload fails (e.g., in dev mode), show manual restart prompt
+                console.log('Auto-reload not available:', reloadError.message);
+                setIsRestarting(false);
+                setNeedsRestart(true);
+                setIsReady(true);
+                return;
+              }
             }
           }
         }
@@ -122,9 +127,9 @@ function AppInitializer({ children }) {
     initialize();
   }, []);
 
-  // Register push notifications when user is logged in
+  // Register push notifications when user is logged in (skip on web)
   useEffect(() => {
-    if (user?.id) {
+    if (user?.id && Platform.OS !== 'web') {
       const registerPushNotifications = async () => {
         try {
           console.log('=== REGISTERING PUSH NOTIFICATIONS ===');
@@ -153,8 +158,10 @@ function AppInitializer({ children }) {
     }
   }, [user?.id]);
 
-  // Set up notification listeners
+  // Set up notification listeners (skip on web)
   useEffect(() => {
+    if (Platform.OS === 'web') return;
+    
     const handleNotificationTapped = (response) => {
       const data = response.notification.request.content.data;
       console.log('Notification tapped with data:', data);

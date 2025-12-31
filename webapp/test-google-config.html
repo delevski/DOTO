@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Google OAuth Test</title>
+</head>
+<body>
+    <h1>Google OAuth Configuration Test</h1>
+    <div id="status"></div>
+    <script>
+        const clientId = "478956201432-0apfv7mcndro8es9mg8epjlhn45i7g1s.apps.googleusercontent.com";
+        const statusDiv = document.getElementById('status');
+        
+        statusDiv.innerHTML = `
+            <p><strong>Client ID:</strong> ${clientId}</p>
+            <p><strong>Current Origin:</strong> ${window.location.origin}</p>
+            <p><strong>Expected Origin:</strong> http://localhost:5173</p>
+            <p><strong>Match:</strong> ${window.location.origin === 'http://localhost:5173' ? '✅ YES' : '❌ NO'}</p>
+        `;
+        
+        // Try to load Google Identity Services
+        const script = document.createElement('script');
+        script.src = 'https://accounts.google.com/gsi/client';
+        script.onload = () => {
+            statusDiv.innerHTML += '<p>✅ Google Identity Services script loaded</p>';
+            
+            if (window.google) {
+                statusDiv.innerHTML += '<p>✅ window.google is available</p>';
+                
+                try {
+                    window.google.accounts.id.initialize({
+                        client_id: clientId,
+                        callback: (response) => {
+                            statusDiv.innerHTML += '<p>✅ Google Sign-In callback triggered!</p>';
+                            statusDiv.innerHTML += `<p>Token: ${response.credential.substring(0, 50)}...</p>`;
+                        }
+                    });
+                    statusDiv.innerHTML += '<p>✅ Google initialized successfully</p>';
+                    
+                    window.google.accounts.id.renderButton(
+                        document.getElementById('buttonDiv'),
+                        { theme: 'outline', size: 'large' }
+                    );
+                    statusDiv.innerHTML += '<p>✅ Button rendered</p>';
+                } catch (err) {
+                    statusDiv.innerHTML += `<p>❌ Error: ${err.message}</p>`;
+                }
+            }
+        };
+        script.onerror = () => {
+            statusDiv.innerHTML += '<p>❌ Failed to load Google Identity Services script</p>';
+        };
+        document.head.appendChild(script);
+    </script>
+    <div id="buttonDiv"></div>
+</body>
+</html>

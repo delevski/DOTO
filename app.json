@@ -25,7 +25,10 @@
         "NSCameraUsageDescription": "DOTO needs camera access to take photos.",
         "CFBundleURLTypes": [
           {
-            "CFBundleURLSchemes": ["doto", "fb2301357543703221"]
+            "CFBundleURLSchemes": [
+              "doto",
+              "fb2301357543703221"
+            ]
           }
         ]
       }
@@ -61,7 +64,10 @@
               "scheme": "fb2301357543703221"
             }
           ],
-          "category": ["BROWSABLE", "DEFAULT"]
+          "category": [
+            "BROWSABLE",
+            "DEFAULT"
+          ]
         }
       ]
     },
@@ -99,9 +105,9 @@
       "eas": {
         "projectId": "5519a148-f81d-466e-8fe0-a3557958c204"
       },
-      "googleClientId": "{YOUR_GOOGLE_CLIENT_ID}",
+      "googleClientId": "478956201432-ac1cqomlshdhnkkjq23lcb7r0jhc92ul.apps.googleusercontent.com",
       "googleClientIdIos": "{YOUR_GOOGLE_IOS_CLIENT_ID}",
-      "googleClientIdAndroid": "{YOUR_GOOGLE_ANDROID_CLIENT_ID}",
+      "googleClientIdAndroid": "478956201432-ac1cqomlshdhnkkjq23lcb7r0jhc92ul.apps.googleusercontent.com",
       "facebookAppId": "2301357543703221"
     }
   }

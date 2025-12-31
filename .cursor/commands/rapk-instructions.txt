@@ -1,0 +1,10 @@
+Android Studio Build Instructions:
+
+1. Install Android Studio: https://developer.android.com/studio
+2. Open project: File → Open → Select 'android' folder
+3. Build APK: Build → Build Bundle(s) / APK(s) → Build APK(s)
+4. Install: Run button in Android Studio, or use ./install-apk.sh
+
+Your Galaxy S24 is already connected via ADB!
+
+See ANDROID_STUDIO_BUILD_GUIDE.md for complete guide.

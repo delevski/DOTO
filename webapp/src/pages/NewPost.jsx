@@ -640,7 +640,7 @@ export default function NewPost() {
           <button
             type="button"
             onClick={() => navigate(-1)}
-            className="flex-1 py-3 border border-gray-200 dark:border-gray-600 rounded-xl font-semibold text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+            className="flex-1 py-3 border border-gray-200 dark:border-gray-600 rounded-xl font-semibold text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors text-center"
             disabled={isSubmitting}
           >
             {t('cancel')}

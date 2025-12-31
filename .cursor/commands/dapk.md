@@ -1,0 +1,1 @@
+build debug apk with the new changes via android studio and install on my phisic G-24

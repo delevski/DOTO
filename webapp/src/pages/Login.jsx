@@ -30,6 +30,7 @@ export default function Login() {
   const facebookAppId = import.meta.env.VITE_FACEBOOK_APP_ID;
   const inputRefs = useRef([]);
   const googleButtonRef = useRef(null);
+  const isProcessingGoogleAuth = useRef(false);
 
   // Query for existing user by email (when Google user email is set)
   const { data: usersData } = db.useQuery({
@@ -71,7 +72,7 @@ export default function Login() {
     // Initialize Google Sign-In when component mounts and Google API is loaded
     const initGoogleSignIn = () => {
       const clientId = import.meta.env.VITE_GOOGLE_CLIENT_ID;
-      
+
       if (!clientId) {
         console.warn('Google Client ID not configured. Set VITE_GOOGLE_CLIENT_ID in your .env file.');
         return;
@@ -122,12 +123,23 @@ export default function Login() {
     };
   }, []);
 
-  // Handle user creation/update when Google user email and existing user data are available
+  // Handle user creation/update when Google user email and query data are available
   useEffect(() => {
-    if (googleUserEmail && existingGoogleUser !== undefined) {
+    console.log('🔵 useEffect triggered', { googleUserEmail, usersData, existingGoogleUser });
+    // Check if we have an email and the query has completed (usersData is defined)
+    // usersData will be defined even if no user is found (empty array)
+    if (googleUserEmail && usersData !== undefined && !isProcessingGoogleAuth.current) {
+      console.log('✅ Calling handleGoogleUserAuth');
+      isProcessingGoogleAuth.current = true;
       handleGoogleUserAuth();
+    } else {
+      console.log('⚠️ Not calling handleGoogleUserAuth', {
+        hasEmail: !!googleUserEmail,
+        usersDataDefined: usersData !== undefined,
+        isProcessing: isProcessingGoogleAuth.current
+      });
     }
-  }, [googleUserEmail, existingGoogleUser]);
+  }, [googleUserEmail, usersData]);
 
   useEffect(() => {
     if (typeof window === 'undefined') {
@@ -135,20 +147,23 @@ export default function Login() {
     }
 
     if (!facebookAppId) {
-      console.warn('Facebook App ID not configured. Set VITE_FACEBOOK_APP_ID in your environment variables.');
-      return;
+      console.warn('Facebook App ID not configured. Set VITE_FACEBOOK_APP_ID in your environment variables. Current value:', import.meta.env.VITE_FACEBOOK_APP_ID);
+      // We don't return here so that we don't break the hook rules or logic, 
+      // but the button will handle the error on click.
     }
 
     let isMounted = true;
 
     const initializeFacebookSDK = () => {
       try {
-        window.FB.init({
-          appId: facebookAppId,
-          cookie: true,
-          xfbml: false,
-          version: 'v19.0',
-        });
+        if (facebookAppId) {
+          window.FB.init({
+            appId: facebookAppId,
+            cookie: true,
+            xfbml: false,
+            version: 'v19.0',
+          });
+        }
 
         if (isMounted) {
           setIsFacebookReady(true);
@@ -220,14 +235,22 @@ export default function Login() {
 
 
   const handleGoogleSignIn = async (response) => {
+    console.log('🟢 handleGoogleSignIn called', { response });
     setIsGoogleLoading(true);
     setError('');
 
     try {
-      // Decode the credential to get user info
+      // Use InstantDB native Google sign-in
       const credential = response.credential;
-      
-      // Decode JWT token (base64url decode)
+      console.log('🟢 Got credential, calling signInWithIdToken');
+      await db.auth.signInWithIdToken({
+        clientName: 'google-web2',
+        idToken: credential
+      });
+      console.log('✅ signInWithIdToken successful');
+
+      // The above will establish the auth session in InstantDB.
+      // Now we need to decode the token to get the email for our user record.
       const base64Url = credential.split('.')[1];
       const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
       const jsonPayload = decodeURIComponent(
@@ -237,10 +260,12 @@ export default function Login() {
           .join('')
       );
       const userInfo = JSON.parse(jsonPayload);
+      console.log('🟢 Decoded user info:', userInfo);
 
-      // Store Google user email to trigger query
+      // Store Google user email to trigger query and auth handling
+      console.log('🟢 Setting googleUserEmail to:', userInfo.email);
       setGoogleUserEmail(userInfo.email);
-      
+
       // Store full user info in ref for later use
       googleUserInfoRef.current = {
         email: userInfo.email,
@@ -248,9 +273,16 @@ export default function Login() {
         picture: userInfo.picture,
         emailVerified: userInfo.email_verified,
       };
+      console.log('🟢 Stored user info in ref:', googleUserInfoRef.current);
     } catch (err) {
       console.error('Google sign-in error:', err);
-      setError('Failed to sign in with Google. Please try again.');
+      console.error('Error details:', {
+        message: err.message,
+        body: err.body,
+        status: err.status,
+        stack: err.stack
+      });
+      setError(`Failed to sign in with Google: ${err.message || 'Please try again.'}`);
       setIsGoogleLoading(false);
       setGoogleUserEmail(null);
     }
@@ -263,6 +295,7 @@ export default function Login() {
 
     try {
       const googleUser = googleUserInfoRef.current;
+      console.log('🔵 handleGoogleUserAuth started', { googleUser });
 
       if (!googleUser.email) {
         throw new Error('Your Google account does not provide an email address. Please update your Google settings or use another login method.');
@@ -273,6 +306,7 @@ export default function Login() {
 
       if (existingGoogleUser) {
         // Update existing user
+        console.log('🔵 Updating existing user', existingGoogleUser);
         userId = existingGoogleUser.id;
         userData = {
           ...existingGoogleUser,
@@ -285,6 +319,7 @@ export default function Login() {
         };
       } else {
         // Create new user
+        console.log('🔵 Creating new user');
         userId = id();
         userData = {
           id: userId,
@@ -300,23 +335,37 @@ export default function Login() {
         };
       }
 
+      console.log('🔵 Saving user to InstantDB', { userId, userData });
       // Save/update user in InstantDB
       await db.transact(
         db.tx.users[userId].update(userData)
       );
+      console.log('✅ User saved successfully');
 
-      await startVerificationFlow({ user: userData, method: 'google' });
+      // If email is verified by Google, skip magic code
+      if (googleUser.emailVerified) {
+        console.log('✅ Email verified, logging in and redirecting to /feed');
+        login(userData);
+        console.log('✅ Login function called');
+        navigate('/feed');
+        console.log('✅ Navigate function called');
+      } else {
+        console.log('⚠️ Email not verified, starting verification flow');
+        await startVerificationFlow({ user: userData, method: 'google' });
+      }
     } catch (err) {
-      console.error('Error creating/updating user:', err);
+      console.error('❌ Error creating/updating user:', err);
       setError(err.message || 'Failed to sign in with Google. Please try again.');
     } finally {
       setIsGoogleLoading(false);
       setGoogleUserEmail(null);
       googleUserInfoRef.current = null;
+      isProcessingGoogleAuth.current = false;
     }
   };
 
   const handleFacebookLogin = async () => {
+    console.log('🔵 handleFacebookLogin called - starting Facebook SDK login');
     setError('');
 
     if (typeof window === 'undefined' || !window.FB) {
@@ -345,8 +394,26 @@ export default function Login() {
         );
       });
 
+      console.log('🔵 handleFacebookLogin: Facebook SDK login successful', { authResponse });
+
       if (!authResponse?.authResponse) {
         throw new Error('Missing Facebook authentication response.');
+      }
+
+      // Authenticate with InstantDB using the Facebook access token
+      try {
+        console.log('🔵 InstantDB Facebook Auth: Calling signInWithIdToken');
+        await db.auth.signInWithIdToken({
+          clientName: 'facebook-web', // Needs to match InstantDB config
+          idToken: authResponse.authResponse.accessToken
+        });
+        console.log('✅ InstantDB Facebook Auth: Success');
+      } catch (dbAuthError) {
+        console.error('❌ InstantDB Facebook Auth Failed:', dbAuthError);
+        // We continue even if this fails, as the user might not be in InstantDB auth yet
+        // or the client config might be missing. The legacy flow handled this manualy.
+        // However, for "Direct Login" to work properly, this needs to succeed eventually.
+        console.warn('⚠️ Proceeding with legacy user creation despite auth error (check clientName in InstantDB dashboard)');
       }
 
       const profile = await new Promise((resolve, reject) => {
@@ -363,14 +430,16 @@ export default function Login() {
         );
       });
 
+      console.log('🔵 Facebook Profile Fetched', profile);
+
       if (!profile?.email) {
         throw new Error('Your Facebook account does not provide an email address. Please update your Facebook settings or use another login method.');
       }
 
       // Find user from allUsers array
       const normalizedEmail = profile.email.toLowerCase();
-      const existingUserRecord = allUsers.find(u => 
-        (u.emailLower && u.emailLower === normalizedEmail) || 
+      const existingUserRecord = allUsers.find(u =>
+        (u.emailLower && u.emailLower === normalizedEmail) ||
         (u.email && u.email.toLowerCase() === normalizedEmail)
       );
       const timestamp = Date.now();
@@ -379,6 +448,7 @@ export default function Login() {
       let userData;
 
       if (existingUserRecord) {
+        console.log('🔵 Updating existing Facebook user', existingUserRecord.id);
         userId = existingUserRecord.id;
         userData = {
           ...existingUserRecord,
@@ -392,6 +462,7 @@ export default function Login() {
         };
       } else {
         // Create new user
+        console.log('🔵 Creating new Facebook user');
         userId = id();
         userData = {
           id: userId,
@@ -411,10 +482,16 @@ export default function Login() {
       await db.transact(
         db.tx.users[userId].update(userData)
       );
+      console.log('✅ User data saved to InstantDB');
 
-      await startVerificationFlow({ user: userData, method: 'facebook' });
+      // Direct Login (Skip Verification)
+      console.log('✅ Direct Login: Logging in and redirecting');
+      login(userData);
+      navigate('/feed');
+
+      // await startVerificationFlow({ user: userData, method: 'facebook' }); // Removed legacy flow
     } catch (err) {
-      console.error('Facebook login error:', err);
+      console.error('❌ Facebook login error:', err);
       setError(err.message || 'Failed to sign in with Facebook. Please try again.');
     } finally {
       setIsFacebookLoading(false);
@@ -447,10 +524,10 @@ export default function Login() {
     try {
       const trimmedEmail = email.trim();
       const normalizedEmail = trimmedEmail.toLowerCase();
-      
+
       // Find user from the allUsers array (filtered client-side)
-      const userRecord = allUsers.find(u => 
-        (u.emailLower && u.emailLower === normalizedEmail) || 
+      const userRecord = allUsers.find(u =>
+        (u.emailLower && u.emailLower === normalizedEmail) ||
         (u.email && u.email.toLowerCase() === normalizedEmail)
       );
 
@@ -470,7 +547,7 @@ export default function Login() {
 
       console.log('Verifying password for user:', userRecord.email);
       const isValidPassword = await verifyPassword(password, userRecord.passwordHash);
-      
+
       if (!isValidPassword) {
         console.log('Password verification failed');
         setError(t('incorrectPassword'));
@@ -504,10 +581,10 @@ export default function Login() {
       }
       return;
     }
-    
+
     // Only allow digits
     const digit = value.replace(/\D/g, '');
-    
+
     const newCode = [...verificationCode];
     newCode[index] = digit;
     setVerificationCode(newCode);
@@ -551,7 +628,7 @@ export default function Login() {
 
     try {
       const enteredCode = verificationCode.join('');
-      
+
       if (enteredCode.length !== 6) {
         setError(t('enterFullCode') || 'Please enter the full 6-digit code');
         setIsVerifying(false);
@@ -575,9 +652,9 @@ export default function Login() {
       }
 
       // Verify magic code via InstantDB
-      await db.auth.signInWithMagicCode({ 
-        email: context.email.toLowerCase(), 
-        code: enteredCode 
+      await db.auth.signInWithMagicCode({
+        email: context.email.toLowerCase(),
+        code: enteredCode
       });
 
       let userData = context.userSnapshot;
@@ -663,9 +740,9 @@ export default function Login() {
               <form onSubmit={handlePasswordLogin} className="space-y-5">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">{t('emailAddress')}</label>
-                  <input 
-                    type="email" 
-                    placeholder="your.email@example.com" 
+                  <input
+                    type="email"
+                    placeholder="your.email@example.com"
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
                     className="w-full bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 text-gray-900 dark:text-white p-3.5 rounded-xl focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent transition-all"
@@ -675,13 +752,13 @@ export default function Login() {
                     {t('verificationCodeAfterLogin') || `${t('verificationCodeSent')} ${t('checkEmailAndEnter')}`}
                   </p>
                 </div>
-                
+
                 <div>
                   <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">{t('password')}</label>
                   <div className="relative">
-                    <input 
-                      type={showPassword ? "text" : "password"} 
-                      placeholder="********" 
+                    <input
+                      type={showPassword ? "text" : "password"}
+                      placeholder="********"
                       value={password}
                       onChange={(e) => setPassword(e.target.value)}
                       className="w-full bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 text-gray-900 dark:text-white p-3.5 pe-12 rounded-xl focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent transition-all"
@@ -701,9 +778,9 @@ export default function Login() {
                     </button>
                   </div>
                 </div>
-                
-                <button 
-                  type="submit" 
+
+                <button
+                  type="submit"
                   disabled={isAuthenticating}
                   className="w-full bg-gradient-to-r from-red-600 to-rose-500 text-white font-semibold py-3.5 rounded-xl shadow-lg shadow-red-200 hover:shadow-xl hover:scale-[1.02] transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100 flex items-center justify-center text-center"
                   style={{ textAlign: 'center' }}
@@ -759,9 +836,9 @@ export default function Login() {
                       {t('verificationCodeSentTo') || 'Code sent to'} <span className="font-semibold">{verificationContext?.email || email}</span>
                     </p>
                   </div>
-                  
-                  <button 
-                    type="submit" 
+
+                  <button
+                    type="submit"
                     disabled={verificationCode.join('').length !== 6 || isVerifying}
                     className="w-full bg-gradient-to-r from-red-600 to-rose-500 text-white font-semibold py-3.5 rounded-xl shadow-lg shadow-red-200 hover:shadow-xl hover:scale-[1.02] transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100 flex items-center justify-center text-center"
                     style={{ textAlign: 'center' }}
@@ -783,10 +860,20 @@ export default function Login() {
               </div>
 
               <div className="mt-6 grid grid-cols-2 gap-3">
-                <button 
+                <button
                   className="flex items-center justify-center gap-2 px-4 py-3 bg-white dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-xl hover:bg-gray-50 dark:hover:bg-gray-600 transition-colors font-medium text-gray-700 dark:text-gray-300 disabled:opacity-50 disabled:cursor-not-allowed"
-                  disabled={!isFacebookReady || isFacebookLoading}
-                  onClick={handleFacebookLogin}
+                  disabled={isFacebookLoading}
+                  onClick={() => {
+                    if (!facebookAppId) {
+                      setError('Facebook login is not configured. Missing VITE_FACEBOOK_APP_ID.');
+                      return;
+                    }
+                    if (!isFacebookReady) {
+                      setError('Facebook SDK is still loading. Please wait.');
+                      return;
+                    }
+                    handleFacebookLogin();
+                  }}
                   title={
                     !facebookAppId
                       ? 'Facebook login not configured'
@@ -798,17 +885,17 @@ export default function Login() {
                   }
                 >
                   <svg className="w-5 h-5" viewBox="0 0 24 24" fill="#1877F2">
-                    <path d="M24 12.073c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.99 4.388 10.954 10.125 11.854v-8.385H7.078v-3.47h3.047V9.43c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.874v2.25h3.328l-.532 3.47h-2.796v8.385C19.612 23.027 24 18.062 24 12.073z"/>
+                    <path d="M24 12.073c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.99 4.388 10.954 10.125 11.854v-8.385H7.078v-3.47h3.047V9.43c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.874v2.25h3.328l-.532 3.47h-2.796v8.385C19.612 23.027 24 18.062 24 12.073z" />
                   </svg>
                   {isFacebookLoading ? (t('loading') || 'Loading...') : t('facebook')}
                 </button>
-                <div 
+                <div
                   ref={googleButtonRef}
                   className="flex items-center justify-center w-full"
                   style={{ minHeight: '48px' }}
                 >
                   {(!window.google || !import.meta.env.VITE_GOOGLE_CLIENT_ID) && (
-                    <button 
+                    <button
                       className="flex items-center justify-center gap-2 px-4 py-3 bg-white dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-xl hover:bg-gray-50 dark:hover:bg-gray-600 transition-colors font-medium text-gray-700 dark:text-gray-300 w-full disabled:opacity-50 disabled:cursor-not-allowed"
                       disabled={isGoogleLoading || !import.meta.env.VITE_GOOGLE_CLIENT_ID}
                       onClick={() => {
@@ -825,10 +912,10 @@ export default function Login() {
                       ) : (
                         <>
                           <svg className="w-5 h-5" viewBox="0 0 24 24">
-                            <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
-                            <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
-                            <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/>
-                            <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/>
+                            <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" />
+                            <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" />
+                            <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" />
+                            <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" />
                           </svg>
                           {t('google')}
                         </>

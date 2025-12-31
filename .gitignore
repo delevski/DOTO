@@ -26,3 +26,14 @@ web-build/
 
 # Firebase service account (sensitive)
 webapp/firebase-service-account.json
+
+# Build artifacts
+*.apk
+DOTO-latest.apk
+
+# Temporary JDK
+temp_jdk/
+
+# Android build assets (generated)
+android/app/src/main/assets/
+

@@ -20,15 +20,15 @@ export default function Register() {
   const emailFromSession = sessionStorage.getItem('email') || '';
   const phoneFromSession = sessionStorage.getItem('phone') || '';
   const pendingLoginContext = sessionStorage.getItem('pending_login_context');
-  
+
   // Only load existing user data if coming from a verification flow
   // (has pending login context)
   const isFromVerificationFlow = Boolean(pendingLoginContext);
-  
+
   const [phone, setPhone] = useState(phoneFromSession);
   const trimmedPhone = phone.trim();
   const trimmedEmail = emailFromSession.trim();
-  
+
   // Query for existing user by phone (only if phone exists AND coming from verification flow)
   const { data: usersDataByPhone } = db.useQuery({
     users: (trimmedPhone && isFromVerificationFlow) ? {
@@ -105,7 +105,7 @@ export default function Register() {
     // Initialize settings on mount
     const settingsStore = useSettingsStore.getState();
     settingsStore.initSettings();
-    
+
     // Clear sessionStorage if not coming from verification flow (new user)
     if (!isFromVerificationFlow) {
       // Clear any leftover session data for new registrations
@@ -166,7 +166,7 @@ export default function Register() {
     // Initialize Google Sign-In when component mounts and Google API is loaded
     const initGoogleSignIn = () => {
       const clientId = import.meta.env.VITE_GOOGLE_CLIENT_ID;
-      
+
       if (!clientId) {
         console.warn('Google Client ID not configured. Set VITE_GOOGLE_CLIENT_ID in your .env file.');
         return;
@@ -319,7 +319,7 @@ export default function Register() {
       setShowLocationSuggestions(false);
       return;
     }
-    
+
     setIsSearchingLocation(true);
     try {
       const params = new URLSearchParams({
@@ -329,7 +329,7 @@ export default function Register() {
         ...ISRAEL_NOMINATIM_PARAMS,
         addressdetails: '1'
       });
-      
+
       const response = await fetch(
         `https://nominatim.openstreetmap.org/search?${params.toString()}`,
         {
@@ -351,7 +351,7 @@ export default function Register() {
           displayName: item.display_name,
           address: item.address || {}
         }));
-      
+
       setLocationSuggestions(suggestions);
       setShowLocationSuggestions(suggestions.length > 0);
     } catch (error) {
@@ -367,12 +367,12 @@ export default function Register() {
   const handleLocationChange = (e) => {
     const value = e.target.value;
     handleChange(e); // Update form data
-    
+
     // Clear previous timeout
     if (locationSearchTimeoutRef.current) {
       clearTimeout(locationSearchTimeoutRef.current);
     }
-    
+
     // Debounce search
     locationSearchTimeoutRef.current = setTimeout(() => {
       searchLocations(value);
@@ -447,10 +447,15 @@ export default function Register() {
     setError('');
 
     try {
-      // Decode the credential to get user info
+      // Use InstantDB native Google sign-in
       const credential = response.credential;
-      
-      // Decode JWT token (base64url decode)
+      await db.auth.signInWithIdToken({
+        clientName: 'google-web2',
+        idToken: credential
+      });
+
+      // The above will establish the auth session in InstantDB.
+      // Now we need to decode the token to get the email for our user record.
       const base64Url = credential.split('.')[1];
       const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
       const jsonPayload = decodeURIComponent(
@@ -461,9 +466,9 @@ export default function Register() {
       );
       const userInfo = JSON.parse(jsonPayload);
 
-      // Store Google user email to trigger query
+      // Store Google user email to trigger query and auth handling
       setGoogleUserEmail(userInfo.email);
-      
+
       // Store full user info in ref for later use
       googleUserInfoRef.current = {
         email: userInfo.email,
@@ -526,7 +531,13 @@ export default function Register() {
         db.tx.users[userId].update(userData)
       );
 
-      await startVerificationFlow({ user: userData, method: 'google' });
+      // If email is verified by Google, skip magic code
+      if (googleUser.emailVerified) {
+        login(userData);
+        navigate('/feed');
+      } else {
+        await startVerificationFlow({ user: userData, method: 'google' });
+      }
     } catch (err) {
       console.error('Error creating/updating user:', err);
       setError(err.message || 'Failed to sign in with Google. Please try again.');
@@ -566,8 +577,23 @@ export default function Register() {
         );
       });
 
+      console.log('🔵 handleFacebookLogin: Facebook SDK login successful', { authResponse });
+
       if (!authResponse?.authResponse) {
         throw new Error('Missing Facebook authentication response.');
+      }
+
+      // Authenticate with InstantDB using the Facebook access token
+      try {
+        console.log('🔵 InstantDB Facebook Auth: Calling signInWithIdToken');
+        await db.auth.signInWithIdToken({
+          clientName: 'facebook-web', // Needs to match InstantDB config
+          idToken: authResponse.authResponse.accessToken
+        });
+        console.log('✅ InstantDB Facebook Auth: Success');
+      } catch (dbAuthError) {
+        console.error('❌ InstantDB Facebook Auth Failed:', dbAuthError);
+        console.warn('⚠️ Proceeding with legacy user creation despite auth error (check clientName in InstantDB dashboard)');
       }
 
       const profile = await new Promise((resolve, reject) => {
@@ -584,14 +610,16 @@ export default function Register() {
         );
       });
 
+      console.log('🔵 Facebook Profile Fetched', profile);
+
       if (!profile?.email) {
         throw new Error('Your Facebook account does not provide an email address. Please update your Facebook settings or use another login method.');
       }
 
       // Find user from allUsers array
       const normalizedEmail = profile.email.toLowerCase();
-      const existingUserRecord = allUsers.find(u => 
-        (u.emailLower && u.emailLower === normalizedEmail) || 
+      const existingUserRecord = allUsers.find(u =>
+        (u.emailLower && u.emailLower === normalizedEmail) ||
         (u.email && u.email.toLowerCase() === normalizedEmail)
       );
       const timestamp = Date.now();
@@ -600,6 +628,7 @@ export default function Register() {
       let userData;
 
       if (existingUserRecord) {
+        console.log('🔵 Updating existing Facebook user', existingUserRecord.id);
         userId = existingUserRecord.id;
         userData = {
           ...existingUserRecord,
@@ -613,6 +642,7 @@ export default function Register() {
         };
       } else {
         // Create new user
+        console.log('🔵 Creating new Facebook user');
         userId = id();
         userData = {
           id: userId,
@@ -632,10 +662,16 @@ export default function Register() {
       await db.transact(
         db.tx.users[userId].update(userData)
       );
+      console.log('✅ User data saved to InstantDB');
 
-      await startVerificationFlow({ user: userData, method: 'facebook' });
+      // Direct Login (Skip Verification)
+      console.log('✅ Direct Login: Logging in and redirecting');
+      login(userData);
+      navigate('/feed');
+
+      // await startVerificationFlow({ user: userData, method: 'facebook' }); // Removed legacy flow
     } catch (err) {
-      console.error('Facebook login error:', err);
+      console.error('❌ Facebook login error:', err);
       setError(err.message || 'Failed to sign in with Facebook. Please try again.');
     } finally {
       setIsFacebookLoading(false);
@@ -706,11 +742,11 @@ export default function Register() {
     try {
       // Check if email is already taken by another user (filter from allUsers)
       // Only prevent registration if email exists AND we're not updating that same user
-      const existingUserByEmailCheck = allUsers.find(u => 
-        (u.emailLower && u.emailLower === normalizedEmailLower) || 
+      const existingUserByEmailCheck = allUsers.find(u =>
+        (u.emailLower && u.emailLower === normalizedEmailLower) ||
         (u.email && u.email.toLowerCase() === normalizedEmailLower)
       );
-      
+
       // If email exists and we're not updating that same user, prevent registration
       if (existingUserByEmailCheck && (!isUpdatingUser || existingUserByEmailCheck.id !== existingUser?.id)) {
         setError('This email is already registered. Please use a different email or log in instead.');
@@ -799,10 +835,10 @@ export default function Register() {
       }
       return;
     }
-    
+
     // Only allow digits
     const digit = value.replace(/\D/g, '');
-    
+
     const newCode = [...verificationCode];
     newCode[index] = digit;
     setVerificationCode(newCode);
@@ -846,7 +882,7 @@ export default function Register() {
 
     try {
       const enteredCode = verificationCode.join('');
-      
+
       if (enteredCode.length !== 6) {
         setError(t('enterFullCode') || 'Please enter the full 6-digit code');
         setIsVerifying(false);
@@ -870,9 +906,9 @@ export default function Register() {
       }
 
       // Verify magic code via InstantDB
-      await db.auth.signInWithMagicCode({ 
-        email: context.email.toLowerCase(), 
-        code: enteredCode 
+      await db.auth.signInWithMagicCode({
+        email: context.email.toLowerCase(),
+        code: enteredCode
       });
 
       let userData = context.userSnapshot;
@@ -925,247 +961,245 @@ export default function Register() {
         <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-xl border border-gray-100 dark:border-gray-700 p-8">
           {!showVerification ? (
             <>
-          <h2 className="text-2xl font-bold text-gray-900 dark:text-white mb-2">
-            {existingUser ? t('updateYourProfile') : t('completeYourProfile')}
-          </h2>
-          <p className="text-gray-500 dark:text-gray-400 mb-8">
-            {existingUser ? t('updateYourInformation') : t('tellUsAboutYourself')}
-          </p>
+              <h2 className="text-2xl font-bold text-gray-900 dark:text-white mb-2">
+                {existingUser ? t('updateYourProfile') : t('completeYourProfile')}
+              </h2>
+              <p className="text-gray-500 dark:text-gray-400 mb-8">
+                {existingUser ? t('updateYourInformation') : t('tellUsAboutYourself')}
+              </p>
 
-          {error && (
-            <div className="mb-6 p-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 text-red-700 dark:text-red-400 rounded-xl text-sm">
-              {error}
-            </div>
-          )}
+              {error && (
+                <div className="mb-6 p-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 text-red-700 dark:text-red-400 rounded-xl text-sm">
+                  {error}
+                </div>
+              )}
 
-          <form onSubmit={handleSubmit} className="space-y-6">
-            {/* Profile Image */}
-            <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                {t('profileImage')}
-              </label>
-              <div className="flex items-center gap-4">
-                <div className="relative">
-                  {profileImagePreview ? (
+              <form onSubmit={handleSubmit} className="space-y-6">
+                {/* Profile Image */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                    {t('profileImage')}
+                  </label>
+                  <div className="flex items-center gap-4">
                     <div className="relative">
-                      <img
-                        src={profileImagePreview}
-                        alt="Profile preview"
-                        className="w-24 h-24 rounded-full object-cover ring-4 ring-gray-100 dark:ring-gray-700"
+                      {profileImagePreview ? (
+                        <div className="relative">
+                          <img
+                            src={profileImagePreview}
+                            alt="Profile preview"
+                            className="w-24 h-24 rounded-full object-cover ring-4 ring-gray-100 dark:ring-gray-700"
+                          />
+                          <button
+                            type="button"
+                            onClick={removeImage}
+                            className="absolute -top-1 -right-1 p-1 bg-red-500 text-white rounded-full hover:bg-red-600 transition-colors"
+                          >
+                            <X size={16} />
+                          </button>
+                        </div>
+                      ) : (
+                        <div className="w-24 h-24 rounded-full bg-gray-100 dark:bg-gray-700 flex items-center justify-center border-2 border-dashed border-gray-300 dark:border-gray-600">
+                          <Upload size={24} className="text-gray-400" />
+                        </div>
+                      )}
+                    </div>
+                    <div className="flex-1">
+                      <input
+                        type="file"
+                        ref={fileInputRef}
+                        onChange={handleImageSelect}
+                        accept="image/*"
+                        className="hidden"
                       />
                       <button
                         type="button"
-                        onClick={removeImage}
-                        className="absolute -top-1 -right-1 p-1 bg-red-500 text-white rounded-full hover:bg-red-600 transition-colors"
+                        onClick={() => fileInputRef.current?.click()}
+                        className="px-4 py-2 border border-gray-200 dark:border-gray-600 rounded-xl text-sm font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
                       >
-                        <X size={16} />
+                        {profileImagePreview ? t('changeImage') : t('uploadImage')}
                       </button>
+                      <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">{t('pngJpgUpTo5MB')}</p>
                     </div>
-                  ) : (
-                    <div className="w-24 h-24 rounded-full bg-gray-100 dark:bg-gray-700 flex items-center justify-center border-2 border-dashed border-gray-300 dark:border-gray-600">
-                      <Upload size={24} className="text-gray-400" />
-                    </div>
-                  )}
+                  </div>
                 </div>
-                <div className="flex-1">
+
+                {/* Name */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                    {t('fullName')} *
+                  </label>
                   <input
-                    type="file"
-                    ref={fileInputRef}
-                    onChange={handleImageSelect}
-                    accept="image/*"
-                    className="hidden"
+                    type="text"
+                    name="name"
+                    value={formData.name}
+                    onChange={handleChange}
+                    placeholder={t('enterFullNamePlaceholder')}
+                    className="w-full bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 text-gray-900 dark:text-white p-3.5 rounded-xl focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent transition-all"
+                    required
                   />
-                  <button
-                    type="button"
-                    onClick={() => fileInputRef.current?.click()}
-                    className="px-4 py-2 border border-gray-200 dark:border-gray-600 rounded-xl text-sm font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
-                  >
-                    {profileImagePreview ? t('changeImage') : t('uploadImage')}
-                  </button>
-                  <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">{t('pngJpgUpTo5MB')}</p>
                 </div>
-              </div>
-            </div>
 
-            {/* Name */}
-            <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                {t('fullName')} *
-              </label>
-              <input
-                type="text"
-                name="name"
-                value={formData.name}
-                onChange={handleChange}
-                placeholder={t('enterFullNamePlaceholder')}
-                className="w-full bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 text-gray-900 dark:text-white p-3.5 rounded-xl focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent transition-all"
-                required
-              />
-            </div>
+                {/* Email */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                    {t('emailAddress')} *
+                  </label>
+                  <div className="relative">
+                    <Mail size={20} className="absolute start-3 top-1/2 transform -translate-y-1/2 text-gray-400" />
+                    <input
+                      type="email"
+                      name="email"
+                      value={formData.email}
+                      onChange={handleChange}
+                      placeholder="your.email@example.com"
+                      className="w-full ps-10 pe-4 bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 text-gray-900 dark:text-white p-3.5 rounded-xl focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent transition-all"
+                      required
+                    />
+                  </div>
+                </div>
 
-            {/* Email */}
-            <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                {t('emailAddress')} *
-              </label>
-              <div className="relative">
-                <Mail size={20} className="absolute start-3 top-1/2 transform -translate-y-1/2 text-gray-400" />
-                <input
-                  type="email"
-                  name="email"
-                  value={formData.email}
-                  onChange={handleChange}
-                  placeholder="your.email@example.com"
-                  className="w-full ps-10 pe-4 bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 text-gray-900 dark:text-white p-3.5 rounded-xl focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent transition-all"
-                  required
-                />
-              </div>
-            </div>
+                {/* Password */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                    {t('password')} {!existingUser && '*'}
+                  </label>
+                  <div className="relative">
+                    <input
+                      type={showPassword ? "text" : "password"}
+                      name="password"
+                      value={formData.password}
+                      onChange={handleChange}
+                      placeholder="********"
+                      autoComplete="new-password"
+                      className="w-full bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 text-gray-900 dark:text-white p-3.5 pe-12 rounded-xl focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent transition-all"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowPassword(!showPassword)}
+                      className="absolute end-3 top-1/2 transform -translate-y-1/2 text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300 transition-colors"
+                      aria-label={showPassword ? t('hidePassword') : t('showPassword')}
+                    >
+                      {showPassword ? (
+                        <EyeOff size={20} />
+                      ) : (
+                        <Eye size={20} />
+                      )}
+                    </button>
+                  </div>
+                  <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                    {existingUser ? t('optionalChangePassword') : t('passwordHelper')}
+                  </p>
+                </div>
 
-            {/* Password */}
-            <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                {t('password')} {!existingUser && '*'}
-              </label>
-              <div className="relative">
-                <input
-                  type={showPassword ? "text" : "password"}
-                  name="password"
-                  value={formData.password}
-                  onChange={handleChange}
-                  placeholder="********"
-                  autoComplete="new-password"
-                  className="w-full bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 text-gray-900 dark:text-white p-3.5 pe-12 rounded-xl focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent transition-all"
-                />
-                <button
-                  type="button"
-                  onClick={() => setShowPassword(!showPassword)}
-                  className="absolute end-3 top-1/2 transform -translate-y-1/2 text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300 transition-colors"
-                  aria-label={showPassword ? t('hidePassword') : t('showPassword')}
-                >
-                  {showPassword ? (
-                    <EyeOff size={20} />
-                  ) : (
-                    <Eye size={20} />
-                  )}
-                </button>
-              </div>
-              <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-                {existingUser ? t('optionalChangePassword') : t('passwordHelper')}
-              </p>
-            </div>
+                {/* Confirm Password */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                    {t('confirmPassword')} {!existingUser && '*'}
+                  </label>
+                  <div className="relative">
+                    <input
+                      type={showConfirmPassword ? "text" : "password"}
+                      name="confirmPassword"
+                      value={formData.confirmPassword}
+                      onChange={handleChange}
+                      placeholder="********"
+                      autoComplete="new-password"
+                      className="w-full bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 text-gray-900 dark:text-white p-3.5 pe-12 rounded-xl focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent transition-all"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+                      className="absolute end-3 top-1/2 transform -translate-y-1/2 text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300 transition-colors"
+                      aria-label={showConfirmPassword ? t('hideConfirmPassword') : t('showConfirmPassword')}
+                    >
+                      {showConfirmPassword ? (
+                        <EyeOff size={20} />
+                      ) : (
+                        <Eye size={20} />
+                      )}
+                    </button>
+                  </div>
+                  <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                    {t('confirmPasswordHelper')}
+                  </p>
+                </div>
 
-            {/* Confirm Password */}
-            <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                {t('confirmPassword')} {!existingUser && '*'}
-              </label>
-              <div className="relative">
-                <input
-                  type={showConfirmPassword ? "text" : "password"}
-                  name="confirmPassword"
-                  value={formData.confirmPassword}
-                  onChange={handleChange}
-                  placeholder="********"
-                  autoComplete="new-password"
-                  className="w-full bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 text-gray-900 dark:text-white p-3.5 pe-12 rounded-xl focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent transition-all"
-                />
-                <button
-                  type="button"
-                  onClick={() => setShowConfirmPassword(!showConfirmPassword)}
-                  className="absolute end-3 top-1/2 transform -translate-y-1/2 text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300 transition-colors"
-                  aria-label={showConfirmPassword ? t('hideConfirmPassword') : t('showConfirmPassword')}
-                >
-                  {showConfirmPassword ? (
-                    <EyeOff size={20} />
-                  ) : (
-                    <Eye size={20} />
-                  )}
-                </button>
-              </div>
-              <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-                {t('confirmPasswordHelper')}
-              </p>
-            </div>
+                {/* Age */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                    {t('age')} *
+                  </label>
+                  <input
+                    type="number"
+                    name="age"
+                    value={formData.age}
+                    onChange={handleChange}
+                    placeholder={t('enterAgePlaceholder')}
+                    min="13"
+                    max="120"
+                    className="w-full bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 text-gray-900 dark:text-white p-3.5 rounded-xl focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent transition-all"
+                    required
+                  />
+                </div>
 
-            {/* Age */}
-            <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                {t('age')} *
-              </label>
-              <input
-                type="number"
-                name="age"
-                value={formData.age}
-                onChange={handleChange}
-                placeholder={t('enterAgePlaceholder')}
-                min="13"
-                max="120"
-                className="w-full bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 text-gray-900 dark:text-white p-3.5 rounded-xl focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent transition-all"
-                required
-              />
-            </div>
+                {/* Location */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                    {t('location')} *
+                  </label>
+                  <div className="relative">
+                    <MapPin size={20} className="absolute start-3 top-1/2 transform -translate-y-1/2 text-gray-400 z-10" />
+                    <input
+                      ref={locationInputRef}
+                      type="text"
+                      name="location"
+                      value={formData.location}
+                      onChange={handleLocationChange}
+                      onFocus={() => {
+                        if (locationSuggestions.length > 0) {
+                          setShowLocationSuggestions(true);
+                        }
+                      }}
+                      placeholder={t('cityStateOrAddress')}
+                      className="w-full ps-10 pe-4 bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 text-gray-900 dark:text-white p-3.5 rounded-xl focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent transition-all"
+                      required
+                    />
 
-            {/* Location */}
-            <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                {t('location')} *
-              </label>
-              <div className="relative">
-                <MapPin size={20} className="absolute start-3 top-1/2 transform -translate-y-1/2 text-gray-400 z-10" />
-                <input
-                  ref={locationInputRef}
-                  type="text"
-                  name="location"
-                  value={formData.location}
-                  onChange={handleLocationChange}
-                  onFocus={() => {
-                    if (locationSuggestions.length > 0) {
-                      setShowLocationSuggestions(true);
-                    }
-                  }}
-                  placeholder={t('cityStateOrAddress')}
-                  className="w-full ps-10 pe-4 bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 text-gray-900 dark:text-white p-3.5 rounded-xl focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent transition-all"
-                  required
-                />
-                
-                {/* Autocomplete Suggestions */}
-                {showLocationSuggestions && locationSuggestions.length > 0 && (
-                  <div
-                    ref={locationSuggestionsRef}
-                    className="absolute start-0 top-full mt-1 w-full bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl shadow-lg z-50 max-h-60 overflow-y-auto"
-                  >
-                    {locationSuggestions.map((suggestion, index) => (
-                      <button
-                        key={index}
-                        type="button"
-                        onClick={() => handleLocationSuggestionSelect(suggestion)}
-                        className={`w-full px-4 py-3 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors ${
-                          index === 0 ? 'rounded-t-xl' : ''
-                        } ${
-                          index === locationSuggestions.length - 1 ? 'rounded-b-xl' : 'border-b border-gray-100 dark:border-gray-700'
-                        }`}
+                    {/* Autocomplete Suggestions */}
+                    {showLocationSuggestions && locationSuggestions.length > 0 && (
+                      <div
+                        ref={locationSuggestionsRef}
+                        className="absolute start-0 top-full mt-1 w-full bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl shadow-lg z-50 max-h-60 overflow-y-auto"
                       >
-                        <div className={`flex items-start gap-2 ${isRTL ? 'flex-row-reverse' : ''}`}>
-                          <MapPin size={16} className="text-gray-400 mt-0.5 flex-shrink-0" />
-                          <div className="flex-1 min-w-0">
-                            <div className="text-sm font-medium text-gray-900 dark:text-white truncate">
-                              {suggestion.displayName}
+                        {locationSuggestions.map((suggestion, index) => (
+                          <button
+                            key={index}
+                            type="button"
+                            onClick={() => handleLocationSuggestionSelect(suggestion)}
+                            className={`w-full px-4 py-3 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors ${index === 0 ? 'rounded-t-xl' : ''
+                              } ${index === locationSuggestions.length - 1 ? 'rounded-b-xl' : 'border-b border-gray-100 dark:border-gray-700'
+                              }`}
+                          >
+                            <div className={`flex items-start gap-2 ${isRTL ? 'flex-row-reverse' : ''}`}>
+                              <MapPin size={16} className="text-gray-400 mt-0.5 flex-shrink-0" />
+                              <div className="flex-1 min-w-0">
+                                <div className="text-sm font-medium text-gray-900 dark:text-white truncate">
+                                  {suggestion.displayName}
+                                </div>
+                              </div>
                             </div>
-                          </div>
-                        </div>
-                      </button>
-                    ))}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+
+                    {isSearchingLocation && (
+                      <div className="absolute start-12 top-1/2 transform -translate-y-1/2">
+                        <div className="w-4 h-4 border-2 border-gray-300 border-t-red-500 rounded-full animate-spin"></div>
+                      </div>
+                    )}
                   </div>
-                )}
-                
-                {isSearchingLocation && (
-                  <div className="absolute start-12 top-1/2 transform -translate-y-1/2">
-                    <div className="w-4 h-4 border-2 border-gray-300 border-t-red-500 rounded-full animate-spin"></div>
-                  </div>
-                )}
-              </div>
-            </div>
+                </div>
 
                 {/* Phone - Optional, only shown if from phone verification flow */}
                 {isFromVerificationFlow && (phoneFromSession || existingUser?.phone) && (
@@ -1173,28 +1207,28 @@ export default function Register() {
                     <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                       {t('phoneNumber')} {existingUser ? '' : '(Optional)'}
                     </label>
-              <input
-                type="tel"
-                name="phone"
-                value={phone}
-                onChange={(e) => setPhone(e.target.value)}
-                placeholder="+1 (555) 000-0000"
-                className="w-full bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 text-gray-900 dark:text-white p-3.5 rounded-xl focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent transition-all"
-              />
-            </div>
+                    <input
+                      type="tel"
+                      name="phone"
+                      value={phone}
+                      onChange={(e) => setPhone(e.target.value)}
+                      placeholder="+1 (555) 000-0000"
+                      className="w-full bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 text-gray-900 dark:text-white p-3.5 rounded-xl focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent transition-all"
+                    />
+                  </div>
                 )}
 
-            <button
-              type="submit"
-              disabled={isSubmitting}
-              className="w-full bg-gradient-to-r from-red-600 to-rose-500 text-white font-semibold py-3.5 rounded-xl shadow-lg shadow-red-200 hover:shadow-xl hover:scale-[1.02] transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100 flex items-center justify-center button-center-text"
-              style={{ textAlign: 'center', justifyContent: 'center', display: 'flex' }}
-            >
-              {isSubmitting 
-                ? (existingUser ? t('updatingProfile') : t('creatingAccount')) 
-                : (existingUser ? t('updateProfile') : t('completeRegistration'))}
-            </button>
-          </form>
+                <button
+                  type="submit"
+                  disabled={isSubmitting}
+                  className="w-full bg-gradient-to-r from-red-600 to-rose-500 text-white font-semibold py-3.5 rounded-xl shadow-lg shadow-red-200 hover:shadow-xl hover:scale-[1.02] transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100 flex items-center justify-center button-center-text"
+                  style={{ textAlign: 'center', justifyContent: 'center', display: 'flex' }}
+                >
+                  {isSubmitting
+                    ? (existingUser ? t('updatingProfile') : t('creatingAccount'))
+                    : (existingUser ? t('updateProfile') : t('completeRegistration'))}
+                </button>
+              </form>
 
               <div className="mt-6">
                 <div className="relative">
@@ -1207,7 +1241,7 @@ export default function Register() {
                 </div>
 
                 <div className="mt-6 grid grid-cols-2 gap-3">
-                  <button 
+                  <button
                     className="flex items-center justify-center gap-2 px-4 py-3 bg-white dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-xl hover:bg-gray-50 dark:hover:bg-gray-600 transition-colors font-medium text-gray-700 dark:text-gray-300 disabled:opacity-50 disabled:cursor-not-allowed"
                     disabled={!isFacebookReady || isFacebookLoading}
                     onClick={handleFacebookLogin}
@@ -1222,17 +1256,17 @@ export default function Register() {
                     }
                   >
                     <svg className="w-5 h-5" viewBox="0 0 24 24" fill="#1877F2">
-                      <path d="M24 12.073c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.99 4.388 10.954 10.125 11.854v-8.385H7.078v-3.47h3.047V9.43c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.874v2.25h3.328l-.532 3.47h-2.796v8.385C19.612 23.027 24 18.062 24 12.073z"/>
+                      <path d="M24 12.073c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.99 4.388 10.954 10.125 11.854v-8.385H7.078v-3.47h3.047V9.43c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.874v2.25h3.328l-.532 3.47h-2.796v8.385C19.612 23.027 24 18.062 24 12.073z" />
                     </svg>
                     {isFacebookLoading ? (t('loading') || 'Loading...') : t('facebook')}
                   </button>
-                  <div 
+                  <div
                     ref={googleButtonRef}
                     className="flex items-center justify-center w-full"
                     style={{ minHeight: '48px' }}
                   >
                     {(!window.google || !import.meta.env.VITE_GOOGLE_CLIENT_ID) && (
-                      <button 
+                      <button
                         className="flex items-center justify-center gap-2 px-4 py-3 bg-white dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-xl hover:bg-gray-50 dark:hover:bg-gray-600 transition-colors font-medium text-gray-700 dark:text-gray-300 w-full disabled:opacity-50 disabled:cursor-not-allowed"
                         disabled={isGoogleLoading || !import.meta.env.VITE_GOOGLE_CLIENT_ID}
                         onClick={() => {
@@ -1249,10 +1283,10 @@ export default function Register() {
                         ) : (
                           <>
                             <svg className="w-5 h-5" viewBox="0 0 24 24">
-                              <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
-                              <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
-                              <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/>
-                              <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/>
+                              <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" />
+                              <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" />
+                              <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" />
+                              <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" />
                             </svg>
                             {t('google')}
                           </>
@@ -1321,9 +1355,9 @@ export default function Register() {
                     {t('verificationCodeSentTo') || 'Code sent to'} <span className="font-semibold">{verificationContext?.email || formData.email}</span>
                   </p>
                 </div>
-                
-                <button 
-                  type="submit" 
+
+                <button
+                  type="submit"
                   disabled={verificationCode.join('').length !== 6 || isVerifying}
                   className="w-full bg-gradient-to-r from-red-600 to-rose-500 text-white font-semibold py-3.5 rounded-xl shadow-lg shadow-red-200 hover:shadow-xl hover:scale-[1.02] transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100 flex items-center justify-center button-center-text"
                   style={{ textAlign: 'center', justifyContent: 'center', display: 'flex' }}

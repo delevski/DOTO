@@ -1,0 +1,14 @@
+Build Release APK with Latest Code Changes:
+
+Status:
+✅ 70 files with changes detected
+✅ Galaxy S24 connected via ADB
+⚠️  Android Studio not installed
+
+Next Steps:
+1. Install Android Studio: https://developer.android.com/studio
+2. Run: ./rapk.sh
+3. Follow build instructions in Android Studio
+4. Install via: ./install-apk.sh
+
+See: ANDROID_STUDIO_BUILD_COMPLETE.md for full guide

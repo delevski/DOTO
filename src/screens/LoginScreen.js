@@ -30,6 +30,7 @@ import {
   isFacebookConfigured,
   isRunningInExpoGo,
   getFacebookAuthDebugInfo,
+  exchangeGoogleCode,
 } from '../lib/socialAuth';
 
 export default function LoginScreen({ navigation }) {
@@ -67,16 +68,65 @@ export default function LoginScreen({ navigation }) {
 
   // Handle Google OAuth response
   useEffect(() => {
-    if (googleResponse?.type === 'success') {
-      handleGoogleLoginSuccess(googleResponse.authentication.accessToken);
-    } else if (googleResponse?.type === 'error') {
-      setError(t('auth.googleLoginFailed'));
-      setIsSocialLoading(false);
-      setSocialLoadingType(null);
-    } else if (googleResponse?.type === 'dismiss') {
-      setIsSocialLoading(false);
-      setSocialLoadingType(null);
-    }
+    const handleGoogleResponse = async () => {
+      if (googleResponse?.type === 'success') {
+        const { code } = googleResponse.params;
+
+        if (code) {
+          console.log('🟢 Mobile: Google Auth Code received, exchanging for tokens...');
+          try {
+            // Exchange code for tokens
+            const tokenResult = await exchangeGoogleCode(code, googleRequest);
+
+            console.log('🟢 Mobile: Token exchange success', {
+              hasIdToken: !!tokenResult.idToken,
+              hasAccessToken: !!tokenResult.accessToken
+            });
+
+            if (tokenResult.idToken) {
+              // Use InstantDB native Google sign-in with ID token
+              handleGoogleLoginWithIdToken(tokenResult.idToken);
+            } else if (tokenResult.accessToken) {
+              // Fallback to access token approach
+              handleGoogleLoginSuccess(tokenResult.accessToken);
+            } else {
+              throw new Error('No tokens received from exchange');
+            }
+          } catch (err) {
+            console.error('❌ Mobile: Token exchange failed', err);
+            setError(t('auth.googleLoginFailed'));
+            setIsSocialLoading(false);
+            setSocialLoadingType(null);
+          }
+        } else {
+          // Fallback for Implicit Flow (shouldn't happen with new config but good for safety)
+          const idToken = googleResponse.params?.id_token || googleResponse.authentication?.idToken;
+          const accessToken = googleResponse.authentication?.accessToken || googleResponse.params?.access_token;
+
+          if (idToken) {
+            handleGoogleLoginWithIdToken(idToken);
+          } else if (accessToken) {
+            handleGoogleLoginSuccess(accessToken);
+          } else {
+            console.error('❌ Mobile: No code or tokens in response');
+            setError(t('auth.googleLoginFailed'));
+            setIsSocialLoading(false);
+            setSocialLoadingType(null);
+          }
+        }
+      } else if (googleResponse?.type === 'error') {
+        console.error('❌ Mobile: Google OAuth error', googleResponse);
+        setError(t('auth.googleLoginFailed'));
+        setIsSocialLoading(false);
+        setSocialLoadingType(null);
+      } else if (googleResponse?.type === 'dismiss') {
+        console.log('⚠️ Mobile: Google OAuth dismissed by user');
+        setIsSocialLoading(false);
+        setSocialLoadingType(null);
+      }
+    };
+
+    handleGoogleResponse();
   }, [googleResponse]);
 
   // Note: Facebook OAuth response is now handled directly in handleFacebookLogin
@@ -140,10 +190,10 @@ export default function LoginScreen({ navigation }) {
 
     try {
       const normalizedEmail = email.trim().toLowerCase();
-      
+
       // Find user in InstantDB
-      const userRecord = allUsers.find(u => 
-        (u.emailLower && u.emailLower === normalizedEmail) || 
+      const userRecord = allUsers.find(u =>
+        (u.emailLower && u.emailLower === normalizedEmail) ||
         (u.email && u.email.toLowerCase() === normalizedEmail)
       );
 
@@ -162,7 +212,7 @@ export default function LoginScreen({ navigation }) {
 
       // Verify password
       const isValidPassword = await verifyPassword(password, userRecord.passwordHash);
-      
+
       if (!isValidPassword) {
         setError(t('auth.incorrectPassword'));
         setIsLoading(false);
@@ -172,7 +222,7 @@ export default function LoginScreen({ navigation }) {
       // Send magic code via InstantDB
       setPendingUser(userRecord);
       setShowVerification(true);
-      
+
       try {
         await db.auth.sendMagicCode({ email: normalizedEmail });
         startCooldown(60); // Start 60 second cooldown
@@ -196,7 +246,7 @@ export default function LoginScreen({ navigation }) {
 
   const handleCodeChange = (index, value) => {
     if (value.length > 1) return;
-    
+
     const newCode = [...verificationCode];
     newCode[index] = value;
     setVerificationCode(newCode);
@@ -220,7 +270,7 @@ export default function LoginScreen({ navigation }) {
   const handleVerifyCode = async () => {
     // Join code digits and trim any whitespace
     const enteredCode = verificationCode.map(c => c.trim()).join('').trim();
-    
+
     if (enteredCode.length !== 6) {
       setError(t('auth.enterFullCode'));
       return;
@@ -231,13 +281,13 @@ export default function LoginScreen({ navigation }) {
 
     try {
       const normalizedEmail = pendingUser?.email?.toLowerCase().trim() || email.trim().toLowerCase();
-      
+
       // Verify with InstantDB
-      await db.auth.signInWithMagicCode({ 
-        email: normalizedEmail, 
-        code: enteredCode 
+      await db.auth.signInWithMagicCode({
+        email: normalizedEmail,
+        code: enteredCode
       });
-      
+
       // If successful, login the user
       if (pendingUser) {
         await login(pendingUser);
@@ -248,10 +298,10 @@ export default function LoginScreen({ navigation }) {
     } catch (err) {
       // Get detailed error info
       const rawError = err.body?.message || err.message || 'Unknown error';
-      
+
       // Show more specific error message
       let errorMessage = t('auth.invalidCode');
-      
+
       // Parse InstantDB error messages
       if (rawError.toLowerCase().includes('expired')) {
         errorMessage = t('auth.codeExpired');
@@ -265,7 +315,7 @@ export default function LoginScreen({ navigation }) {
         // Show the actual error for debugging
         errorMessage = `${t('auth.verificationFailed')}: ${rawError}`;
       }
-      
+
       setError(errorMessage);
       setVerificationCode(['', '', '', '', '', '']);
     } finally {
@@ -287,10 +337,10 @@ export default function LoginScreen({ navigation }) {
 
   const handleResendCode = async () => {
     if (resendCooldown > 0 || isResending || !pendingUser) return;
-    
+
     setIsResending(true);
     setError('');
-    
+
     try {
       const normalizedEmail = pendingUser.email?.toLowerCase() || email.trim().toLowerCase();
       await db.auth.sendMagicCode({ email: normalizedEmail });
@@ -316,11 +366,11 @@ export default function LoginScreen({ navigation }) {
       );
       return;
     }
-    
+
     setError('');
     setIsSocialLoading(true);
     setSocialLoadingType('google');
-    
+
     try {
       await googlePromptAsync();
     } catch (err) {
@@ -331,21 +381,115 @@ export default function LoginScreen({ navigation }) {
     }
   };
 
-  // Handle successful Google login
+  // Handle Google login with ID token (InstantDB native sign-in)
+  const handleGoogleLoginWithIdToken = async (idToken) => {
+    try {
+      console.log('🟢 Mobile: Using InstantDB native Google sign-in with ID token');
+
+      // Use InstantDB native Google sign-in
+      await db.auth.signInWithIdToken({
+        clientName: 'google-mobile',
+        idToken: idToken
+      });
+      console.log('✅ Mobile: signInWithIdToken successful');
+
+      // Decode the ID token to get user info
+      const base64Url = idToken.split('.')[1];
+      const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
+      const jsonPayload = decodeURIComponent(
+        atob(base64)
+          .split('')
+          .map((c) => '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2))
+          .join('')
+      );
+      const userInfo = JSON.parse(jsonPayload);
+      console.log('🟢 Mobile: Decoded user info:', userInfo);
+
+      if (!userInfo.email) {
+        throw new Error('Your Google account does not provide an email address.');
+      }
+
+      // Find existing user or create new one
+      const normalizedEmail = userInfo.email.toLowerCase();
+      const existingUser = allUsers.find(u =>
+        (u.emailLower && u.emailLower === normalizedEmail) ||
+        (u.email && u.email.toLowerCase() === normalizedEmail)
+      );
+
+      let userId;
+      let userData;
+
+      if (existingUser) {
+        // Update existing user
+        console.log('🔵 Mobile: Updating existing user', existingUser);
+        userId = existingUser.id;
+        userData = {
+          ...existingUser,
+          name: userInfo.name || existingUser.name,
+          email: userInfo.email,
+          emailLower: normalizedEmail,
+          avatar: userInfo.picture || existingUser.avatar,
+          updatedAt: Date.now(),
+          authProvider: existingUser.authProvider || 'google',
+          googleId: userInfo.sub || userInfo.id,
+        };
+      } else {
+        // Create new user
+        console.log('🔵 Mobile: Creating new user');
+        userId = require('../lib/instant').id();
+        userData = {
+          id: userId,
+          name: userInfo.name || userInfo.email.split('@')[0],
+          email: userInfo.email,
+          emailLower: normalizedEmail,
+          avatar: userInfo.picture || null,
+          rating: 0,
+          bio: '',
+          createdAt: Date.now(),
+          authProvider: 'google',
+          googleId: userInfo.sub || userInfo.id,
+          passwordHash: null,
+        };
+      }
+
+      console.log('🔵 Mobile: Saving user to InstantDB', { userId, userData });
+      // Save/update user in InstantDB
+      await db.transact(
+        db.tx.users[userId].update(userData)
+      );
+      console.log('✅ Mobile: User saved successfully');
+
+      // Login the user
+      await login(userData);
+
+      alert(
+        t('auth.welcomeBack'),
+        t('auth.loginSuccess')
+      );
+    } catch (err) {
+      console.error('❌ Mobile: Google login with ID token error:', err);
+      setError(err.message || t('auth.googleLoginFailed'));
+    } finally {
+      setIsSocialLoading(false);
+      setSocialLoadingType(null);
+    }
+  };
+
+  // Handle successful Google login (legacy - using access token)
   const handleGoogleLoginSuccess = async (accessToken) => {
     try {
       // Fetch Google user profile
       const profile = await fetchGoogleUserProfile(accessToken);
-      
+
       // Fetch Google contacts for friends feature
       const contacts = await fetchGoogleContacts(accessToken);
-      
+
       // Find or create user in InstantDB
       const user = await findOrCreateSocialUser(profile, contacts, allUsers);
-      
+
       // Login the user
       await login(user);
-      
+
       alert(
         t('auth.welcomeBack'),
         t('auth.loginSuccess')
@@ -368,28 +512,43 @@ export default function LoginScreen({ navigation }) {
       );
       return;
     }
-    
+
     // Log debug info for troubleshooting
     if (__DEV__) {
       console.log('Facebook Auth Debug Info:', getFacebookAuthDebugInfo());
     }
-    
+
     setError('');
     setIsSocialLoading(true);
     setSocialLoadingType('facebook');
-    
+
     try {
       // Use native Facebook SDK - this will open Facebook app if installed
       const result = await facebookPromptAsync();
-      
+
       // Log the result for debugging
       if (__DEV__) {
         console.log('Facebook native login result:', result);
       }
-      
+
       // Handle result from native Facebook SDK
       if (result?.type === 'success' && result.accessToken) {
         // Native SDK returns accessToken directly
+        console.log('🟢 Mobile: Facebook native login successful, token:', result.accessToken.substring(0, 10) + '...');
+
+        // Use InstantDB native Facebook sign-in to establish session
+        try {
+          console.log('🟢 Mobile: Using InstantDB native Facebook sign-in');
+          await db.auth.signInWithIdToken({
+            clientName: 'facebook-mobile', // Needs to match InstantDB config
+            idToken: result.accessToken
+          });
+          console.log('✅ Mobile: InstantDB Facebook signInWithIdToken successful');
+        } catch (dbAuthError) {
+          console.error('❌ Mobile: InstantDB Facebook auth failed:', dbAuthError);
+          console.warn('⚠️ Mobile: Proceeding with legacy user creation despite auth error');
+        }
+
         await handleFacebookLoginSuccess(result.accessToken);
       } else if (result?.type === 'cancel') {
         // User cancelled
@@ -414,16 +573,16 @@ export default function LoginScreen({ navigation }) {
     try {
       // Fetch Facebook user profile
       const profile = await fetchFacebookUserProfile(accessToken);
-      
+
       // Fetch Facebook friends who also use the app
       const friends = await fetchFacebookFriends(accessToken);
-      
+
       // Find or create user in InstantDB
       const user = await findOrCreateSocialUser(profile, friends, allUsers);
-      
+
       // Login the user
       await login(user);
-      
+
       alert(
         t('auth.welcomeBack'),
         t('auth.loginSuccess')
@@ -449,11 +608,11 @@ export default function LoginScreen({ navigation }) {
   }
 
   return (
-    <KeyboardAvoidingView 
+    <KeyboardAvoidingView
       style={[styles.container, { backgroundColor: themeColors.background }]}
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
     >
-      <ScrollView 
+      <ScrollView
         contentContainerStyle={styles.scrollContent}
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
@@ -555,9 +714,9 @@ export default function LoginScreen({ navigation }) {
 
               {/* Social Buttons */}
               <View style={[styles.socialButtons, { flexDirection: rtlStyles.row }]}>
-                <TouchableOpacity 
+                <TouchableOpacity
                   style={[
-                    styles.socialButton, 
+                    styles.socialButton,
                     { borderColor: themeColors.border, flexDirection: rtlStyles.row },
                     (isSocialLoading && socialLoadingType === 'google') && styles.buttonDisabled
                   ]}
@@ -578,9 +737,9 @@ export default function LoginScreen({ navigation }) {
                     </>
                   )}
                 </TouchableOpacity>
-                <TouchableOpacity 
+                <TouchableOpacity
                   style={[
-                    styles.socialButton, 
+                    styles.socialButton,
                     { borderColor: themeColors.border, flexDirection: rtlStyles.row },
                     (isSocialLoading && socialLoadingType === 'facebook') && styles.buttonDisabled
                   ]}
@@ -606,7 +765,7 @@ export default function LoginScreen({ navigation }) {
           ) : (
             <>
               {/* Verification Screen */}
-              <TouchableOpacity 
+              <TouchableOpacity
                 style={[styles.backButton, { alignSelf: isRTL ? 'flex-end' : 'flex-start' }]}
                 onPress={resetVerification}
               >
@@ -636,7 +795,7 @@ export default function LoginScreen({ navigation }) {
                     ref={(el) => (inputRefs.current[index] = el)}
                     style={[
                       styles.codeInput,
-                      { 
+                      {
                         borderColor: digit ? colors.primary : themeColors.border,
                         color: themeColors.text,
                       }
@@ -654,7 +813,7 @@ export default function LoginScreen({ navigation }) {
 
               <TouchableOpacity
                 style={[
-                  styles.primaryButton, 
+                  styles.primaryButton,
                   (verificationCode.join('').length !== 6 || isLoading) && styles.buttonDisabled
                 ]}
                 onPress={handleVerifyCode}
@@ -678,7 +837,7 @@ export default function LoginScreen({ navigation }) {
                     {t('auth.resendIn')} {resendCooldown}s
                   </Text>
                 ) : (
-                  <TouchableOpacity 
+                  <TouchableOpacity
                     onPress={handleResendCode}
                     disabled={isResending}
                     activeOpacity={0.7}

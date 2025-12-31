@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Outlet, NavLink, useLocation, Link, useNavigate } from 'react-router-dom';
-import { Map, Home, MessageCircle, User, Menu, Plus, X, Shield, HelpCircle, Settings as SettingsIcon, Bell, Search, TrendingUp, LogOut } from 'lucide-react';
+import { Map, Home, MessageCircle, User, Menu, Plus, X, Shield, HelpCircle, Settings as SettingsIcon, Bell, Search, TrendingUp, LogOut, Sparkles, Calendar } from 'lucide-react';
 import { useSettingsStore } from '../store/settingsStore';
 import { useAuthStore } from '../store/useStore';
 import { useTranslation } from '../utils/translations';
@@ -57,14 +57,21 @@ export default function Layout() {
           <NavItem to="/settings" icon={<SettingsIcon size={20} />} label={t('settings')} isCollapsed={!isSidebarOpen} />
         </nav>
 
-        {/* Create Post Button */}
-        <div className="p-4 border-t border-gray-100 dark:border-gray-700">
+        {/* Create Buttons */}
+        <div className="p-4 border-t border-gray-100 dark:border-gray-700 space-y-2">
           <Link 
             to="/new-post" 
             className={`w-full bg-gradient-to-r from-red-600 to-rose-500 text-white font-semibold py-3 px-4 rounded-xl flex items-center justify-center gap-2 shadow-lg shadow-red-200 hover:shadow-xl hover:scale-[1.02] transition-all duration-200 text-center`}
           >
             <Plus size={20} />
             {isSidebarOpen && <span>{t('createPost')}</span>}
+          </Link>
+          <Link 
+            to="/new-community-event" 
+            className={`w-full bg-gradient-to-r from-purple-600 to-pink-500 text-white font-semibold py-3 px-4 rounded-xl flex items-center justify-center gap-2 shadow-lg shadow-purple-200 dark:shadow-purple-900/30 hover:shadow-xl hover:scale-[1.02] transition-all duration-200 text-center`}
+          >
+            <Sparkles size={20} />
+            {isSidebarOpen && <span>{t('createEvent') || 'Create Event'}</span>}
           </Link>
         </div>
       </aside>

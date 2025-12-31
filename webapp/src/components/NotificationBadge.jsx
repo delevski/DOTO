@@ -46,7 +46,7 @@ export default function NotificationBadge() {
       <Bell size={22} className="text-gray-600 dark:text-gray-300" />
       {unreadCount > 0 && (
         <span
-          className={`absolute top-1.5 ${isRTL ? 'left' : 'right'}-1.5 w-5 h-5 bg-red-500 rounded-full border-2 border-white dark:border-gray-800 flex items-center justify-center text-xs font-bold text-white`}
+          className={`absolute -top-0.5 ${isRTL ? '-left-0.5' : '-right-0.5'} min-w-[18px] h-[18px] px-1 bg-red-500 rounded-full border-2 border-white dark:border-gray-800 flex items-center justify-center text-[10px] font-bold text-white`}
         >
           {unreadCount > 9 ? '9+' : unreadCount}
         </span>
