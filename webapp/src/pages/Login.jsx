@@ -78,7 +78,12 @@ export default function Login() {
         return;
       }
 
-      if (window.google && googleButtonRef.current && !googleButtonRef.current.hasChildNodes()) {
+      if (window.google && googleButtonRef.current) {
+        // Clear any existing content
+        if (googleButtonRef.current.hasChildNodes()) {
+          googleButtonRef.current.innerHTML = '';
+        }
+        
         try {
           window.google.accounts.id.initialize({
             client_id: clientId,
@@ -102,19 +107,22 @@ export default function Login() {
     };
 
     // Check if Google API is already loaded
-    if (window.google) {
-      initGoogleSignIn();
+    if (window.google && window.google.accounts) {
+      // Small delay to ensure ref is ready
+      setTimeout(initGoogleSignIn, 100);
     } else {
       // Wait for Google API to load
       const checkGoogle = setInterval(() => {
-        if (window.google) {
+        if (window.google && window.google.accounts && googleButtonRef.current) {
           clearInterval(checkGoogle);
           initGoogleSignIn();
         }
       }, 100);
 
-      // Cleanup interval after 10 seconds
-      setTimeout(() => clearInterval(checkGoogle), 10000);
+      // Cleanup interval after 15 seconds
+      setTimeout(() => {
+        clearInterval(checkGoogle);
+      }, 15000);
     }
 
     // Cleanup function
@@ -148,34 +156,39 @@ export default function Login() {
 
     if (!facebookAppId) {
       console.warn('Facebook App ID not configured. Set VITE_FACEBOOK_APP_ID in your environment variables. Current value:', import.meta.env.VITE_FACEBOOK_APP_ID);
-      // We don't return here so that we don't break the hook rules or logic, 
-      // but the button will handle the error on click.
+      setIsFacebookReady(false);
+      return;
     }
 
     let isMounted = true;
 
     const initializeFacebookSDK = () => {
       try {
-        if (facebookAppId) {
+        if (facebookAppId && window.FB) {
           window.FB.init({
             appId: facebookAppId,
             cookie: true,
             xfbml: false,
             version: 'v19.0',
           });
-        }
 
-        if (isMounted) {
-          setIsFacebookReady(true);
+          if (isMounted) {
+            setIsFacebookReady(true);
+          }
         }
       } catch (err) {
         console.error('Error initializing Facebook SDK:', err);
+        if (isMounted) {
+          setIsFacebookReady(false);
+        }
       }
     };
 
+    // Check if Facebook SDK is already loaded
     if (window.FB) {
       initializeFacebookSDK();
     } else {
+      // Wait for Facebook SDK to load via fbAsyncInit
       const previousFbAsyncInit = window.fbAsyncInit;
       window.fbAsyncInit = () => {
         if (typeof previousFbAsyncInit === 'function') {
@@ -183,6 +196,19 @@ export default function Login() {
         }
         initializeFacebookSDK();
       };
+
+      // Also check periodically in case fbAsyncInit doesn't fire
+      const checkFB = setInterval(() => {
+        if (window.FB && facebookAppId) {
+          clearInterval(checkFB);
+          initializeFacebookSDK();
+        }
+      }, 100);
+
+      // Cleanup interval after 15 seconds
+      setTimeout(() => {
+        clearInterval(checkFB);
+      }, 15000);
     }
 
     return () => {
@@ -860,9 +886,10 @@ export default function Login() {
               </div>
 
               <div className="mt-6 grid grid-cols-2 gap-3">
+                {/* Facebook Login Button */}
                 <button
                   className="flex items-center justify-center gap-2 px-4 py-3 bg-white dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-xl hover:bg-gray-50 dark:hover:bg-gray-600 transition-colors font-medium text-gray-700 dark:text-gray-300 disabled:opacity-50 disabled:cursor-not-allowed"
-                  disabled={isFacebookLoading}
+                  disabled={isFacebookLoading || !facebookAppId || !isFacebookReady}
                   onClick={() => {
                     if (!facebookAppId) {
                       setError('Facebook login is not configured. Missing VITE_FACEBOOK_APP_ID.');
@@ -884,25 +911,35 @@ export default function Login() {
                           : t('facebook')
                   }
                 >
-                  <svg className="w-5 h-5" viewBox="0 0 24 24" fill="#1877F2">
-                    <path d="M24 12.073c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.99 4.388 10.954 10.125 11.854v-8.385H7.078v-3.47h3.047V9.43c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.874v2.25h3.328l-.532 3.47h-2.796v8.385C19.612 23.027 24 18.062 24 12.073z" />
-                  </svg>
-                  {isFacebookLoading ? (t('loading') || 'Loading...') : t('facebook')}
+                  {isFacebookLoading ? (
+                    <span className="text-sm">{t('loading') || 'Loading...'}</span>
+                  ) : (
+                    <>
+                      <svg className="w-5 h-5" viewBox="0 0 24 24" fill="#1877F2">
+                        <path d="M24 12.073c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.99 4.388 10.954 10.125 11.854v-8.385H7.078v-3.47h3.047V9.43c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.874v2.25h3.328l-.532 3.47h-2.796v8.385C19.612 23.027 24 18.062 24 12.073z" />
+                      </svg>
+                      <span>{t('facebook')}</span>
+                    </>
+                  )}
                 </button>
+                
+                {/* Google Login Button */}
                 <div
                   ref={googleButtonRef}
                   className="flex items-center justify-center w-full"
                   style={{ minHeight: '48px' }}
                 >
-                  {(!window.google || !import.meta.env.VITE_GOOGLE_CLIENT_ID) && (
+                  {(!window.google || !window.google.accounts || !import.meta.env.VITE_GOOGLE_CLIENT_ID) && (
                     <button
                       className="flex items-center justify-center gap-2 px-4 py-3 bg-white dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-xl hover:bg-gray-50 dark:hover:bg-gray-600 transition-colors font-medium text-gray-700 dark:text-gray-300 w-full disabled:opacity-50 disabled:cursor-not-allowed"
                       disabled={isGoogleLoading || !import.meta.env.VITE_GOOGLE_CLIENT_ID}
                       onClick={() => {
                         if (!import.meta.env.VITE_GOOGLE_CLIENT_ID) {
                           setError('Google Sign-In is not configured. Please set VITE_GOOGLE_CLIENT_ID in your environment variables.');
+                        } else if (!window.google || !window.google.accounts) {
+                          setError('Google Sign-In is still loading. Please wait a moment and try again.');
                         } else {
-                          setError('Google Sign-In is loading. Please wait...');
+                          setError('Please wait for Google Sign-In to initialize.');
                         }
                       }}
                       title={!import.meta.env.VITE_GOOGLE_CLIENT_ID ? 'Google Sign-In not configured' : 'Loading Google Sign-In...'}
@@ -917,7 +954,7 @@ export default function Login() {
                             <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" />
                             <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" />
                           </svg>
-                          {t('google')}
+                          <span>{t('google')}</span>
                         </>
                       )}
                     </button>
