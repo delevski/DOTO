@@ -16,3 +16,4 @@ echo ""
 echo "If no devices appear, run: ./pair-device.sh"
 
 
+

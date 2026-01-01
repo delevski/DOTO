@@ -52,6 +52,11 @@
         "ACCESS_COARSE_LOCATION",
         "CAMERA"
       ],
+      "config": {
+        "googleMaps": {
+          "apiKey": "YOUR_GOOGLE_MAPS_API_KEY"
+        }
+      },
       "intentFilters": [
         {
           "action": "VIEW",
@@ -99,7 +104,7 @@
           "color": "#DC2626",
           "sounds": []
         }
-      ]
+      ],
     ],
     "extra": {
       "eas": {

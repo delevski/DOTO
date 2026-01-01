@@ -1,65 +1,85 @@
-import React from 'react';
-import { View, Text, StyleSheet } from 'react-native';
+import React, { useState } from 'react';
+import { Platform, View, Text, StyleSheet } from 'react-native';
+import MapView, { Marker } from 'react-native-maps';
 
-// Placeholder Map component
-// react-native-maps requires additional native setup
-// For now, using a placeholder that shows location text
+export default function Map({ children, style, initialRegion, region, onRegionChangeComplete, ...props }) {
+  const [mapError, setMapError] = useState(null);
 
-export default function Map({ children, style, initialRegion, ...props }) {
-  return (
-    <View style={[style, styles.mapContainer]}>
-      <View style={styles.mapPlaceholder}>
+  // Use initialRegion for initial load, then use region for controlled updates
+  // Don't use both at the same time to avoid conflicts
+  const mapProps = region 
+    ? { region, onRegionChangeComplete }
+    : { initialRegion, onRegionChangeComplete };
+
+  // Handle map errors gracefully
+  if (mapError) {
+    return (
+      <View style={[styles.errorContainer, style]}>
         <Text style={styles.mapIcon}>🗺️</Text>
-        <Text style={styles.mapText}>Map View</Text>
-        {initialRegion && (
-          <Text style={styles.coordsText}>
-            {initialRegion.latitude?.toFixed(4)}, {initialRegion.longitude?.toFixed(4)}
-          </Text>
-        )}
-        <Text style={styles.subText}>
-          Map functionality available in full release
+        <Text style={styles.errorText}>Map Error</Text>
+        <Text style={styles.errorSubtext}>
+          {mapError.message || 'Unable to load map'}
         </Text>
       </View>
+    );
+  }
+
+  return (
+    <MapView
+      style={[{ flex: 1 }, style]}
+      {...mapProps}
+      showsUserLocation={true}
+      showsMyLocationButton={Platform.OS === 'android'}
+      onMapReady={() => setMapError(null)}
+      onError={(error) => {
+        console.error('MapView error:', error);
+        setMapError(error);
+      }}
+      {...props}
+    >
       {children}
-    </View>
+    </MapView>
   );
 }
 
-export function MapMarker({ coordinate, title, description, ...props }) {
-  // Placeholder marker - renders nothing visible
-  // In production, would render actual map markers
-  return null;
+export function MapMarker({ coordinate, title, description, onPress, ...props }) {
+  if (!coordinate || !coordinate.latitude || !coordinate.longitude) {
+    return null;
+  }
+
+  return (
+    <Marker
+      coordinate={coordinate}
+      title={title}
+      description={description}
+      onPress={onPress}
+      {...props}
+    />
+  );
 }
 
 const styles = StyleSheet.create({
-  mapContainer: {
+  errorContainer: {
     flex: 1,
-    backgroundColor: '#E8E8E8',
-  },
-  mapPlaceholder: {
-    flex: 1,
-    backgroundColor: '#f0f0f0',
     justifyContent: 'center',
     alignItems: 'center',
+    backgroundColor: '#f0f0f0',
     borderRadius: 12,
   },
   mapIcon: {
     fontSize: 48,
     marginBottom: 12,
   },
-  mapText: {
-    color: '#333333',
+  errorText: {
     fontSize: 18,
     fontWeight: 'bold',
+    color: '#333',
     marginBottom: 4,
   },
-  coordsText: {
-    color: '#666666',
-    fontSize: 14,
-    marginBottom: 8,
-  },
-  subText: {
-    color: '#888888',
+  errorSubtext: {
     fontSize: 12,
+    color: '#888',
+    textAlign: 'center',
+    paddingHorizontal: 20,
   },
 });

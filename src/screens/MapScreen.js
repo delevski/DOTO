@@ -175,6 +175,7 @@ function MapScreen({ navigation }) {
         <Map
           style={styles.map}
           initialRegion={region}
+          region={region}
           onRegionChangeComplete={setRegion}
         >
           {posts.map((post) => {
