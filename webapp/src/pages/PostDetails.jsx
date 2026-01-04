@@ -14,6 +14,7 @@ import { getConversationId, createOrUpdateConversation } from '../utils/messagin
 import { updateUserStreak } from '../utils/streakTracking';
 import { useOtherUserStats } from '../hooks/useUserStats';
 import { sendPushNotificationToUser } from '../utils/pushNotifications';
+import { getPlatform } from '../utils/platform';
 
 // Fix for default marker icons
 import icon from 'leaflet/dist/images/marker-icon.png';
@@ -252,7 +253,8 @@ export default function PostDetails() {
         userId: user.id,
         userName: user.name,
         userAvatar: user.avatar || 'https://i.pravatar.cc/150?u=' + user.id,
-        claimedAt: now
+        claimedAt: now,
+        platform: getPlatform(), // Track platform where claim was made
       };
 
       await db.transact(
@@ -273,7 +275,8 @@ export default function PostDetails() {
           read: false,
           timestamp: now,
           postTitle: post.title || t('helpNeeded'),
-          createdAt: now
+          createdAt: now,
+          platform: getPlatform(), // Track platform where claim was made
         })
       );
       
@@ -412,14 +415,15 @@ export default function PostDetails() {
         // Create in-app notification
         const notificationId = id();
         await db.transact(
-          db.tx.notifications[notificationId].update({
-            id: notificationId,
-            userId: post.authorId,
-            postId: postId,
-            type: 'post_liked',
-            message: `${user.name} liked your post`,
-            read: false,
-            timestamp: now,
+        db.tx.notifications[notificationId].update({
+          id: notificationId,
+          userId: post.authorId,
+          postId: postId,
+          type: 'post_liked',
+          message: `${user.name} liked your post`,
+          read: false,
+          timestamp: now,
+          platform: getPlatform(), // Track platform where like was made
             postTitle: post.title || 'your post',
             createdAt: now
           })
@@ -458,7 +462,8 @@ export default function PostDetails() {
       avatar: user.avatar,
       text: newComment.trim(),
       timestamp: now,
-      createdAt: now
+      createdAt: now,
+      platform: getPlatform(), // Track platform where comment was created
     };
 
     await db.transact(
@@ -482,7 +487,8 @@ export default function PostDetails() {
           read: false,
           timestamp: now,
           postTitle: post.title || 'your post',
-          createdAt: now
+          createdAt: now,
+          platform: getPlatform(), // Track platform where comment was made
         })
       );
       

@@ -26,6 +26,7 @@ import { useRTL } from '../context/RTLContext';
 import { useDialog } from '../context/DialogContext';
 import { db, id } from '../lib/instant';
 import { colors, spacing, borderRadius } from '../styles/theme';
+import { getPlatform } from '../utils/platform';
 import { compressImage } from '../utils/imageCompression';
 import Icon from '../components/Icon';
 
@@ -234,6 +235,7 @@ export default function CreateCommunityEventScreen({ navigation }) {
         commentsCount: 0,
         timestamp: Date.now(),
         createdAt: Date.now(),
+        platform: getPlatform(), // Track platform where event was created
       };
 
       await db.transact(db.tx.communityEvents[eventId].update(eventData));

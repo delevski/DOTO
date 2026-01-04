@@ -7,6 +7,7 @@ import { useTranslation } from '../utils/translations';
 import { verifyPassword } from '../utils/password';
 import { db } from '../lib/instant';
 import { id } from '@instantdb/react';
+import { getPlatform } from '../utils/platform';
 
 export default function Login() {
   const navigate = useNavigate();
@@ -700,7 +701,26 @@ export default function Login() {
         return;
       }
 
-      login(userData);
+      // Update user's last login platform
+      const platform = getPlatform();
+      try {
+        await db.transact(
+          db.tx.users[userData.id].update({
+            lastLoginPlatform: platform,
+          })
+        );
+      } catch (err) {
+        console.warn('Failed to update login platform:', err);
+        // Continue with login even if platform update fails
+      }
+
+      // Update local user object with platform
+      const userWithPlatform = {
+        ...userData,
+        lastLoginPlatform: platform,
+      };
+
+      login(userWithPlatform);
       resetVerificationSession();
       setEmail('');
       setPassword('');

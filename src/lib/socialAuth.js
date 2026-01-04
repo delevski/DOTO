@@ -10,6 +10,7 @@ import * as AuthSession from 'expo-auth-session';
 import { Platform } from 'react-native';
 import Constants from 'expo-constants';
 import { db, id } from './instant';
+import { getPlatform } from '../utils/platform';
 
 // Native Facebook SDK for proper native app login
 import { LoginManager, AccessToken, Profile } from 'react-native-fbsdk-next';
@@ -479,6 +480,8 @@ export async function findOrCreateSocialUser(profile, socialFriends, existingUse
     });
   }
 
+  const platform = getPlatform();
+
   if (existingUser) {
     // Update existing user with social info
     const updates = {
@@ -486,6 +489,9 @@ export async function findOrCreateSocialUser(profile, socialFriends, existingUse
       ...(provider === 'facebook' && { facebookId: socialId }),
       ...(avatar && !existingUser.avatar && { avatar }),
       lastLogin: Date.now(),
+      lastLoginPlatform: platform, // Track platform of current login
+      // Set registrationPlatform if not already set
+      ...(!existingUser.registrationPlatform && { registrationPlatform: platform }),
     };
 
     // Merge friend lists
@@ -515,6 +521,8 @@ export async function findOrCreateSocialUser(profile, socialFriends, existingUse
     socialFriends: friendUserIds,
     createdAt: Date.now(),
     lastLogin: Date.now(),
+    registrationPlatform: platform, // Track platform where user registered
+    lastLoginPlatform: platform, // Track platform of current login
     isVerified: true, // Social login users are auto-verified
     stats: {
       postsCreated: 0,

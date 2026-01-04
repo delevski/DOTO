@@ -11,6 +11,7 @@ import { db } from '../lib/instant';
 import { id } from '@instantdb/react';
 import { ISRAEL_CENTER, ISRAEL_BOUNDS, validateIsraelBounds, ISRAEL_NOMINATIM_PARAMS } from '../utils/israelBounds';
 import { updateUserStreak } from '../utils/streakTracking';
+import { getPlatform } from '../utils/platform';
 
 // Fix for default marker icons
 import icon from 'leaflet/dist/images/marker-icon.png';
@@ -382,6 +383,7 @@ export default function NewPost() {
         approvedClaimerId: null, // ID of the approved claimer (only one can be approved)
         claimedBy: null, // Keep for backward compatibility, but use claimers array instead
         createdAt: Date.now(),
+        platform: getPlatform(), // Track platform where post was created
       };
 
       db.transact(

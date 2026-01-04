@@ -11,20 +11,24 @@ export function useUserProfileSync() {
   const lastSyncRef = useRef(null);
   
   // Query user data from InstantDB
+  // Note: We query all users and filter client-side to ensure reliability
+  // This prevents issues if InstantDB's where clause doesn't work correctly
   const { data: userData, isLoading, error } = db.useQuery(user?.id ? {
-    users: {
-      $: {
-        where: { id: user.id }
-      }
-    }
+    users: {}
   } : null);
   
   // Sync user data when InstantDB data is newer
   useEffect(() => {
     if (isLoading || !user || !userData) return;
     
-    const dbUser = userData?.users?.[0];
-    if (!dbUser) return;
+    // Find the current user from query results (filter client-side for reliability)
+    // CRITICAL FIX: Filter by user ID to ensure we only sync the current user's data
+    // This prevents syncing the wrong user's profile data
+    const dbUser = userData?.users?.find(u => u.id === user.id);
+    if (!dbUser) {
+      // User not found in query results - this is normal if user doesn't exist in DB yet
+      return;
+    }
     
     // Compare key fields to detect changes
     const fieldsToSync = ['name', 'avatar', 'bio', 'phone', 'location', 'updatedAt'];

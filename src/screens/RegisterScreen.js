@@ -24,6 +24,7 @@ import { useDialog } from '../context/DialogContext';
 import { db, id } from '../lib/instant';
 import { hashPassword } from '../utils/password';
 import { colors, spacing, borderRadius, typography } from '../styles/theme';
+import { getPlatform } from '../utils/platform';
 import Icon from '../components/Icon';
 
 export default function RegisterScreen({ navigation }) {
@@ -185,6 +186,8 @@ export default function RegisterScreen({ navigation }) {
         bio: '',
         createdAt: Date.now(),
         authProvider: 'email',
+        registrationPlatform: getPlatform(), // Track platform where user registered
+        lastLoginPlatform: getPlatform(), // Track platform of current login
       };
 
       // Send magic code via InstantDB
@@ -262,9 +265,16 @@ export default function RegisterScreen({ navigation }) {
         code: enteredCode 
       });
       
+      // Update user with platform info before saving
+      const userToSave = {
+        ...pendingUser,
+        registrationPlatform: getPlatform(),
+        lastLoginPlatform: getPlatform(),
+      };
+      
       // Save user to our custom users table using the ID from pendingUser
-      await db.transact(db.tx.users[pendingUser.id].update(pendingUser));
-      await login(pendingUser);
+      await db.transact(db.tx.users[pendingUser.id].update(userToSave));
+      await login(userToSave);
     } catch (err) {
       // Get detailed error info
       const rawError = err.body?.message || err.message || 'Unknown error';

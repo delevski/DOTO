@@ -18,6 +18,7 @@ import { useRTL } from '../context/RTLContext';
 import { useDialog } from '../context/DialogContext';
 import { db, id } from '../lib/instant';
 import { colors, spacing, borderRadius } from '../styles/theme';
+import { getPlatform } from '../utils/platform';
 import { compressImage } from '../utils/imageCompression';
 
 const CATEGORIES = [
@@ -212,6 +213,7 @@ export default function CreatePostScreen({ navigation }) {
         comments: 0,
         claimers: [],
         approvedClaimerId: null,
+        platform: getPlatform(), // Track platform where post was created
       };
 
       await db.transact(db.tx.posts[postId].update(postData));

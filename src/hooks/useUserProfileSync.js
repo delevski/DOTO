@@ -24,12 +24,10 @@ export function useUserProfileSync(options = {}) {
   const shouldQuery = isAuthenticated && user?.id && enabled;
   
   // Query user data from InstantDB
+  // Note: We query all users and filter client-side to ensure reliability
+  // This prevents issues if InstantDB's where clause doesn't work correctly
   const { data: userData, isLoading, error } = db.useQuery(shouldQuery ? {
-    users: {
-      $: {
-        where: { id: user.id }
-      }
-    }
+    users: {}
   } : null);
   
   useEffect(() => {
@@ -43,8 +41,14 @@ export function useUserProfileSync(options = {}) {
   useEffect(() => {
     if (!isMountedRef.current || isLoading || !user || !userData) return;
     
-    const dbUser = userData?.users?.[0];
-    if (!dbUser) return;
+    // Find the current user from query results (filter client-side for reliability)
+    // CRITICAL FIX: Filter by user ID to ensure we only sync the current user's data
+    // This prevents syncing the wrong user's profile data
+    const dbUser = userData?.users?.find(u => u.id === user.id);
+    if (!dbUser) {
+      // User not found in query results - this is normal if user doesn't exist in DB yet
+      return;
+    }
     
     // Compare key fields to detect changes
     const fieldsToSync = ['name', 'avatar', 'bio', 'phone', 'location', 'updatedAt'];
@@ -112,33 +116,38 @@ export function useUserProfileSync(options = {}) {
     if (!user?.id) return;
     
     try {
-      // Query directly from InstantDB
+      // Query directly from InstantDB - fetch all users and filter client-side for reliability
       const result = await db.queryOnce({
-        users: {
-          $: {
-            where: { id: user.id }
-          }
-        }
+        users: {}
       });
       
-      const dbUser = result?.users?.[0];
-      if (dbUser) {
-        const updates = {
-          name: dbUser.name,
-          avatar: dbUser.avatar,
-          bio: dbUser.bio,
-          phone: dbUser.phone,
-          location: dbUser.location,
-          updatedAt: dbUser.updatedAt || Date.now(),
-        };
-        
-        await updateUser(updates);
-        console.log('[ProfileSync] Force sync completed');
+      // Find the current user from query results
+      // CRITICAL FIX: Filter by user ID to ensure we only sync the current user's data
+      const dbUser = result?.users?.find(u => u.id === user.id);
+      
+      if (!dbUser) {
+        console.warn('[ProfileSync] User not found in database during force sync', {
+          userId: user.id,
+          userName: user.name
+        });
+        return;
       }
+      
+      const updates = {
+        name: dbUser.name,
+        avatar: dbUser.avatar,
+        bio: dbUser.bio,
+        phone: dbUser.phone,
+        location: dbUser.location,
+        updatedAt: dbUser.updatedAt || Date.now(),
+      };
+      
+      await updateUser(updates);
+      console.log('[ProfileSync] Force sync completed');
     } catch (err) {
       console.error('[ProfileSync] Force sync failed:', err);
     }
-  }, [user?.id, updateUser]);
+  }, [user?.id, user?.name, updateUser]);
   
   return {
     isLoading,

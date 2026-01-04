@@ -9,6 +9,7 @@ import { id } from '@instantdb/react';
 import { hashPassword } from '../utils/password';
 import { isEmailJSConfigured } from '../utils/emailService';
 import { ISRAEL_NOMINATIM_PARAMS } from '../utils/israelBounds';
+import { getPlatform } from '../utils/platform';
 
 export default function Register() {
   const navigate = useNavigate();
@@ -784,6 +785,9 @@ export default function Register() {
           passwordHash: passwordHashValue,
           authProvider: existingUser.authProvider || 'email',
           ...(trimmedPhone && { phone: trimmedPhone }),
+          // Update platform tracking
+          registrationPlatform: existingUser.registrationPlatform || getPlatform(),
+          lastLoginPlatform: getPlatform(),
         };
       } else {
         // Create new user
@@ -802,6 +806,8 @@ export default function Register() {
           createdAt: Date.now(),
           passwordHash: passwordHashValue,
           authProvider: 'email',
+          registrationPlatform: getPlatform(), // Track platform where user registered
+          lastLoginPlatform: getPlatform(), // Track platform of current login
         };
       }
 

@@ -18,6 +18,7 @@ import { useRTL, useRTLStyles } from '../context/RTLContext';
 import { db, id } from '../lib/instant';
 import { colors, spacing, borderRadius } from '../styles/theme';
 import { sendPushNotificationToUser } from '../utils/pushNotifications';
+import { getPlatform } from '../utils/platform';
 import Icon from '../components/Icon';
 import ClaimerSelectionModal from '../components/ClaimerSelectionModal';
 
@@ -149,7 +150,8 @@ function PostDetailsScreen({ route, navigation }) {
         userId: user.id,
         userName: user.name,
         userAvatar: user.avatar || `https://i.pravatar.cc/150?u=${user.id}`,
-        claimedAt: now
+        claimedAt: now,
+        platform: getPlatform(), // Track platform where claim was made
       };
 
       await db.transact(
@@ -170,7 +172,8 @@ function PostDetailsScreen({ route, navigation }) {
           read: false,
           timestamp: now,
           postTitle: post.title || t('post.helpNeeded') || 'Help Needed',
-          createdAt: now
+          createdAt: now,
+          platform: getPlatform(), // Track platform where claim was made
         })
       );
       
@@ -303,21 +306,22 @@ function PostDetailsScreen({ route, navigation }) {
         // Send push notification to post author (only when liking, not unliking)
         // Don't notify if user is liking their own post
         if (post?.authorId && post.authorId !== user.id) {
-          // Create in-app notification
-          const notificationId = id();
-          await db.transact(
-            db.tx.notifications[notificationId].update({
-              id: notificationId,
-              userId: post.authorId,
-              postId: postId,
-              type: 'post_liked',
-              message: `${user.name} liked your post`,
-              read: false,
-              timestamp: now,
-              postTitle: post.title || 'your post',
-              createdAt: now
-            })
-          );
+        // Create in-app notification
+        const notificationId = id();
+        await db.transact(
+          db.tx.notifications[notificationId].update({
+            id: notificationId,
+            userId: post.authorId,
+            postId: postId,
+            type: 'post_liked',
+            message: `${user.name} liked your post`,
+            read: false,
+            timestamp: now,
+            postTitle: post.title || 'your post',
+            createdAt: now,
+            platform: getPlatform(), // Track platform where like was made
+          })
+        );
           
           // Send push notification
           await sendPushNotificationToUser(
@@ -354,6 +358,7 @@ function PostDetailsScreen({ route, navigation }) {
           avatar: user.avatar,
           text: newComment.trim(),
           timestamp: now,
+          platform: getPlatform(), // Track platform where comment was created
         }),
         db.tx.posts[postId].update({
           comments: (post.comments || 0) + 1
@@ -374,7 +379,8 @@ function PostDetailsScreen({ route, navigation }) {
             read: false,
             timestamp: now,
             postTitle: post.title || 'your post',
-            createdAt: now
+            createdAt: now,
+            platform: getPlatform(), // Track platform where comment was made
           })
         );
         

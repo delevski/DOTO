@@ -17,6 +17,7 @@ import { useDialog } from '../context/DialogContext';
 import { db } from '../lib/instant';
 import { verifyPassword } from '../utils/password';
 import { colors, spacing, borderRadius, typography } from '../styles/theme';
+import { getPlatform } from '../utils/platform';
 import Icon from '../components/Icon';
 import {
   useGoogleAuth,
@@ -288,9 +289,28 @@ export default function LoginScreen({ navigation }) {
         code: enteredCode
       });
 
-      // If successful, login the user
+      // If successful, login the user and update platform tracking
       if (pendingUser) {
-        await login(pendingUser);
+        // Update user's last login platform
+        const platform = getPlatform();
+        try {
+          await db.transact(
+            db.tx.users[pendingUser.id].update({
+              lastLoginPlatform: platform,
+            })
+          );
+        } catch (err) {
+          console.warn('Failed to update login platform:', err);
+          // Continue with login even if platform update fails
+        }
+        
+        // Update local user object with platform
+        const userWithPlatform = {
+          ...pendingUser,
+          lastLoginPlatform: platform,
+        };
+        
+        await login(userWithPlatform);
       } else {
         setError(t('auth.sessionExpired'));
         return;
