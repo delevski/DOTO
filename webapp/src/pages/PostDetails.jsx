@@ -198,11 +198,28 @@ export default function PostDetails() {
   const claimers = post.claimers || [];
   const approvedClaimerId = post.approvedClaimerId || null;
   const isClaimed = approvedClaimerId !== null || (post.claimedBy && !claimers.length);
-  const isClaimedByMe = approvedClaimerId === user?.id || post.claimedBy === user?.id;
-  const hasClaimed = user && claimers.some(c => c.userId === user.id);
-  const isMyPost = post.authorId === user?.id;
+  
+  // Ensure proper type comparison for user IDs (convert to string for consistent comparison)
+  const currentUserId = user?.id ? String(user.id) : null;
+  const postAuthorId = post.authorId ? String(post.authorId) : null;
+  const approvedClaimerIdStr = approvedClaimerId ? String(approvedClaimerId) : null;
+  const postClaimedByStr = post.claimedBy ? String(post.claimedBy) : null;
+  
+  const isClaimedByMe = (approvedClaimerIdStr && approvedClaimerIdStr === currentUserId) || 
+                        (postClaimedByStr && postClaimedByStr === currentUserId);
+  const hasClaimed = user && currentUserId && claimers.some(c => {
+    const claimerUserId = c.userId ? String(c.userId) : null;
+    return claimerUserId === currentUserId;
+  });
+  
+  // Fix: Ensure isMyPost only returns true when both IDs exist and match exactly
+  const isMyPost = currentUserId && postAuthorId && currentUserId === postAuthorId;
+  
   const likedBy = post.likedBy || [];
-  const isLiked = user && likedBy.includes(user.id);
+  const isLiked = user && currentUserId && likedBy.some(id => {
+    const likedById = id ? String(id) : null;
+    return likedById === currentUserId;
+  });
   const likeCount = likedBy.length || post.likes || 0;
   
   // Completion status
@@ -226,8 +243,18 @@ export default function PostDetails() {
     setLocalError('');
     setLocalSuccess('');
 
-    if (isMyPost) {
+    // Double-check: Ensure user cannot claim their own post
+    const currentUserId = user?.id ? String(user.id) : null;
+    const postAuthorId = post.authorId ? String(post.authorId) : null;
+    const isOwnPost = currentUserId && postAuthorId && currentUserId === postAuthorId;
+    
+    if (isOwnPost) {
       setLocalError('You cannot claim your own post');
+      return;
+    }
+    
+    if (!user || !currentUserId) {
+      setLocalError('You must be logged in to claim a post');
       return;
     }
 

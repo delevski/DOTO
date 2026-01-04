@@ -369,9 +369,14 @@ export default function Login() {
       );
       console.log('✅ User saved successfully');
 
+      // Ensure userData has a valid ID before logging in
+      if (!userData.id) {
+        throw new Error('User ID is missing. Please try logging in again.');
+      }
+
       // If email is verified by Google, skip magic code
       if (googleUser.emailVerified) {
-        console.log('✅ Email verified, logging in and redirecting to /feed');
+        console.log('✅ Email verified, logging in and redirecting to /feed', { userId: userData.id });
         login(userData);
         console.log('✅ Login function called');
         navigate('/feed');
@@ -511,8 +516,13 @@ export default function Login() {
       );
       console.log('✅ User data saved to InstantDB');
 
+      // Ensure userData has a valid ID before logging in
+      if (!userData.id) {
+        throw new Error('User ID is missing. Please try logging in again.');
+      }
+
       // Direct Login (Skip Verification)
-      console.log('✅ Direct Login: Logging in and redirecting');
+      console.log('✅ Direct Login: Logging in and redirecting', { userId: userData.id });
       login(userData);
       navigate('/feed');
 

@@ -236,15 +236,33 @@ export default function Feed() {
     let filtered = [...allPosts];
 
     // Apply tab filter
+    // Ensure proper type comparison for user IDs (convert to string for consistent comparison)
+    const currentUserId = user?.id ? String(user.id) : null;
+    
     switch (activeTab) {
       case 'myPosts':
         // Show only posts created by the current user, sorted by newest first
-        filtered = filtered.filter(post => post.authorId === user?.id);
+        // Fix: Only filter if user ID exists and compare as strings
+        if (currentUserId) {
+          filtered = filtered.filter(post => {
+            const postAuthorId = post.authorId ? String(post.authorId) : null;
+            return postAuthorId && postAuthorId === currentUserId;
+          });
+        } else {
+          filtered = []; // No user logged in, show no posts
+        }
         filtered.sort((a, b) => (b.timestamp || b.createdAt || 0) - (a.timestamp || a.createdAt || 0));
         break;
       case 'myClaim':
         // Show only posts where the current user is the approved claimer
-        filtered = filtered.filter(post => post.approvedClaimerId === user?.id);
+        if (currentUserId) {
+          filtered = filtered.filter(post => {
+            const approvedClaimerId = post.approvedClaimerId ? String(post.approvedClaimerId) : null;
+            return approvedClaimerId && approvedClaimerId === currentUserId;
+          });
+        } else {
+          filtered = []; // No user logged in, show no posts
+        }
         filtered.sort((a, b) => (b.timestamp || b.createdAt || 0) - (a.timestamp || a.createdAt || 0));
         break;
       case 'friends':
@@ -925,10 +943,24 @@ export default function Feed() {
               const claimers = post.claimers || [];
               const approvedClaimerId = post.approvedClaimerId || null;
               const isClaimed = approvedClaimerId !== null || (post.claimedBy && !claimers.length);
-              const isClaimedByMe = approvedClaimerId === user?.id || post.claimedBy === user?.id;
-              const isMyPost = post.authorId === user?.id;
+              
+              // Ensure proper type comparison for user IDs (convert to string for consistent comparison)
+              const currentUserId = user?.id ? String(user.id) : null;
+              const postAuthorId = post.authorId ? String(post.authorId) : null;
+              const approvedClaimerIdStr = approvedClaimerId ? String(approvedClaimerId) : null;
+              const postClaimedByStr = post.claimedBy ? String(post.claimedBy) : null;
+              
+              const isClaimedByMe = (approvedClaimerIdStr && approvedClaimerIdStr === currentUserId) || 
+                                    (postClaimedByStr && postClaimedByStr === currentUserId);
+              
+              // Fix: Ensure isMyPost only returns true when both IDs exist and match exactly
+              const isMyPost = currentUserId && postAuthorId && currentUserId === postAuthorId;
+              
               const likedBy = post.likedBy || [];
-              const isLiked = user && likedBy.includes(user.id);
+              const isLiked = user && currentUserId && likedBy.some(id => {
+                const likedById = id ? String(id) : null;
+                return likedById === currentUserId;
+              });
               const likeCount = likedBy.length || post.likes || 0;
               
               const handleLike = (e) => {
